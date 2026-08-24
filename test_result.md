@@ -101,3 +101,81 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## user_problem_statement: Rebuild from scratch — "Aura" companion app for a 128x64 HUB75 LED matrix (MatrixPortal ESP32-S3). Configure Flights (overhead air traffic), Sports (NFL/NBA/MLB/NHL + UFC), and local Weather alerts. BLE provisions the matrix; matrix fetches live data over Wi-Fi. Fresh design.
+
+## frontend:
+##   - task: "Device tab — BLE status pill + Wi-Fi setup form"
+##     implemented: true
+##     working: "NA"
+##     file: "app/(tabs)/index.tsx"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "New screen. BLE unavailable in web preview (native module) — verify graceful hint, Wi-Fi form inputs, and no crashes. Live BLE untestable without device build."
+##   - task: "Flights tab — enable toggle, ZIP geocode, radius slider"
+##     implemented: true
+##     working: "NA"
+##     file: "app/(tabs)/flights.tsx"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Verify ZIP lookup populates city/state/lat/lon, slider updates value, persistence."
+##   - task: "Sports tab — league segments + team multi-select grid + UFC toggle"
+##     implemented: true
+##     working: "NA"
+##     file: "app/(tabs)/sports.tsx"
+##     stuck_count: 0
+##     priority: "high"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Verify switching leagues, selecting/deselecting teams (badge count updates), UFC toggle."
+##   - task: "Weather tab — enable toggle + severity radio cards"
+##     implemented: true
+##     working: "NA"
+##     file: "app/(tabs)/weather.tsx"
+##     stuck_count: 0
+##     priority: "medium"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "Verify severity selection, location note reflects Flights ZIP."
+##   - task: "Global SYNC FAB + persistence across tabs"
+##     implemented: true
+##     working: "NA"
+##     file: "src/components/SyncFab.tsx"
+##     stuck_count: 0
+##     priority: "medium"
+##     needs_retesting: true
+##     status_history:
+##         -working: "NA"
+##         -agent: "main"
+##         -comment: "FAB shows info toast when not connected; settings persist after reload."
+
+## metadata:
+##   created_by: "main_agent"
+##   version: "2.0"
+##   test_sequence: 0
+##   run_ui: true
+
+## test_plan:
+##   current_focus:
+##     - "Flights tab — enable toggle, ZIP geocode, radius slider"
+##     - "Sports tab — league segments + team multi-select grid + UFC toggle"
+##     - "Weather tab — enable toggle + severity radio cards"
+##     - "Global SYNC FAB + persistence across tabs"
+##   stuck_tasks: []
+##   test_all: false
+##   test_priority: "high_first"
+
+## agent_communication:
+##     -agent: "main"
+##     -message: "Fresh rebuild (Aura). Test FRONTEND ONLY on web preview. BLE is a native module and is expected to be unavailable in web preview — do NOT flag the BLE 'needs real device build' hint as a bug. Focus on navigation, toggles, ZIP geocode, slider, team selection, severity selection, and AsyncStorage persistence after reload. No backend."

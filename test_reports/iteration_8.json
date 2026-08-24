@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only regression PASS with 1 minor persistence bug. All 8 requested flows verified on mobile viewport (390x844) against the public Expo web preview. Bottom-tab navigation between Device / Flights / Sports / Weather renders every screen without crashes. Device tab shows 'Disconnected' pill and the expected 'Bluetooth runs only in a real device build' info hint. Wi-Fi form accepts SSID + password, password field renders as type='password' (secureTextEntry). Tapping 'Send to Matrix' with no BLE connection shows the info toast 'Connect to the matrix first.' (no crash). Flights: ZIP 28117 resolves to 'Mooresville, NC  \u00b7  35.584, -80.868' via api.zippopotam.us; radius label 25 mi rendered and Slider is present + keyboard-focusable. Sports: NFL/NBA/MLB/NHL/UFC segmented control works, tapping a team card selects it, UFC segment swaps grid for the 'UFC Fight Night' toggle card. Weather: master toggle flips, Extreme severity radio selects, and location note correctly reflects the ZIP set on the Flights tab ('Alerts for Mooresville, NC'). SYNC FAB is present on all tabs; while disconnected it shows the info toast 'BLE needs a real device build to sync.' No red screens, no unhandled errors. Persistence: after reload, sports.teams (Chiefs) and weather.severity (Extreme) and flights.lat/lon/city/state all rehydrate correctly BUT the ZIP TextInput on the Flights tab renders empty because the local `zip` state is only seeded from `f.zip` at first render (before AsyncStorage hydration completes). The resolved 'Mooresville, NC \u00b7 ...' still shows, so functional behavior is correct \u2014 only the input field's displayed text is wrong. Small design/testability nits noted below.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Flights ZIP input hydration",
+        "issue": "After a reload the TextInput on /(tabs)/flights.tsx shows empty (placeholder 28117) even though settings.flights.zip was persisted. Root cause: `const [zip, setZip] = useState(f.zip)` at flights.tsx:21 seeds local state on first render, but MatrixProvider hydrates from AsyncStorage in an effect *after* mount, so the input never picks up the persisted value. Same shape applies to `const [radius_, setRadius] = useState(f.radiusMi)` at flights.tsx:22. Fix: add `useEffect(() => setZip(f.zip), [f.zip])` and `useEffect(() => setRadius(f.radiusMi), [f.radiusMi])`, or gate render on `hydrated` from useMatrix() (index.tsx already does this pattern for lastSsid at index.tsx:43-45).",
+        "testID": "N/A (no testID on ZIP TextInput)",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "All",
+        "issues": [
+          "No testID attributes on any interactive element (Device Wi-Fi inputs, eye toggle, Send to Matrix, ZIP input, Slider, League segmented pills, team cards, severity radio cards, SYNC FAB, tab labels). Made programmatic verification of the password eye toggle impossible \u2014 forced fallback to text-based selectors. Recommend testID on: ssid-input, wifi-pass-input, wifi-pass-eye, wifi-send-btn, ble-status-card, zip-input, radius-slider, league-seg-{NFL|NBA|MLB|NHL|UFC}, team-card-{league}-{abbr}, sev-card-{minor|moderate|severe|extreme}, sync-fab.",
+          "Password eye toggle Pressable has no accessibilityLabel/role \u2014 rendered as a plain <div> in RN-web with role=button count = 0 in DOM, so screen readers get no affordance."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Console warning '\"shadow*\" style props are deprecated. Use \"boxShadow\".' fires on every render. Emitted from SyncFab.tsx:94-97 (shadowColor/shadowOpacity/shadowRadius/shadowOffset) and other Card-style shadows. React Native 0.81+ on web wants boxShadow. Non-blocking cosmetic warning."},
+      {"component": "props.pointerEvents deprecation", "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents'. Coming from SyncFab.tsx:52 (`<View pointerEvents=\"box-none\" \u2026>`) and Toast.tsx (pointerEvents already moved into style, still fires from SyncFab). Move to style: `style={{ pointerEvents: 'box-none', \u2026 }}`. Non-blocking."},
+      {"component": "react-native-ble-plx", "issue": "Not deprecated but by design will never work in Expo Go / web preview. Codebase already handles this gracefully via isBleSupported() gate and the info hint. NOT A BUG \u2014 flagged only so the next agent doesn't re-report it."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_8.json"],
+  "action_items": [
+    "flights.tsx: re-sync local `zip` and `radius_` state to persisted settings after hydration (add useEffect on f.zip / f.radiusMi, or gate render on `hydrated`).",
+    "Add testID props to key interactive elements across all 4 tabs + SyncFab + eye toggle so subsequent regressions can assert directly (currently everything relies on text-matching).",
+    "Migrate shadow* style props to boxShadow (RN 0.81+ / RN-Web) and move `pointerEvents` from prop to style in SyncFab.tsx to silence the deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "matrix.tsx exports `hydrated` but no screen actually reads it; both index.tsx and flights.tsx seed local state from `settings` at first render, which is DEFAULT_SETTINGS. index.tsx sidesteps this only for lastSsid via a useEffect; flights.tsx has no equivalent \u2014 hence the ZIP hydration bug above.",
+    "livePush() in matrix.tsx uses `bleStatus` captured at the time useCallback was created; because updateFlights/updateSports/updateWeather depend on `livePush`, and livePush depends on `bleStatus`, this recreates all three setters on every BLE status change. Fine functionally but causes settingsRef consumers to re-subscribe more than needed. Non-blocking.",
+    "Password eye Pressable (index.tsx:193) has no accessibilityLabel/role \u2014 not screen-reader accessible and cannot be selected via [role=button] in tests.",
+    "SyncFab positions itself using a hardcoded TAB_BAR_HEIGHT = 64; the tab bar in _layout.tsx is also 64, so this couples two files. Prefer reading from a shared constant or via useBottomTabBarHeight().",
+    "No error boundary around the tab router \u2014 an uncaught render error in any tab would crash the whole app on device."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "13/14 assertions passed (ZIP-input-post-reload assertion failed; functional data still hydrated)"},
+  "seed_data_creation": "None",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Public URL: https://smart-matrix-hub.preview.emergentagent.com. Viewport 390x844. There are no testIDs anywhere in the app \u2014 tests must rely on placeholder / visible-text selectors. The password eye toggle is a Pressable with no accessibility role in RN-Web; if you need to verify it, click via input's parent element or ask main agent to add testID='wifi-pass-eye'. ZIP geocode takes ~3-5s (cold) via api.zippopotam.us. AsyncStorage key = 'aura_settings_v1'; last SSID key = 'aura_last_ssid'. BLE will always report unsupported on web \u2014 do NOT flag it. Deprecation warnings for shadow* and pointerEvents are non-blocking.",
+  "rca_of_issue": "Bug: ZIP field empty after reload.\nRepro: Enter ZIP 28117 on Flights tab, wait for 'Mooresville, NC ...' to resolve, reload page, revisit Flights tab.\nExpected: TextInput shows '28117'.\nActual: TextInput shows placeholder '28117' (empty value); resolved city/coords label still shows correctly.\nRoot cause: In /app/frontend/app/(tabs)/flights.tsx line 21, `const [zip, setZip] = useState(f.zip)` captures the value of f.zip at first render. MatrixProvider hydrates from AsyncStorage inside a useEffect (matrix.tsx:139-153) which runs AFTER first render, so `settings.flights.zip` is initially '' when FlightsScreen mounts. When settings later updates, the local `zip` state is not re-synced. index.tsx handles the equivalent scenario for `lastSsid` via `useEffect(() => { if (lastSsid) setSsid(lastSsid); }, [lastSsid])` at index.tsx:43-45; flights.tsx needs the same treatment for both `zip` and `radius_`. Mitigation: (a) add matching useEffects, or (b) `if (!hydrated) return null;` at the top of FlightsScreen and similar tab screens."
+}

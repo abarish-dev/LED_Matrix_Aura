@@ -1,36 +1,48 @@
-# Info Wall — ESP32 Firmware Starter (PlatformIO / VS Code)
+# Aura Matrix — Firmware (MatrixPortal ESP32-S3, 128×64 HUB75)
 
-This is a **ready-to-flash skeleton** for the LED-matrix side of Info Wall. It
-handles all the Bluetooth + JSON plumbing so you can focus on drawing to your
-panel. It matches the app contract in `/app/FIRMWARE_BLE_SPEC.md`.
+PlatformIO/Arduino firmware for the **Adafruit MatrixPortal ESP32-S3** driving a
+**128×64 HUB75 RGB LED matrix**. It pairs with the **Aura** phone app: the app
+provisions Wi-Fi + display settings over **Bluetooth LE**, then the matrix fetches
+live data over **Wi-Fi** and renders it.
 
-## What's here
+## Data sources (all keyless)
+| Feature  | Source            | Notes |
+|----------|-------------------|-------|
+| Flights  | `api.adsb.lol`    | Nearest ADS-B aircraft within your radius |
+| Sports   | ESPN public JSON  | NFL / NBA / MLB / NHL scores (UFC card stub ready) |
+| Weather  | `api.weather.gov` | US National Weather Service active alerts |
+
+## Getting started
+1. Install **VS Code** + the **PlatformIO IDE** extension.
+2. Open this `/firmware` folder in VS Code.
+3. Plug in the MatrixPortal S3, click **Upload** (→ arrow in the PlatformIO bar).
+4. Open the **Serial Monitor** (115200 baud) to watch logs.
+5. Launch the Aura app → **Device** tab → connect → send Wi-Fi → configure tabs.
+
+## Panel geometry
+Default assumes **two 64×64 modules chained** = 128×64 (`include/Config.h`):
+```c
+#define PANEL_RES_X 64
+#define PANEL_RES_Y 64
+#define PANEL_CHAIN 2
 ```
-firmware/
-├── platformio.ini         # board + libraries (ArduinoJson)
-├── include/BLEController.h # BLE setup + parses EVERY command from the app
-└── src/main.cpp            # boot, Wi-Fi join, your render loop (TODOs)
-```
+For a single native 128×64 module use `PANEL_RES_X 128 / PANEL_CHAIN 1`.
+On many 64×64 panels you must bridge the **E** address line — see Adafruit's
+MatrixPortal S3 guide.
 
-## How to use in VS Code
-1. Install the **PlatformIO IDE** extension in VS Code.
-2. Copy this `firmware/` folder somewhere and open it with
-   **File → Open Folder** (PlatformIO detects `platformio.ini`).
-3. Plug in your ESP32 and click the PlatformIO **Upload** (→) button.
-4. Open the **Serial Monitor** (115200 baud). You'll see `[BLE] advertising as
-   FlightWall-XXXX`, then every command the app sends printed as it arrives.
-5. Open the Info Wall app, tap **TAP TO CONNECT**, pick your `FlightWall-…`
-   device, and watch the commands stream in.
+## File map
+- `platformio.ini` — board, PSRAM flags, libraries.
+- `include/Config.h` — panel size, BLE UUIDs, settings struct, global flags.
+- `include/BleProvisioning.h` — NimBLE server; parses app JSON, notifies Wi-Fi status.
+- `include/DataServices.h` — HTTPS fetchers for flights/sports/weather.
+- `include/DisplayManager.h` — HUB75 init + card drawing helpers.
+- `src/main.cpp` — boot, Wi-Fi connect, fetch loop, card rotation.
 
-## What you still need to add
-Search the files for `TODO`:
-- **Display init** in `setup()` (your HUB75 / WS2812 / etc. library).
-- **Render loop** in `loop()` — read from the global `g_settings` struct.
-- Optional per-command redraw in `BLEController::handleJson()`.
+## BLE contract
+See [`/app/FIRMWARE_BLE_SPEC.md`](../FIRMWARE_BLE_SPEC.md) for the exact JSON the
+app writes and the Wi-Fi status the firmware notifies back.
 
-Everything BLE-related (UUIDs, `FlightWall-` name, notifications, JSON parsing,
-full-sync vs live-command handling, and the Wi-Fi status reply the app expects)
-is already wired up.
-
-> Note: the app sends **raw JSON** (not base64) — this starter parses it
-> directly with ArduinoJson, which is correct.
+## Notes
+- HTTPS uses `setInsecure()` for a simple start. For production, load a root CA.
+- Airline/team **logos** are stubbed as text; drop 1-bit or RGB565 bitmaps into
+  `DisplayManager` and blit them in `flight()` / `score()` when ready.

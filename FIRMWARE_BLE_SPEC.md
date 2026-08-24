@@ -1,93 +1,60 @@
-# Info Wall — ESP32 BLE Contract (what to implement in VS Code)
+# Aura — BLE JSON Contract (app ⇄ MatrixPortal ESP32-S3)
 
-BLE service/characteristic (unchanged):
-- Service UUID: `4fafc201-1fb5-459e-8fcc-c5c9c331914b`
-- Characteristic UUID: `beb5483e-36e1-4688-b7f5-ea07361b26a8`
-- Advertise a name starting with `FlightWall-` (the app scans by this prefix).
+The Aura app talks to the matrix over a single BLE characteristic.
 
-The app always writes a **UTF-8 JSON string** to the characteristic.
-(The React Native side base64-encodes it only because the BLE library's JS API
-requires that; react-native-ble-plx decodes it back to raw bytes before it goes
-over the air.) **Your ESP32 receives raw JSON bytes — just read the value and
-`deserializeJson` it directly. Do NOT base64-decode.** Likewise, when you notify
-back, send a plain JSON string (the app base64-decodes it on its side).
+- **Device name (advertised):** `AuraMatrix` (app matches any name starting `Aura`)
+- **Service UUID:** `4fafc201-1fb5-459e-8fcc-c5c9c331914b`
+- **Characteristic UUID:** `beb5483e-36e1-4688-b7f5-ea07361b26a8`
+  - Properties: **READ | WRITE | NOTIFY**
 
-There are two kinds of writes:
+### Encoding
+The app writes a **UTF-8 JSON string**. `react-native-ble-plx` base64-encodes the
+bytes on the JS side, but the ESP32 receives **raw UTF-8** — feed it straight to
+`ArduinoJson`. **Do not base64-decode on the firmware.**
 
 ---
 
-## 1) Full Sync (the "SYNC & CONFIRM" button)
-
-A single **flat** JSON object (no nested objects except `polygon`). Keys and types
-must match exactly:
-
+## 1. Full sync (persist + confirm)
+Sent on connect and when the user taps **SYNC**.
 ```json
 {
-  "radius": 3,
-  "trackFlight": false,
-  "flightIdent": "",
-  "showWeather": true,
-  "lat": 35.584,
-  "lon": -80.8685,
-  "trackingMode": "radius",          // "radius" | "polygon"
-  "polygon": [[35.58,-80.86],[...]],  // array of [lat,lon]
-  "brightness": 80,                   // 0-100
-  "scheduleEnabled": false,
-  "scheduleStart": "19:00",           // "HH:MM"
-  "scheduleEnd": "07:00",
-  "scheduleBrightness": 40,           // 0-100 (0 = display off)
-  "team1": "NYY", "team2": "CAR", "team3": "", ... "team8": "",
-  "tv1": "Shrinking", "tv2": "", ... "tv8": "",
-  "stock1": "AAPL", "stock2": "MSFT", "stock3": "", ... "stock8": ""
+  "flights": { "enabled": true, "lat": 35.501, "lon": -80.874, "radiusMi": 25 },
+  "sports":  { "enabled": true, "ufc": false, "teams": ["NFL:DAL", "NBA:LAL"] },
+  "weather": { "enabled": true, "severity": "severe" },
+  "syncedAt": 1717000000000
 }
 ```
+The firmware sets the characteristic value to `{"ack":true,"syncedAt":<n>}` so the
+app's read-back **confirmed** succeeds.
 
-After a Full Sync the app reads the characteristic back and expects to decode the
-same/echo JSON to show "confirmed by matrix". If you don't support read-back it
-still works, it just shows "sent (not confirmed)".
-
----
-
-## 2) Live commands (pushed automatically while connected)
-
-Each is a small JSON with a `command` field, written whenever the user edits that
-area (debounced ~0.8s). Handle each `command`:
-
+## 2. Live commands (debounced, while connected)
+Each field edit pushes just its section:
 ```json
-{ "command": "brightness", "brightness": 60 }
-{ "command": "radius", "radius": 12 }
-{ "command": "schedule", "scheduleEnabled": true, "scheduleStart": "19:00", "scheduleEnd": "07:00", "scheduleBrightness": 40 }
-{ "command": "pin", "isPinned": true }
-{ "command": "teams", "teams": ["NYY","CAR"] }
-{ "command": "shows", "shows": ["Shrinking","Ted Lasso"] }
-{ "command": "stocks", "stock1": "AAPL", "stock2": "MSFT", ... "stock8": "" }
-{ "command": "message", "showCustomMessage": true, "line1": "...", "line2": "...", "line3": "..." }
-{ "command": "flight", "trackFlight": true, "flightIdent": "DAL520" }
-{ "command": "weather", "showWeather": true, "lat": 35.584, "lon": -80.8685 }
-{ "command": "zone", "trackingMode": "polygon", "polygon": [[lat,lon],...] }
-{ "command": "flash_test", "ts": 1719000000000 }
-{ "command": "wifi", "ssid": "MyNetwork", "password": "secret" }
-{ "command": "transitions", "fadeSpeed": 5, "holdDurationMs": 12000, "showLKN": true, "showFolly": true, "showCountdown": true, "countdownLabel": "BALTIC CRUISE", "countdownDate": "2026-09-14" }
+{ "command": "flights", "enabled": true, "lat": 35.5, "lon": -80.8, "radiusMi": 30 }
+{ "command": "sports",  "enabled": true, "ufc": true, "teams": ["MLB:NYY"] }
+{ "command": "weather", "enabled": true, "severity": "moderate" }
+```
+`teams` entries are always `"<LEAGUE>:<ABBR>"` where LEAGUE ∈ NFL|NBA|MLB|NHL and
+ABBR is the ESPN abbreviation.
+
+`severity` ∈ `minor | moderate | severe | extreme` (minimum threshold to display).
+
+## 3. Wi-Fi provisioning
+```json
+{ "command": "wifi", "ssid": "MyHomeWiFi", "pass": "hunter2" }
 ```
 
-Notes:
-- `teams`/`shows` arrays only include non-empty entries.
-- `stocks` are sent as `stock1..stock8` keys (empty string = unused slot).
-- On `wifi`, store the credentials, connect to Wi-Fi, then reboot/apply as needed.
+## 4. Flash test
+```json
+{ "command": "flash_test", "ts": 1717000000000 }
+```
 
 ---
 
-## 3) Wi-Fi status (NEW — firmware needs to send this back)
-
-The app now shows a live "Wi-Fi joined / failed" banner. To power it, after you
-receive a `{"command":"wifi",...}` and try to join, **notify** on the SAME
-characteristic (enable notifications on it) with one of:
-
+## Notify back → app (same characteristic)
+After a Wi-Fi join attempt, the firmware **notifies** one of:
 ```json
 { "wifiStatus": "connected", "ip": "192.168.1.42" }
 { "wifiStatus": "failed" }
 ```
-
-The app subscribes to notifications right after sending Wi-Fi creds. Until your
-firmware sends this, the app just shows "Sent · waiting for the matrix to join…".
-(`ip` is optional; if present it's displayed.)
+The Device tab shows a live banner: *sending → waiting → joined <ip> / failed*.

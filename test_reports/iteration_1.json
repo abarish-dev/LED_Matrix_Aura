@@ -28,6 +28,6 @@
   "seed_data_creation": "None. App uses local AsyncStorage/IndexedDB only.",
   "retest_needed": false,
   "should_main_agent_self_test": true,
-  "context_for_next_testing_agent": "MVP frontend fully verified via Playwright at 390x844 mobile viewport against https://bluetooth-led-sync.preview.emergentagent.com/. testIDs used: connect-button, connection-status-pill, ble-unsupported-hint, radius-value, radius-slider, team-1-input, team-2-input, show-1-input, show-2-input, show-3-input, sync-settings-button, app-toast. Slider does NOT respond to keyboard arrows (@react-native-community/slider web quirk) but does respond to mouse click/drag — use bounding_box + mouse.click/drag to change values. AsyncStorage persists to IndexedDB on web, so a page.reload() correctly restores values.",
+  "context_for_next_testing_agent": "MVP frontend fully verified via Playwright at 390x844 mobile viewport against https://smart-matrix-hub.preview.emergentagent.com/. testIDs used: connect-button, connection-status-pill, ble-unsupported-hint, radius-value, radius-slider, team-1-input, team-2-input, show-1-input, show-2-input, show-3-input, sync-settings-button, app-toast. Slider does NOT respond to keyboard arrows (@react-native-community/slider web quirk) but does respond to mouse click/drag — use bounding_box + mouse.click/drag to change values. AsyncStorage persists to IndexedDB on web, so a page.reload() correctly restores values.",
   "rca_of_issue": "N/A — no failing scenarios."
 }

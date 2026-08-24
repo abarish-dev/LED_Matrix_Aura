@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { LogBox, StatusBar } from "react-native";
 import { useFonts } from "expo-font";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -9,25 +9,19 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { ToastProvider } from "@/src/components/Toast";
-import AnimatedSplash from "@/src/components/AnimatedSplash";
+import { MatrixProvider } from "@/src/store/matrix";
 import { colors } from "@/src/theme";
 
-// Disable logbox errors etc so that users can see the app
-// and agent works as expected.
 LogBox.ignoreAllLogs(true);
-
-// Keep the native splash visible from cold start until icon fonts register.
-// Required because @expo/vector-icons' componentDidMount fallback fires
-// Font.loadAsync against a broken vendor path if any <Icon> mounts before
-// the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [splashDone, setSplashDone] = useState(false);
   const [iconsLoaded, iconsError] = useIconFonts();
   const [fontsLoaded, fontsError] = useFonts({
-    Rajdhani: require("../assets/fonts/Rajdhani-Regular.ttf"),
-    "Rajdhani-Medium": require("../assets/fonts/Rajdhani-Medium.ttf"),
+    Barlow: require("../assets/fonts/BarlowCondensed-Regular.ttf"),
+    "Barlow-Medium": require("../assets/fonts/BarlowCondensed-Medium.ttf"),
+    "Barlow-SemiBold": require("../assets/fonts/BarlowCondensed-SemiBold.ttf"),
+    "Barlow-Bold": require("../assets/fonts/BarlowCondensed-Bold.ttf"),
     IBMPlexSans: require("../assets/fonts/IBMPlexSans-Regular.ttf"),
     "IBMPlexSans-Medium": require("../assets/fonts/IBMPlexSans-Medium.ttf"),
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
@@ -37,13 +31,9 @@ export default function RootLayout() {
   const fontsReady = fontsLoaded || fontsError;
 
   useEffect(() => {
-    if (iconsReady && fontsReady) {
-      SplashScreen.hideAsync();
-    }
+    if (iconsReady && fontsReady) SplashScreen.hideAsync();
   }, [iconsReady, fontsReady]);
 
-  // If the CDN is unreachable we fall through on error rather than wedging
-  // the app — icons will tofu, but the app still boots.
   if (!iconsReady || !fontsReady) return null;
 
   return (
@@ -51,11 +41,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <KeyboardProvider>
           <ToastProvider>
-            <StatusBar barStyle="light-content" backgroundColor={colors.surface} />
-            <Stack screenOptions={{ headerShown: false }} />
-            {!splashDone && (
-              <AnimatedSplash onDone={() => setSplashDone(true)} />
-            )}
+            <MatrixProvider>
+              <StatusBar barStyle="light-content" backgroundColor={colors.surface} />
+              <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />
+            </MatrixProvider>
           </ToastProvider>
         </KeyboardProvider>
       </SafeAreaProvider>

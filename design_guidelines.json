@@ -1,37 +1,37 @@
 {
-  "app_name": "MatrixControl",
-  "personality": "7 Dark-First Utility",
-  "personality_one_liner": "A sleek, sharp, command-center interface designed for instant operational clarity and hardware integration.",
+  "app_name": "Aura",
+  "personality": "7 Dark-First Utility DARK",
+  "personality_one_liner": "A tactical, high-contrast command center that feels like operating a piece of advanced hardware.",
   "color": {
-    "surface": "#121212",
-    "onSurface": "#F9FAFB",
-    "surfaceSecondary": "#1A1A1A",
-    "onSurfaceSecondary": "#E5E7EB",
-    "surfaceTertiary": "#262626",
-    "onSurfaceTertiary": "#D1D5DB",
-    "surfaceInverse": "#F9FAFB",
-    "onSurfaceInverse": "#111827",
-    "brand": "#FF6B00",
-    "brandPrimary": "#FF6B00",
-    "onBrandPrimary": "#111827",
-    "brandSecondary": "#E25A24",
-    "onBrandSecondary": "#111827",
-    "brandTertiary": "#4A2511",
-    "onBrandTertiary": "#FFB380",
-    "success": "#10B981",
-    "onSuccess": "#022C22",
-    "warning": "#F59E0B",
-    "onWarning": "#451A03",
-    "error": "#EF4444",
-    "onError": "#450A0A",
-    "info": "#9CA3AF",
-    "onInfo": "#111827",
-    "border": "#374151",
-    "borderStrong": "#FF6B00",
-    "divider": "#262626"
+    "surface": "#09090b",
+    "onSurface": "#fafafa",
+    "surfaceSecondary": "#18181b",
+    "onSurfaceSecondary": "#a1a1aa",
+    "surfaceTertiary": "#27272a",
+    "onSurfaceTertiary": "#d4d4d8",
+    "surfaceInverse": "#fafafa",
+    "onSurfaceInverse": "#09090b",
+    "brand": "#f59e0b",
+    "brandPrimary": "#f59e0b",
+    "onBrandPrimary": "#000000",
+    "brandSecondary": "#d97706",
+    "onBrandSecondary": "#ffffff",
+    "brandTertiary": "#381e02",
+    "onBrandTertiary": "#fde68a",
+    "success": "#10b981",
+    "onSuccess": "#022c22",
+    "warning": "#eab308",
+    "onWarning": "#422006",
+    "error": "#ef4444",
+    "onError": "#450a0a",
+    "info": "#0ea5e9",
+    "onInfo": "#082f49",
+    "border": "#27272a",
+    "borderStrong": "#3f3f46",
+    "divider": "#27272a"
   },
   "typography": {
-    "displayFontFamily": "Rajdhani",
+    "displayFontFamily": "Barlow Condensed",
     "textFontFamily": "IBM Plex Sans",
     "scale": {
       "sm": 12,
@@ -42,7 +42,7 @@
     }
   },
   "spacing": {
-    "rule": "Keep spacing tight and structural. Use md (12) for inner component padding and xl (24) between major sections.",
+    "rule": "Dense, tactical spacing for a command-center feel. Use padding to create clear hit targets without unnecessary empty space.",
     "xs": 4,
     "sm": 8,
     "md": 12,
@@ -58,21 +58,21 @@
     "pill": 999
   },
   "shadow_tier": "0",
-  "navigation": "stack_only",
+  "navigation": "bottom_tabs",
   "icon_set": "Phosphor",
   "glassmorphism": {
     "enabled": "false",
     "do's": [
-      "Use solid surface colors and sharp dividers to maintain high contrast and a hardware feel."
+      "Use solid surfaceSecondary and surfaceTertiary for elevation instead of glass, ensuring maximum contrast and legibility during live data tracking."
     ],
     "dont's": [
-      "No blur or glassmorphism on this app. Clarity and utility beat aesthetics here."
+      "Do not use blur or glassmorphism. This is a Dark-First Utility app."
     ]
   },
   "platform_libraries": {
     "glass": {
-      "ios": "expo-glass-effect",
-      "android": "expo-blur",
+      "ios": "solid surfaceSecondary",
+      "android": "solid surfaceSecondary",
       "low_end_android_fallback": "solid surfaceSecondary"
     },
     "image": "expo-image",
@@ -83,40 +83,100 @@
   },
   "screens": [
     {
-      "name": "ControlPanel",
-      "purpose": "A single command-center screen to connect to the matrix and sync configurations.",
+      "name": "Device (Home)",
+      "purpose": "Configure BLE connection to the matrix and provision Wi-Fi credentials.",
       "states": {
-        "loading": "Centered brandPrimary activity indicator with 'Initializing Device...' text in Rajdhani.",
-        "empty": "Not applicable as this is a static settings form with defaults.",
-        "error": "Full screen error state: 'Connection lost' with a Retry button."
+        "loading": "Centered amber pulse indicator",
+        "empty": "No devices found. Ensure matrix is in pairing mode.",
+        "error": "Failed to connect to Matrix. Retry pairing."
       },
-      "layout": "Root is a safe-area view. Top has an image-backed hero section with gradient scrim, housing the Connect button and status pill. Below is a ScrollView with three sections (Flight Tracking, Sports, TV Shows) separated by sharp dividers. The bottom has a sticky container for the Sync Settings button."
+      "layout": "Header: 'Aura' wordmark. Hero Card: 'abstract glowing led matrix dark background' with gradient scrim and connection status (Disconnected/Connected). Section 1: Bluetooth pairing list/button. Section 2: Wi-Fi Setup form (SSID, Password) with 'Send to Matrix' button. FAB floating at bottom right for 'Sync All Settings'."
+    },
+    {
+      "name": "Flights",
+      "purpose": "Configure overhead air-traffic tracking.",
+      "states": {
+        "loading": "Skeleton of slider and inputs",
+        "empty": "N/A",
+        "error": "Unable to save flight settings."
+      },
+      "layout": "Hero image: 'abstract flight radar aviation dark background' with gradient scrim and 'Flight Radar' title. Content: Master Enable Toggle. Input field for Location (ZIP or Lat/Lon). Thick slider for Search Radius (0-100 miles) with bright amber fill. FAB floating at bottom right."
+    },
+    {
+      "name": "Sports",
+      "purpose": "Select favorite teams across 5 major leagues.",
+      "states": {
+        "loading": "Skeleton grid of team cards",
+        "empty": "No league selected.",
+        "error": "Failed to load teams."
+      },
+      "layout": "Hero image: 'dark empty sports stadium arena lights' with gradient scrim. Content: Master Enable Toggle. Horizontal Scroll / Segmented Control for Leagues (NFL, NBA, MLB, NHL, UFC). Grid (2-col or 3-col) of team cards for the selected league. Selected teams get a 1.5pt borderStrong outline in brandPrimary (Amber) and a solid brandTertiary background. FAB floating at bottom right."
+    },
+    {
+      "name": "Weather",
+      "purpose": "Enable local NWS weather alerts and set severity threshold.",
+      "states": {
+        "loading": "Skeleton of segmented controls",
+        "empty": "N/A",
+        "error": "Failed to save weather settings."
+      },
+      "layout": "Hero image: 'dark stormy weather radar abstract map' with gradient scrim. Content: Master Enable Toggle. Stacked radio cards for Severity Level (Minor, Moderate, Severe, Extreme) using surfaceSecondary for inactive, brandTertiary for active. FAB floating at bottom right."
     }
   ],
   "images": {
-    "hero_led_matrix": {
-      "url": "https://images.pexels.com/photos/29149453/pexels-photo-29149453.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-      "alt": "Abstract orange LED matrix honeycomb pattern"
-    }
-  },
-  "haptics": {
-    "events": {
-      "connect_press": "medium",
-      "slider_change": "selection",
-      "input_focus": "light",
-      "sync_success": "success"
+    "hero_device": {
+      "url": "https://images.pexels.com/photos/30547576/pexels-photo-30547576.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Vibrant digital art showcasing an abstract matrix with red and black hues."
+    },
+    "hero_flights": {
+      "url": "https://images.pexels.com/photos/6861359/pexels-photo-6861359.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Night view of illuminated airplane cockpit with runway visible"
+    },
+    "hero_sports": {
+      "url": "https://images.pexels.com/photos/15779126/pexels-photo-15779126.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Aerial view of an illuminated sports stadium at night"
+    },
+    "hero_weather": {
+      "url": "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc3Rvcm15JTIwd2VhdGhlciUyMHJhZGFyJTIwYWJzdHJhY3QlMjBtYXB8ZW58MHx8fHwxNzg3NjE0Mjc2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "dark stormy weather radar abstract map"
+    },
+    "team_cowboys": {
+      "url": "https://images.pexels.com/photos/13868714/pexels-photo-13868714.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Dallas Cowboys team image"
+    },
+    "team_lakers": {
+      "url": "https://images.pexels.com/photos/20654860/pexels-photo-20654860.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Los Angeles Lakers team image"
+    },
+    "team_yankees": {
+      "url": "https://images.unsplash.com/photo-1747257490779-5bdae916478f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwxfHxOZXclMjBZb3JrJTIwWWFua2VlcyUyMGxvZ28lMjB0cmFuc3BhcmVudCUyMHBuZ3xlbnwwfHx8fDE3ODc2MTQyNjV8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "New York Yankees team image"
+    },
+    "team_ufc": {
+      "url": "https://images.pexels.com/photos/9176715/pexels-photo-9176715.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "UFC team image"
+    },
+    "team_mapleleafs": {
+      "url": "https://images.pexels.com/photos/7069380/pexels-photo-7069380.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Toronto Maple Leafs team image"
     }
   },
   "instructions_to_main_agent": [
-    "Strict Typography Weight: Never use font weights above 500 (no SemiBold, Bold, etc). Rely on Rajdhani's condensed nature and larger sizes (xl/2xl) for hierarchy.",
-    "Banned Colors: Under no circumstances should any blue, indigo, purple, or violet be used. We are strictly adhering to the Ember (brand) + Obsidian (surface) palette.",
-    "Hero Section Gradient Scrim: The hero_led_matrix image must have a vertical gradient scrim overlay (transparent at 0% -> surface at 100%) to ensure the Connect button and text have perfect contrast.",
-    "Connection Status Pill: Design a pill with a colored dot (success for Connected, warning for Scanning, error for Disconnected) and uppercase text. This lives prominently in the hero section.",
-    "Slider Component: Build or use a slider for Flight Tracking. The track is surfaceTertiary, fill is brandPrimary. Display the live value (e.g., '3 MI') prominently in Rajdhani next to or above the slider.",
-    "Text Input Styling: Inputs use surfaceTertiary background with no border. On focus, add a 1.5pt borderStrong outline. Labels must sit above the input, never floating.",
-    "Input Avatars / Logos: We attempted to fetch PNG logos for NYY, CAR, and Ted Lasso but standard searches returned stock photos instead of transparent graphics (original queries: 'New York Yankees logo transparent png', etc.). Use the Initials Avatar fallback for the leading visual inside these text inputs (e.g., a surfaceSecondary square box containing 'NY' in onSurface text). Keep the original queries noted in comments for future refetching.",
-    "Sticky Sync CTA: The 'Sync Settings' button must be fixed at the bottom of the screen (absolute position, background: surface, borderTop: divider). The ScrollView content must have enough bottom padding so it is not hidden by this sticky area.",
-    "Custom Toast: Implement a custom top or bottom toast for the 'Sync Settings' success message. Do not use default Alert. Use surfaceSecondary background with a success-colored icon.",
-    "No Emoji: Do not use emojis anywhere in the UI. Use Phosphor icons instead."
-  ]
+    "Use Dark-First Utility guidelines strictly. DO NOT use Glassmorphism. Use solid surfaceSecondary instead.",
+    "Implement a bottom tab bar with 4 tabs: Device, Flights, Sports, Weather.",
+    "Place a persistent floating action button (FAB) at the bottom right corner (above the tab bar) to trigger 'Sync All Settings' globally.",
+    "MANDATORY SCRIM: For all hero images at the top of each screen, implement a vertical LinearGradient scrim from transparent to >=75% surfaceInverse (black) at the bottom, so title text overlay is legible.",
+    "For the Sports screen team grid, use the provided fallback images since transparent logos weren't perfectly matched. Render them as cover images in the team cards with a gradient scrim at the bottom containing the team name.",
+    "Use Barlow Condensed for all section headings, numeric metrics, and titles. Use IBM Plex Sans for body, labels, and forms.",
+    "Forms on the Device screen (Wi-Fi Setup) should have labels above the input fields. Use surfaceTertiary for the input background.",
+    "Sliders must use a thick track (surfaceTertiary) with brandPrimary (Amber) for the filled track, and a large white thumb."
+  ],
+  "haptics": {
+    "button_press": "impactLight",
+    "toggle_switch": "impactMedium",
+    "slider_move": "selection",
+    "tab_change": "impactLight",
+    "sync_complete": "notificationSuccess",
+    "error": "notificationError"
+  }
 }
