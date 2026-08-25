@@ -93,6 +93,11 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Alert Chime**: `weather.alertSound` toggle plays a bundled chime (`assets/sounds/alert.wav`, expo-audio) + haptic + toast on a NEW Severe/Extreme alert; first load seeded silently. Phone-only (not pushed to matrix).
 - Verified via testing_agent iteration_15 (frontend), no regressions.
 
+## Updates (2026-06 — round 7)
+- [x] **Quiet Chime Hours**: `weather.quietHours {enabled,startHour,endHour}` (store.updateQuietHours). During the window only Extreme alerts chime; Severe suppressed (`isQuietNow`, midnight-wrap). UI under Alert Chime with From/To steppers.
+- [x] **Multi-Location**: `weather.secondLocation {zip,lat,lon,city,state}` (store.updateSecondLocation). ZIP geocoded; second town's NWS alerts fetched + listed in a "Second Location" card, tappable into the shared detail sheet. Chime runs for both locations (separate seen-sets).
+- Verified via testing_agent iteration_16 (frontend), all persist, no regressions.
+
 ## Backlog
 - **P2:** Panel geometry auto-detect.
-- **P3:** Proxy adsb.lol/ESPN through backend for web-preview parity; add testIDs; migrate shadow*/pointerEvents props in SyncFab; code comment noting alertSound is phone-only.
+- **P3:** Proxy adsb.lol/ESPN through backend for web parity; add testIDs to Weather elements; migrate shadow*/pointerEvents (SyncFab) & useNativeDriver (Toast) for web.

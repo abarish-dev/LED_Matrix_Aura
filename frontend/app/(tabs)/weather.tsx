@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAudioPlayer } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -7,6 +7,7 @@ import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
+import { geocodeZip } from "@/src/services/geocode";
 import {
   activeAlerts,
   severityColorHex,
@@ -15,6 +16,38 @@ import {
   type Alert,
   type LocationInfo,
 } from "@/src/services/weather";
+
+function isQuietNow(enabled: boolean, startHour: number, endHour: number): boolean {
+  if (!enabled) return false;
+  const h = new Date().getHours();
+  if (startHour === endHour) return false;
+  if (startHour < endHour) return h >= startHour && h < endHour;
+  return h >= startHour || h < endHour; // wraps midnight
+}
+
+function fmtHour(h: number): string {
+  const period = h < 12 ? "AM" : "PM";
+  let hr = h % 12;
+  if (hr === 0) hr = 12;
+  return `${hr} ${period}`;
+}
+
+function HourStepper({ label, hour, onChange }: { label: string; hour: number; onChange: (h: number) => void }) {
+  return (
+    <View style={styles.stepper}>
+      <Text style={styles.stepperLabel}>{label}</Text>
+      <View style={styles.stepperControls}>
+        <Pressable onPress={() => { Haptics.selectionAsync(); onChange((hour + 23) % 24); }} style={styles.stepBtn}>
+          <Ionicons name="remove" size={18} color={colors.brand} />
+        </Pressable>
+        <Text style={styles.stepperValue}>{fmtHour(hour)}</Text>
+        <Pressable onPress={() => { Haptics.selectionAsync(); onChange((hour + 1) % 24); }} style={styles.stepBtn}>
+          <Ionicons name="add" size={18} color={colors.brand} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 const HERO =
   "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc3Rvcm15JTIwd2VhdGhlciUyMHJhZGFyJTIwYWJzdHJhY3QlMjBtYXB8ZW58MHx8fHwxNzg3NjE0Mjc2fDA&ixlib=rb-4.1.0&q=85";
@@ -33,7 +66,7 @@ const SEVERITIES: {
 ];
 
 export default function WeatherScreen() {
-  const { settings, updateWeather, bleStatus, weatherTest } = useMatrix();
+  const { settings, updateWeather, updateQuietHours, updateSecondLocation, bleStatus, weatherTest } = useMatrix();
   const w = settings.weather;
   const f = settings.flights;
   const located = f.lat != null && f.lon != null;
@@ -44,11 +77,35 @@ export default function WeatherScreen() {
   const [checked, setChecked] = useState(false);
   const [locInfo, setLocInfo] = useState<LocationInfo | null>(null);
   const [detail, setDetail] = useState<Alert | null>(null);
+  const [secondAlerts, setSecondAlerts] = useState<Alert[]>([]);
+  const [zip2, setZip2] = useState(w.secondLocation.zip);
   const fetchIdRef = useRef(0);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const firstLoadRef = useRef(true);
+  const seen2Ref = useRef<Set<string>>(new Set());
+  const first2Ref = useRef(true);
 
   const chime = useAudioPlayer(require("@/assets/sounds/alert.wav"));
+
+  useEffect(() => setZip2(w.secondLocation.zip), [w.secondLocation.zip]);
+
+  const chimeFor = useCallback(
+    (list: Alert[], seenRef: React.MutableRefObject<Set<string>>, firstRef: React.MutableRefObject<boolean>, label?: string) => {
+      const fresh = list.filter(
+        (a) => !seenRef.current.has(a.id) && (a.severity === "Severe" || a.severity === "Extreme"),
+      );
+      list.forEach((a) => seenRef.current.add(a.id));
+      const quiet = isQuietNow(w.quietHours.enabled, w.quietHours.startHour, w.quietHours.endHour);
+      const allowed = fresh.filter((a) => !(quiet && a.severity === "Severe"));
+      if (!firstRef.current && allowed.length > 0 && w.alertSound) {
+        try { chime.seekTo(0); chime.play(); } catch { /* web */ }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        toast.show(`⚠️ ${allowed[0].event}${label ? ` · ${label}` : ""}`, "error");
+      }
+      firstRef.current = false;
+    },
+    [w.alertSound, w.quietHours.enabled, w.quietHours.startHour, w.quietHours.endHour, chime, toast],
+  );
 
   const loadAlerts = useCallback(async () => {
     if (f.lat == null || f.lon == null) return;
@@ -56,30 +113,11 @@ export default function WeatherScreen() {
     setAlertsLoading(true);
     const list = await activeAlerts(f.lat, f.lon);
     if (id !== fetchIdRef.current) return;
-
-    // Detect brand-new Severe/Extreme alerts for the optional chime.
-    const newSevere = list.filter(
-      (a) =>
-        !seenIdsRef.current.has(a.id) &&
-        (a.severity === "Severe" || a.severity === "Extreme"),
-    );
-    list.forEach((a) => seenIdsRef.current.add(a.id));
-    if (!firstLoadRef.current && newSevere.length > 0 && w.alertSound) {
-      try {
-        chime.seekTo(0);
-        chime.play();
-      } catch {
-        /* audio unavailable (e.g. web preview) */
-      }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      toast.show(`⚠️ ${newSevere[0].event}`, "error");
-    }
-    firstLoadRef.current = false;
-
+    chimeFor(list, seenIdsRef, firstLoadRef);
     setAlerts(list);
     setChecked(true);
     setAlertsLoading(false);
-  }, [f.lat, f.lon, w.alertSound, chime, toast]);
+  }, [f.lat, f.lon, chimeFor]);
 
   useEffect(() => {
     if (f.lat == null || f.lon == null) return;
@@ -95,6 +133,44 @@ export default function WeatherScreen() {
     if (f.lat == null || f.lon == null) return;
     locationInfo(f.lat, f.lon).then(setLocInfo);
   }, [f.lat, f.lon]);
+
+  // Second location alerts
+  const s2 = w.secondLocation;
+  const loadSecond = useCallback(async () => {
+    if (s2.lat == null || s2.lon == null) {
+      setSecondAlerts([]);
+      return;
+    }
+    const list = await activeAlerts(s2.lat, s2.lon);
+    chimeFor(list, seen2Ref, first2Ref, s2.city || "2nd");
+    setSecondAlerts(list);
+  }, [s2.lat, s2.lon, s2.city, chimeFor]);
+
+  useEffect(() => {
+    if (s2.lat == null || s2.lon == null) {
+      setSecondAlerts([]);
+      return;
+    }
+    first2Ref.current = true;
+    seen2Ref.current = new Set();
+    loadSecond();
+    const iv = setInterval(loadSecond, 60000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s2.lat, s2.lon]);
+
+  const onZip2 = async (val: string) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 5);
+    setZip2(clean);
+    updateSecondLocation({ zip: clean });
+    if (clean.length === 5) {
+      const res = await geocodeZip(clean);
+      if (res) updateSecondLocation({ lat: res.lat, lon: res.lon, city: res.city, state: res.state });
+      else toast.show("Couldn't find that ZIP code.", "error");
+    } else if (clean.length === 0) {
+      updateSecondLocation({ lat: null, lon: null, city: "", state: "" });
+    }
+  };
 
   const onPreview = async () => {
     if (bleStatus !== "connected") {
@@ -212,6 +288,73 @@ export default function WeatherScreen() {
             Play a chime on your phone when a new severe or extreme alert appears
             for your area.
           </Text>
+          {w.alertSound && (
+            <>
+              <View style={styles.divider} />
+              <ToggleRow
+                label="Quiet hours"
+                icon="moon"
+                value={w.quietHours.enabled}
+                onValueChange={(v) => updateQuietHours({ enabled: v })}
+              />
+              {w.quietHours.enabled && (
+                <>
+                  <View style={styles.nightRow}>
+                    <HourStepper label="From" hour={w.quietHours.startHour} onChange={(h) => updateQuietHours({ startHour: h })} />
+                    <HourStepper label="To" hour={w.quietHours.endHour} onChange={(h) => updateQuietHours({ endHour: h })} />
+                  </View>
+                  <Text style={styles.clockHint}>
+                    During these hours only extreme alerts chime — lower-severity
+                    ones stay silent so they don't wake you.
+                  </Text>
+                </>
+              )}
+            </>
+          )}
+        </Card>
+
+        <SectionLabel>Second Location</SectionLabel>
+        <Card>
+          <Text style={styles.fieldLabel}>A family member's ZIP</Text>
+          <TextInput
+            value={zip2}
+            onChangeText={onZip2}
+            placeholder="e.g. 33101"
+            placeholderTextColor={colors.onSurfaceSecondary}
+            keyboardType="number-pad"
+            maxLength={5}
+            style={styles.input}
+          />
+          {s2.lat != null ? (
+            <Text style={styles.locText}>
+              Watching {s2.city}, {s2.state}
+              {secondAlerts.length > 0 ? ` · ${secondAlerts.length} alert${secondAlerts.length === 1 ? "" : "s"}` : " · all clear"}
+            </Text>
+          ) : (
+            <Text style={styles.locText}>Add a second town to see its alerts here too.</Text>
+          )}
+          {secondAlerts.slice(0, 4).map((a, i) => {
+            const c = severityColorHex(a.severity);
+            return (
+              <Pressable
+                key={a.id + i}
+                onPress={() => { Haptics.selectionAsync(); setDetail(a); }}
+                style={[styles.alertCard, { borderLeftColor: c, marginTop: spacing.sm }]}
+              >
+                <View style={styles.alertTop}>
+                  <Ionicons name="warning" size={16} color={c} />
+                  <Text style={styles.alertEvent} numberOfLines={1}>{a.event}</Text>
+                  <View style={[styles.sevChip, { backgroundColor: c + "22" }]}>
+                    <Text style={[styles.sevChipText, { color: c }]}>{a.severity}</Text>
+                  </View>
+                </View>
+                <View style={styles.alertFootRow}>
+                  {!!a.expires && <Text style={styles.alertExpires}>{expiresLabel(a.expires)}</Text>}
+                  <Text style={styles.tapHint}>Tap for details ›</Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </Card>
 
         <SectionLabel>Minimum Severity</SectionLabel>
@@ -401,6 +544,35 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceSecondary,
     marginTop: spacing.sm,
     lineHeight: 18,
+  },
+  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
+  nightRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.sm },
+  stepper: { flex: 1 },
+  stepperLabel: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginBottom: spacing.xs },
+  stepperControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.xs,
+    height: 44,
+  },
+  stepBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  stepperValue: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
+  fieldLabel: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginBottom: spacing.xs },
+  input: {
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.onSurface,
+    fontFamily: fonts.text,
+    fontSize: fontSize.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
   },
   sevCard: {
     flexDirection: "row",

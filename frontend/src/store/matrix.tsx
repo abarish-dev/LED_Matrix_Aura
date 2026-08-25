@@ -44,7 +44,14 @@ export type Settings = {
     landingAlert: boolean;
   };
   sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[] };
-  weather: { enabled: boolean; severity: Severity; showClock: boolean; alertSound: boolean };
+  weather: {
+    enabled: boolean;
+    severity: Severity;
+    showClock: boolean;
+    alertSound: boolean;
+    quietHours: { enabled: boolean; startHour: number; endHour: number };
+    secondLocation: { zip: string; lat: number | null; lon: number | null; city: string; state: string };
+  };
   brightness: number; // 0-100 matrix brightness
   holidayThemes: boolean; // shift accent colors on holidays
   nightMode: {
@@ -75,7 +82,14 @@ export const DEFAULT_SETTINGS: Settings = {
     landingAlert: true,
   },
   sports: { enabled: true, teams: [], ufc: false, rivals: [] },
-  weather: { enabled: true, severity: "severe", showClock: false, alertSound: false },
+  weather: {
+    enabled: true,
+    severity: "severe",
+    showClock: false,
+    alertSound: false,
+    quietHours: { enabled: false, startHour: 22, endHour: 7 },
+    secondLocation: { zip: "", lat: null, lon: null, city: "", state: "" },
+  },
   brightness: 80,
   holidayThemes: true,
   nightMode: {
@@ -108,6 +122,8 @@ type MatrixContextValue = {
   updateFlights: (patch: Partial<Settings["flights"]>) => void;
   updateSports: (patch: Partial<Settings["sports"]>) => void;
   updateWeather: (patch: Partial<Settings["weather"]>) => void;
+  updateQuietHours: (patch: Partial<Settings["weather"]["quietHours"]>) => void;
+  updateSecondLocation: (patch: Partial<Settings["weather"]["secondLocation"]>) => void;
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
   toggleRival: (key: string) => void;
@@ -297,6 +313,35 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     },
     [persist, livePush],
   );
+
+  const updateQuietHours = useCallback(
+    (patch: Partial<Settings["weather"]["quietHours"]>) => {
+      setSettings((prev) => {
+        const next = {
+          ...prev,
+          weather: { ...prev.weather, quietHours: { ...prev.weather.quietHours, ...patch } },
+        };
+        persist(next);
+        return next;
+      });
+    },
+    [persist],
+  );
+
+  const updateSecondLocation = useCallback(
+    (patch: Partial<Settings["weather"]["secondLocation"]>) => {
+      setSettings((prev) => {
+        const next = {
+          ...prev,
+          weather: { ...prev.weather, secondLocation: { ...prev.weather.secondLocation, ...patch } },
+        };
+        persist(next);
+        return next;
+      });
+    },
+    [persist],
+  );
+
 
   const toggleTeam = useCallback(
     (team: SavedTeam) => {
@@ -499,6 +544,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     updateFlights,
     updateSports,
     updateWeather,
+    updateQuietHours,
+    updateSecondLocation,
     toggleTeam,
     reorderTeams,
     toggleRival,
