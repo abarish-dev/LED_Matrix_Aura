@@ -156,6 +156,16 @@ export default function FlightsScreen() {
                 Great for following a family member's trip — the matrix pins this
                 flight and shows its altitude, heading and distance.
               </Text>
+              <View style={styles.trackDivider} />
+              <ToggleRow
+                label="Landing alert"
+                icon="alert-circle"
+                value={f.landingAlert}
+                onValueChange={(v) => updateFlights({ landingAlert: v })}
+              />
+              <Text style={styles.locText}>
+                Flash the matrix when this flight starts descending or lands.
+              </Text>
             </>
           )}
         </Card>

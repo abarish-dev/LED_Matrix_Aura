@@ -18,11 +18,11 @@ bytes on the JS side, but the ESP32 receives **raw UTF-8** — feed it straight 
 Sent on connect and when the user taps **SYNC**.
 ```json
 {
-  "flights": { "enabled": true, "lat": 35.501, "lon": -80.874, "radiusMi": 25, "trackFlight": false, "flightIdent": "" },
+  "flights": { "enabled": true, "lat": 35.501, "lon": -80.874, "radiusMi": 25, "trackFlight": false, "flightIdent": "", "landingAlert": true },
   "sports":  { "enabled": true, "ufc": false, "teams": ["NFL:DAL", "NBA:LAL"] },
   "weather": { "enabled": true, "severity": "severe" },
   "brightness": 80,
-  "nightMode": { "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20 },
+  "nightMode": { "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20, "weekend": { "enabled": false, "startHour": 23, "endHour": 8, "dimLevel": 20 } },
   "syncedAt": 1717000000000
 }
 ```
@@ -32,11 +32,11 @@ app's read-back **confirmed** succeeds.
 ## 2. Live commands (debounced, while connected)
 Each field edit pushes just its section:
 ```json
-{ "command": "flights", "enabled": true, "lat": 35.5, "lon": -80.8, "radiusMi": 30, "trackFlight": true, "flightIdent": "AAL123" }
+{ "command": "flights", "enabled": true, "lat": 35.5, "lon": -80.8, "radiusMi": 30, "trackFlight": true, "flightIdent": "AAL123", "landingAlert": true }
 { "command": "sports",  "enabled": true, "ufc": true, "teams": ["MLB:NYY"] }
 { "command": "weather", "enabled": true, "severity": "moderate" }
 { "command": "brightness", "value": 60 }
-{ "command": "night", "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20 }
+{ "command": "night", "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20, "weekend": { "enabled": true, "startHour": 23, "endHour": 8, "dimLevel": 30 } }
 ```
 `teams` entries are always `"<LEAGUE>:<ABBR>"` where LEAGUE ∈ NFL|NBA|MLB|NHL and
 ABBR is the ESPN abbreviation. The **order** of the array is the rotation order
@@ -49,7 +49,10 @@ NTP (set your timezone with `TZ_INFO` in `main.cpp`).
 
 When `flights.trackFlight` is true and `flightIdent` is set (e.g. `"AAL123"`), the
 matrix pins that one flight (via adsb.lol `/v2/callsign/<ident>`) instead of the
-nearest aircraft.
+nearest aircraft, draws a heading arrow, and — if `landingAlert` is on — flashes a
+"DESCENDING / LANDED" card when that flight drops sharply or gets very low.
+
+`nightMode.weekend` (when `enabled`) overrides the weekday schedule on Sat/Sun.
 
 ## 3. Wi-Fi provisioning
 ```json

@@ -25,6 +25,7 @@ static void applyFlights(JsonObjectConst o) {
   if (o["radiusMi"].is<int>())  gSettings.flights.radiusMi = o["radiusMi"];
   if (o["trackFlight"].is<bool>())        gSettings.flights.trackFlight = o["trackFlight"];
   if (o["flightIdent"].is<const char*>()) gSettings.flights.flightIdent = String((const char*)o["flightIdent"]);
+  if (o["landingAlert"].is<bool>())       gSettings.flights.landingAlert = o["landingAlert"];
 }
 
 static void applySports(JsonObjectConst o) {
@@ -51,6 +52,13 @@ static void applyNight(JsonObjectConst o) {
   if (o["startHour"].is<int>())  gSettings.night.startHour = o["startHour"];
   if (o["endHour"].is<int>())    gSettings.night.endHour   = o["endHour"];
   if (o["dimLevel"].is<int>())   gSettings.night.dimLevel  = o["dimLevel"];
+  JsonObjectConst w = o["weekend"];
+  if (!w.isNull()) {
+    if (w["enabled"].is<bool>())  gSettings.night.weekend.enabled   = w["enabled"];
+    if (w["startHour"].is<int>()) gSettings.night.weekend.startHour = w["startHour"];
+    if (w["endHour"].is<int>())   gSettings.night.weekend.endHour   = w["endHour"];
+    if (w["dimLevel"].is<int>())  gSettings.night.weekend.dimLevel  = w["dimLevel"];
+  }
 }
 
 class CharCallbacks : public NimBLECharacteristicCallbacks {

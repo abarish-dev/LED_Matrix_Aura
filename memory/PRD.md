@@ -72,6 +72,13 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Fixed** user-reported bug: Sports league row was a horizontal ScrollView (UFC cut off, no mouse-drag) → now a fixed equal-width row; all 5 leagues always visible.
 - All verified via testing_agent iteration_10 (frontend). Settings persist in `aura_settings_v1`.
 
+## Updates (2026-06 — round 3 enhancements)
+- [x] **Flight Path arrow**: firmware `Display::drawArrow` draws a heading arrow on the tracked-flight card (0°=N, clockwise).
+- [x] **Landing Alert**: `flights.landingAlert` toggle (Flights tab); firmware watches the tracked flight's altitude and flashes a "DESCENDING/LANDED" card on a sharp drop / very-low altitude.
+- [x] **Team Score Colors**: Sports rotation rows tint green (winning) / red (losing) with a left accent bar + colored score, driven by the ESPN score line (device-only — CORS-blocked in web preview).
+- [x] **Weekend Mode**: `nightMode.weekend` second dimming schedule (Device tab, `updateWeekend`); firmware uses it on Sat/Sun (NTP `tm_wday`).
+- All verified via testing_agent iteration_11 (frontend). Persist in `aura_settings_v1`.
+
 ## Backlog
 - **P2:** Panel geometry auto-detect.
 - **P3:** Proxy ESPN through backend so score preview shows in web preview too; slider a11y (aria-value*).

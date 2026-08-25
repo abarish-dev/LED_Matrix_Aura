@@ -41,6 +41,7 @@ export type Settings = {
     radiusMi: number;
     trackFlight: boolean;
     flightIdent: string;
+    landingAlert: boolean;
   };
   sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean };
   weather: { enabled: boolean; severity: Severity };
@@ -50,6 +51,12 @@ export type Settings = {
     startHour: number; // 0-23
     endHour: number; // 0-23
     dimLevel: number; // 0-100
+    weekend: {
+      enabled: boolean; // use a separate schedule Sat/Sun
+      startHour: number;
+      endHour: number;
+      dimLevel: number;
+    };
   };
 };
 
@@ -64,11 +71,18 @@ export const DEFAULT_SETTINGS: Settings = {
     radiusMi: 25,
     trackFlight: false,
     flightIdent: "",
+    landingAlert: true,
   },
   sports: { enabled: true, teams: [], ufc: false },
   weather: { enabled: true, severity: "severe" },
   brightness: 80,
-  nightMode: { enabled: false, startHour: 22, endHour: 7, dimLevel: 20 },
+  nightMode: {
+    enabled: false,
+    startHour: 22,
+    endHour: 7,
+    dimLevel: 20,
+    weekend: { enabled: false, startHour: 23, endHour: 8, dimLevel: 20 },
+  },
 };
 
 export type WifiStatus = "idle" | "sending" | "waiting" | "joined" | "failed";
@@ -95,7 +109,8 @@ type MatrixContextValue = {
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
   updateBrightness: (value: number) => void;
-  updateNightMode: (patch: Partial<Settings["nightMode"]>) => void;
+  updateNightMode: (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => void;
+  updateWeekend: (patch: Partial<Settings["nightMode"]["weekend"]>) => void;
 
   // BLE actions (throw BleError on failure)
   connect: () => Promise<{ name: string }>;
@@ -123,6 +138,7 @@ export function buildFullPayload(s: Settings) {
       radiusMi: s.flights.radiusMi,
       trackFlight: s.flights.trackFlight,
       flightIdent: s.flights.flightIdent,
+      landingAlert: s.flights.landingAlert,
     },
     sports: {
       enabled: s.sports.enabled,
@@ -139,8 +155,29 @@ export function buildFullPayload(s: Settings) {
       startHour: s.nightMode.startHour,
       endHour: s.nightMode.endHour,
       dimLevel: s.nightMode.dimLevel,
+      weekend: {
+        enabled: s.nightMode.weekend.enabled,
+        startHour: s.nightMode.weekend.startHour,
+        endHour: s.nightMode.weekend.endHour,
+        dimLevel: s.nightMode.weekend.dimLevel,
+      },
     },
     syncedAt: Date.now(),
+  };
+}
+
+function buildNightPayload(n: Settings["nightMode"]) {
+  return {
+    enabled: n.enabled,
+    startHour: n.startHour,
+    endHour: n.endHour,
+    dimLevel: n.dimLevel,
+    weekend: {
+      enabled: n.weekend.enabled,
+      startHour: n.weekend.startHour,
+      endHour: n.weekend.endHour,
+      dimLevel: n.weekend.dimLevel,
+    },
   };
 }
 
@@ -209,6 +246,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           radiusMi: next.flights.radiusMi,
           trackFlight: next.flights.trackFlight,
           flightIdent: next.flights.flightIdent,
+          landingAlert: next.flights.landingAlert,
         });
         return next;
       });
@@ -300,16 +338,29 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateNightMode = useCallback(
-    (patch: Partial<Settings["nightMode"]>) => {
+    (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => {
       setSettings((prev) => {
         const next = { ...prev, nightMode: { ...prev.nightMode, ...patch } };
         persist(next);
-        livePush("night", {
-          enabled: next.nightMode.enabled,
-          startHour: next.nightMode.startHour,
-          endHour: next.nightMode.endHour,
-          dimLevel: next.nightMode.dimLevel,
-        });
+        livePush("night", buildNightPayload(next.nightMode));
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
+  const updateWeekend = useCallback(
+    (patch: Partial<Settings["nightMode"]["weekend"]>) => {
+      setSettings((prev) => {
+        const next = {
+          ...prev,
+          nightMode: {
+            ...prev.nightMode,
+            weekend: { ...prev.nightMode.weekend, ...patch },
+          },
+        };
+        persist(next);
+        livePush("night", buildNightPayload(next.nightMode));
         return next;
       });
     },
@@ -400,6 +451,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     reorderTeams,
     updateBrightness,
     updateNightMode,
+    updateWeekend,
     connect,
     disconnect,
     syncAll,

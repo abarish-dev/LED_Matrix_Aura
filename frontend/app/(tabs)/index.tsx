@@ -80,6 +80,7 @@ export default function DeviceScreen() {
     settings,
     updateBrightness,
     updateNightMode,
+    updateWeekend,
   } = useMatrix();
   const toast = useToast();
 
@@ -284,6 +285,51 @@ export default function DeviceScreen() {
               <Text style={styles.brightHint}>
                 Between these hours the matrix dims to this level automatically.
               </Text>
+
+              <View style={styles.nightDivider} />
+              <ToggleRow
+                label="Separate weekend schedule"
+                icon="calendar"
+                value={settings.nightMode.weekend.enabled}
+                onValueChange={(v) => updateWeekend({ enabled: v })}
+              />
+              {settings.nightMode.weekend.enabled && (
+                <>
+                  <Text style={[styles.brightHint, { marginBottom: spacing.sm }]}>
+                    Used on Saturdays &amp; Sundays.
+                  </Text>
+                  <View style={styles.nightRow}>
+                    <HourStepper
+                      label="From"
+                      hour={settings.nightMode.weekend.startHour}
+                      onChange={(h) => updateWeekend({ startHour: h })}
+                    />
+                    <HourStepper
+                      label="To"
+                      hour={settings.nightMode.weekend.endHour}
+                      onChange={(h) => updateWeekend({ endHour: h })}
+                    />
+                  </View>
+                  <View style={[styles.radiusHeader, { marginTop: spacing.md }]}>
+                    <Text style={styles.brightLabel}>Dim to</Text>
+                    <Text style={styles.brightValue}>
+                      {settings.nightMode.weekend.dimLevel}%
+                    </Text>
+                  </View>
+                  <Slider
+                    style={{ width: "100%", height: 40 }}
+                    minimumValue={0}
+                    maximumValue={80}
+                    step={5}
+                    value={settings.nightMode.weekend.dimLevel}
+                    minimumTrackTintColor={colors.brand}
+                    maximumTrackTintColor={colors.surfaceTertiary}
+                    thumbTintColor="#ffffff"
+                    onValueChange={() => Haptics.selectionAsync()}
+                    onSlidingComplete={(v) => updateWeekend({ dimLevel: Math.round(v) })}
+                  />
+                </>
+              )}
             </>
           )}
         </Card>

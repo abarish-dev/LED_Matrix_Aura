@@ -29,6 +29,7 @@ struct FlightCfg {
   int    radiusMi    = 25;
   bool   trackFlight = false;   // follow one specific flight
   String flightIdent = "";      // callsign / flight number to follow
+  bool   landingAlert = true;   // flash when tracked flight descends/lands
 };
 
 struct SportsCfg {
@@ -43,11 +44,19 @@ struct WeatherCfg {
   String severity = "severe"; // minor | moderate | severe | extreme
 };
 
-struct NightCfg {
+struct NightWindow {
   bool enabled   = false;
-  int  startHour = 22;  // 0-23
-  int  endHour   = 7;   // 0-23
-  int  dimLevel  = 20;  // 0-100 (%)
+  int  startHour = 23;
+  int  endHour   = 8;
+  int  dimLevel  = 20;
+};
+
+struct NightCfg {
+  bool       enabled   = false;
+  int        startHour = 22;  // 0-23
+  int        endHour   = 7;   // 0-23
+  int        dimLevel  = 20;  // 0-100 (%)
+  NightWindow weekend;        // separate Sat/Sun schedule
 };
 
 struct AuraSettings {

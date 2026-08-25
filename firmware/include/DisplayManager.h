@@ -67,6 +67,21 @@ static const char* headingToCompass(int deg) {
   return dirs[(int)((deg + 22) / 45) % 8];
 }
 
+// Small heading arrow: 0deg = pointing up (North), clockwise.
+inline void drawArrow(int cx, int cy, int deg, int len, uint16_t color) {
+  float r = radians((float)deg);
+  int tx = cx + (int)round(sin(r) * len);
+  int ty = cy - (int)round(cos(r) * len);
+  dma->drawLine(cx, cy, tx, ty, color);
+  // two barbs pointing back from the tip
+  for (int a = -140; a <= 140; a += 280) {
+    float ra = radians((float)(deg + a));
+    int bx = tx + (int)round(sin(ra) * (len * 0.55f));
+    int by = ty - (int)round(cos(ra) * (len * 0.55f));
+    dma->drawLine(tx, ty, bx, by, color);
+  }
+}
+
 // A single flight "card": callsign, airline, distance, altitude + heading.
 inline void flight(const String& callsign, int distanceMi, const String& airline,
                    int altFt = 0, int headingDeg = -1) {
@@ -84,6 +99,18 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
       snprintf(buf, sizeof(buf), "%d ft", altFt);
     centerText(buf, 48, rgb(120, 170, 255), 1);
   }
+  // Heading arrow in the top-right corner.
+  if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(245, 158, 11));
+  flip();
+}
+
+// A "now landing / descending" alert card for a tracked flight.
+inline void landing(const String& callsign, bool landed) {
+  clear();
+  dma->fillRect(0, 0, MATRIX_W, 14, rgb(16, 185, 129));
+  centerText(landed ? "LANDED" : "DESCENDING", 3, rgb(0, 0, 0), 1);
+  centerText(callsign.c_str(), 26, rgb(245, 158, 11), 1);
+  centerText(landed ? "arrived" : "on approach", 46, rgb(200, 200, 200), 1);
   flip();
 }
 

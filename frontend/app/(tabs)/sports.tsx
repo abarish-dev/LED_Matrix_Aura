@@ -107,6 +107,26 @@ export default function SportsScreen() {
     const t = findTeam(item.league, item.abbr);
     const line = scores[`${item.league}:${item.abbr}`];
     const scoreStr = scoreText(line, item.abbr);
+    const scored =
+      line &&
+      (line.state === "in" || line.state === "post") &&
+      line.teamScore != null &&
+      line.oppScore != null;
+    const outcome = scored
+      ? line!.teamScore! > line!.oppScore!
+        ? "win"
+        : line!.teamScore! < line!.oppScore!
+          ? "loss"
+          : "tie"
+      : null;
+    const outcomeColor =
+      outcome === "win"
+        ? colors.success
+        : outcome === "loss"
+          ? colors.error
+          : outcome === "tie"
+            ? colors.onSurfaceTertiary
+            : null;
     return (
       <ScaleDecorator>
         <Pressable
@@ -115,7 +135,11 @@ export default function SportsScreen() {
             drag();
           }}
           delayLongPress={150}
-          style={[styles.rotRow, isActive && styles.rotRowActive]}
+          style={[
+            styles.rotRow,
+            isActive && styles.rotRowActive,
+            outcomeColor && { borderLeftColor: outcomeColor, borderLeftWidth: 4 },
+          ]}
         >
           <Ionicons name="reorder-three" size={22} color={colors.onSurfaceSecondary} />
           <TeamBadge league={item.league} abbr={item.abbr} color={t?.color ?? "#555"} size={34} />
@@ -123,10 +147,7 @@ export default function SportsScreen() {
             <Text style={styles.rotName}>{t?.name ?? item.abbr}</Text>
             {scoreStr ? (
               <Text
-                style={[
-                  styles.rotScore,
-                  line?.state === "in" && { color: colors.success },
-                ]}
+                style={[styles.rotScore, outcomeColor ? { color: outcomeColor } : null]}
                 numberOfLines={1}
               >
                 {scoreStr}

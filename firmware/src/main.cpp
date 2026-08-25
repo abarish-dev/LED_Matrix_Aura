@@ -37,6 +37,7 @@ static Data::FlightInfo  gFlight;
 static Data::ScoreInfo   gScore;
 static Data::WeatherInfo gWeather;
 static String            gScoreKey;   // "NFL:DAL" of the current score card
+static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
 
 static bool wifiConnect() {
   if (gSettings.wifiSsid.isEmpty()) return false;
@@ -69,9 +70,17 @@ static void applyBrightnessForNow() {
   int b = gSettings.brightness;
   if (gSettings.night.enabled) {
     struct tm t;
-    if (getLocalTime(&t, 50) &&
-        inNightWindow(t.tm_hour, gSettings.night.startHour, gSettings.night.endHour)) {
-      b = gSettings.night.dimLevel;
+    if (getLocalTime(&t, 50)) {
+      int sh = gSettings.night.startHour;
+      int eh = gSettings.night.endHour;
+      int dl = gSettings.night.dimLevel;
+      bool weekend = (t.tm_wday == 0 || t.tm_wday == 6); // Sun / Sat
+      if (weekend && gSettings.night.weekend.enabled) {
+        sh = gSettings.night.weekend.startHour;
+        eh = gSettings.night.weekend.endHour;
+        dl = gSettings.night.weekend.dimLevel;
+      }
+      if (inNightWindow(t.tm_hour, sh, eh)) b = dl;
     }
   }
   Display::setBrightness(b);
@@ -88,12 +97,21 @@ static void refreshData() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   if (gSettings.flights.enabled) {
-    if (gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty())
+    if (gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty()) {
       gFlight = Data::flightByCallsign(gSettings.flights.flightIdent,
                                        gSettings.flights.lat, gSettings.flights.lon);
-    else
+      // Landing / descent detection for the tracked flight.
+      static int prevAlt = -1;
+      if (gSettings.flights.landingAlert && gFlight.ok && gFlight.altFt > 0) {
+        if (gFlight.altFt < 1200) gLandingFlash = 2;              // very low / landing
+        else if (prevAlt > 0 && (prevAlt - gFlight.altFt) > 1500 &&
+                 gFlight.altFt < 12000) gLandingFlash = 1;        // descending
+        prevAlt = gFlight.altFt;
+      }
+    } else {
       gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
                                     gSettings.flights.radiusMi);
+    }
   }
 
   if (gSettings.sports.enabled && gSettings.sports.count > 0) {
@@ -163,6 +181,21 @@ void loop() {
     gWeatherTest = false;
     Display::weather("SEVERE THUNDERSTORM WARNING", Display::rgb(249, 115, 22));
     delay(4000);
+    lastCard = 0;
+  }
+
+  // Tracked-flight landing / descent alert.
+  if (gLandingFlash) {
+    int mode = gLandingFlash;
+    gLandingFlash = 0;
+    for (int i = 0; i < 3; i++) {
+      Display::landing(gFlight.callsign, mode == 2);
+      delay(500);
+      Display::clear(); Display::flip();
+      delay(250);
+    }
+    Display::landing(gFlight.callsign, mode == 2);
+    delay(2500);
     lastCard = 0;
   }
 

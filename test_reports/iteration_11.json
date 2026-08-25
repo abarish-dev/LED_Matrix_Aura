@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only regression PASS on mobile viewport 390x844 against https://smart-matrix-hub.preview.emergentagent.com. All 3 NEW features verified end-to-end plus regressions. (1) NEW WEEKEND DIMMING SCHEDULE (Device tab): enabling 'Night Dimming' reveals weekday From/To steppers + 'Dim to' slider, and now also reveals a 'Separate weekend schedule' toggle. Enabling that reveals the caption 'Used on Saturdays & Sundays.' plus a SECOND pair of From/To hour steppers (default 11 PM / 8 AM) and a SECOND 'Dim to' slider (default 20%, max 80). Confirmed: weekend startHour +1 changed 23->0 in storage; weekend endHour +1 changed 8->9; weekend Dim-to slider dragged to ~60% updated storage to weekend.dimLevel=60; weekday slider still works independently (30%). After a full page reload, storage snapshot is {enabled:true, startHour:22, endHour:7, dimLevel:30, weekend:{enabled:true, startHour:23, endHour:8, dimLevel:60}} and the UI shows 80% / 30% / 60% correctly. All values persist under aura_settings_v1 nightMode.weekend. (2) NEW LANDING ALERT (Flights tab): enabling 'Track a Specific Flight' > 'Follow one flight' now reveals a 'Landing alert' toggle below the callsign input with helper text 'Flash the matrix when this flight starts descending or lands.'. Default landingAlert=true; toggling OFF sets storage flights.landingAlert=false; after full reload the switch reads unchecked (aria-checked/checked=false) and trackFlight remains true -- both persist correctly. (3) NEW SPORTS TEAM SCORE COLORS: selecting three NFL teams (Chiefs, Cowboys, Ravens) renders 3 rotation rows without any crash / red-screen. ESPN scoreboard fetches fail with CORS on the web preview (expected per app owner) so no green/red tint is applied -- rows fall back to the plain 'NFL · KC|DAL|BAL' text without throwing. The outcomeColor null-guard code path (sports.tsx:122-129) is safe: only applies borderLeftColor/color when outcome is truthy. REGRESSION: all 4 tabs load (Device/Flights/Sports/Weather); brightness slider persists at 80%; Night Dimming weekday steppers/slider still work; 'Follow one flight' still uppercases + sanitises callsign; Sports league row still shows all 5 pills fitting a 390px viewport; team select/deselect and X-remove still work; team logos render. NO red-screen errors, NO unhandled crashes. Deprecation warnings from prior iterations (shadow*, props.pointerEvents, React-19 element.ref from react-native-draggable-flatlist, useNativeDriver on web) still fire but are non-blocking.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Sports rotation row score fetch (ESPN)",
+        "issue": "ESPN scoreboard endpoints are still blocked by CORS in the web preview so the new win/loss tint (green/red left-accent bar) never applies on the web -- rows fall back to the plain 'LEAGUE · ABBR' label. Not a bug per the review request (device-only behavior); flagged for context only. The null-guard code path is safe and does NOT throw.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "All (carry-over from iteration 8/9/10 -- still not addressed)",
+        "issues": [
+          "Zero testID props on any interactive elements. Regression scripts must still walk the DOM by visible text (labels, stepper containers, ordered sliders) which is fragile. Suggested targets: night-dim-toggle, weekend-schedule-toggle, weekend-from-plus/minus, weekend-to-plus/minus, weekend-dim-slider, landing-alert-toggle, flight-ident-input."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "react-native-draggable-flatlist / React 19", "issue": "Console error 'Accessing element.ref was removed in React 19' still fires when the Sports tab mounts. Non-blocking today; will become a hard error in a future React release. Reference: /app/frontend/app/(tabs)/sports.tsx:4-7."},
+      {"component": "shadow* style props", "issue": "'shadow*' style props are deprecated. Use boxShadow. Still fires from SyncFab.tsx and Card. Non-blocking."},
+      {"component": "props.pointerEvents", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents.' Still fires from /app/frontend/src/components/SyncFab.tsx. Non-blocking."},
+      {"component": "useNativeDriver on web", "issue": "'Animated: useNativeDriver is not supported...' fires when Toast animates. Could be gated by Platform.OS !== 'web'. Non-blocking."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_11.json"],
+  "action_items": [
+    "(Repeated ask from iter 8/9/10) Add testID props to interactive elements so tests aren't dependent on visible text + DOM tree-walking. Priority: night-dim-toggle, weekend-schedule-toggle, weekend-from-stepper-{plus|minus}, weekend-to-stepper-{plus|minus}, weekend-dim-slider, landing-alert-toggle, league-pill-{NFL|NBA|MLB|NHL|UFC}.",
+    "(Repeated) Consider routing ESPN through a light backend proxy so score preview + UFC card render on the web preview too. On device the tint code path works but on web it will always be the plain fallback.",
+    "(Repeated) Migrate shadow* -> boxShadow and move pointerEvents from prop to style in SyncFab.tsx to silence long-standing deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "matrix.tsx: hydration merges saved.nightMode with DEFAULT_SETTINGS.nightMode via a shallow spread ({ ...DEFAULT_SETTINGS.nightMode, ...(saved.nightMode ?? {}) }). If an older AsyncStorage snapshot was saved BEFORE the weekend key existed, saved.nightMode.weekend would be undefined and the spread would leave the default weekend object in place -- good, no crash. But if a partially-corrupted snapshot has saved.nightMode.weekend as a non-object (e.g. null/string), later accesses like settings.nightMode.weekend.enabled would throw at render time. Consider a defensive `{ ...DEFAULT.weekend, ...(saved.nightMode?.weekend ?? {}) }` merge for the nested weekend key too.",
+    "matrix.tsx buildFullPayload -> nightMode.weekend shape matches buildNightPayload's shape (both spread the same fields) -- good consistency between full sync and live push.",
+    "index.tsx HourStepper has no debouncing on the +/- buttons; rapid taps fire Haptics.selectionAsync() and updateWeekend() on every tick, which in turn queues a debounced BLE livePush('night', ...). Fine, but noted for battery impact on device.",
+    "sports.tsx:106-129 the outcomeColor null-guard is correct -- borderLeftColor / borderLeftWidth / score color are only applied when outcome is truthy so a null score (CORS-blocked or pre-game) never throws.",
+    "flights.tsx: 'Landing alert' ToggleRow is placed inside the {f.trackFlight && ...} conditional; when trackFlight flips OFF the toggle is unmounted, but landingAlert stays in storage. Semantically OK because the matrix only cares about landingAlert when trackFlight is true; still worth an explicit doc comment.",
+    "matrix.tsx updateWeekend correctly deep-merges: next.nightMode.weekend = { ...prev.nightMode.weekend, ...patch }. Good."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "3/3 new features PASS + all listed regression checks PASS"},
+  "seed_data_creation": "localStorage was cleared at the start of the final run to verify default state and persistence from scratch.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public URL: https://smart-matrix-hub.preview.emergentagent.com. Viewport 390x844. AsyncStorage on web -> localStorage key 'aura_settings_v1'. No testIDs -- selectors rely on visible label text + walking up ancestors to find role=switch or [tabindex] children. @react-native-community/slider on web renders as a role=slider DIV with no aria-valuenow -- keyboard arrows do NOT work; use mouse.down/move/up to drag from thumb start to target x. Weekday slider is index 1, weekend slider is index 2 (index 0 is Brightness). HourStepper: +/- are the 1st and 2nd [tabindex] descendants of the stepper container (index 1 = +). ESPN endpoints are 100% CORS-blocked on web preview -- Sports rotation rows will show 'LEAGUE · ABBR' fallback and the UFC card will show 'No upcoming UFC event found right now.' -- do NOT report as bugs. adsb.lol may CORS-fail; not a bug. BLE is expected unsupported on web -- not a bug. Landing alert defaults to true.",
+  "rca_of_issue": "N/A -- no functional bugs found this round. All 3 new features (weekend dimming schedule, landing alert, sports tint code path) work as spec'd, all regressions still green."
+}
