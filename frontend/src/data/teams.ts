@@ -157,6 +157,11 @@ export function findTeam(league: League, abbr: string): Team | undefined {
   return TEAMS[league].find((t) => t.abbr === abbr);
 }
 
+/** ESPN CDN logo for a team (may 404 for a few abbreviations). */
+export function teamLogoUrl(league: League, abbr: string): string {
+  return `https://a.espncdn.com/i/teamlogos/${league.toLowerCase()}/500/${abbr.toLowerCase()}.png`;
+}
+
 /** Pick readable foreground (black/white) for a given hex background. */
 export function readableOn(hex: string): string {
   const h = hex.replace("#", "");

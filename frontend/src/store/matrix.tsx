@@ -42,6 +42,7 @@ export type Settings = {
   };
   sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean };
   weather: { enabled: boolean; severity: Severity };
+  brightness: number; // 0-100 matrix brightness
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   sports: { enabled: true, teams: [], ufc: false },
   weather: { enabled: true, severity: "severe" },
+  brightness: 80,
 };
 
 export type WifiStatus = "idle" | "sending" | "waiting" | "joined" | "failed";
@@ -80,6 +82,8 @@ type MatrixContextValue = {
   updateSports: (patch: Partial<Settings["sports"]>) => void;
   updateWeather: (patch: Partial<Settings["weather"]>) => void;
   toggleTeam: (team: SavedTeam) => void;
+  reorderTeams: (teams: SavedTeam[]) => void;
+  updateBrightness: (value: number) => void;
 
   // BLE actions (throw BleError on failure)
   connect: () => Promise<{ name: string }>;
@@ -87,6 +91,7 @@ type MatrixContextValue = {
   syncAll: () => Promise<{ confirmed: boolean }>;
   sendWifi: (ssid: string, pass: string) => Promise<void>;
   flashTest: () => Promise<void>;
+  weatherTest: () => Promise<void>;
 };
 
 const MatrixContext = createContext<MatrixContextValue | null>(null);
@@ -114,6 +119,7 @@ export function buildFullPayload(s: Settings) {
       enabled: s.weather.enabled,
       severity: s.weather.severity,
     },
+    brightness: s.brightness,
     syncedAt: Date.now(),
   };
 }
@@ -144,6 +150,10 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           flights: { ...DEFAULT_SETTINGS.flights, ...(saved.flights ?? {}) },
           sports: { ...DEFAULT_SETTINGS.sports, ...(saved.sports ?? {}) },
           weather: { ...DEFAULT_SETTINGS.weather, ...(saved.weather ?? {}) },
+          brightness:
+            typeof saved.brightness === "number"
+              ? saved.brightness
+              : DEFAULT_SETTINGS.brightness,
         });
       }
       const ssid = await storage.getItem<string>("aura_last_ssid", "");
@@ -238,6 +248,34 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     [persist, livePush],
   );
 
+  const reorderTeams = useCallback(
+    (teams: SavedTeam[]) => {
+      setSettings((prev) => {
+        const next = { ...prev, sports: { ...prev.sports, teams } };
+        persist(next);
+        livePush("sports", {
+          enabled: next.sports.enabled,
+          ufc: next.sports.ufc,
+          teams: teams.map((t) => `${t.league}:${t.abbr}`),
+        });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
+  const updateBrightness = useCallback(
+    (value: number) => {
+      setSettings((prev) => {
+        const next = { ...prev, brightness: value };
+        persist(next);
+        livePush("brightness", { value });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
   // ---- BLE actions ----------------------------------------------------------
   const connect = useCallback(async () => {
     const info = await connectToMatrix(
@@ -291,6 +329,10 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     await bleFlashTest();
   }, []);
 
+  const weatherTest = useCallback(async () => {
+    await writeLive({ command: "weather_test", ts: Date.now() });
+  }, []);
+
   // ---- RSSI refresh while connected ----------------------------------------
   useEffect(() => {
     if (bleStatus !== "connected") return;
@@ -315,11 +357,14 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     updateSports,
     updateWeather,
     toggleTeam,
+    reorderTeams,
+    updateBrightness,
     connect,
     disconnect,
     syncAll,
     sendWifi,
     flashTest,
+    weatherTest,
   };
 
   return (

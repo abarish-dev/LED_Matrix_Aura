@@ -14,7 +14,7 @@
 
 namespace Data {
 
-struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; };
+struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; int altFt=0; int headingDeg=-1; };
 struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; };
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
 
@@ -68,6 +68,8 @@ inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
   filter["ac"][0]["flight"] = true;
   filter["ac"][0]["lat"] = true;
   filter["ac"][0]["lon"] = true;
+  filter["ac"][0]["alt_baro"] = true;
+  filter["ac"][0]["track"] = true;
   if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) return out;
 
   double best = 1e9;
@@ -80,6 +82,8 @@ inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
       out.callsign = cs.isEmpty() ? "UNKNOWN" : cs;
       out.distanceMi = (int)round(d);
       out.airline = airlineFromCallsign(out.callsign);
+      out.altFt = ac["alt_baro"].is<int>() ? (int)ac["alt_baro"] : 0;
+      out.headingDeg = ac["track"].is<float>() ? (int)round((float)ac["track"]) : -1;
       out.ok = true;
     }
   }

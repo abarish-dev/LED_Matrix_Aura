@@ -4,7 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type Severity } from "@/src/store/matrix";
-import { Hero, Card, SectionLabel, MasterToggle } from "@/src/components/ui";
+import { useToast } from "@/src/components/Toast";
+import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton } from "@/src/components/ui";
 
 const HERO =
   "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc3Rvcm15JTIwd2VhdGhlciUyMHJhZGFyJTIwYWJzdHJhY3QlMjBtYXB8ZW58MHx8fHwxNzg3NjE0Mjc2fDA&ixlib=rb-4.1.0&q=85";
@@ -23,10 +24,24 @@ const SEVERITIES: {
 ];
 
 export default function WeatherScreen() {
-  const { settings, updateWeather } = useMatrix();
+  const { settings, updateWeather, bleStatus, weatherTest } = useMatrix();
   const w = settings.weather;
   const f = settings.flights;
   const located = f.lat != null && f.lon != null;
+  const toast = useToast();
+
+  const onPreview = async () => {
+    if (bleStatus !== "connected") {
+      toast.show("Connect to the matrix first (Device tab).", "info");
+      return;
+    }
+    try {
+      await weatherTest();
+      toast.show("Sample alert sent to the matrix.", "success");
+    } catch (e: any) {
+      toast.show(e?.message ?? "Failed to send preview.", "error");
+    }
+  };
 
   return (
     <ScrollView
@@ -82,6 +97,15 @@ export default function WeatherScreen() {
             </Pressable>
           );
         })}
+
+        <View style={{ marginTop: spacing.lg }}>
+          <PrimaryButton
+            label="Preview Alert on Matrix"
+            icon="eye"
+            variant="outline"
+            onPress={onPreview}
+          />
+        </View>
 
         <Text style={styles.footer}>
           The matrix checks api.weather.gov (US National Weather Service) for

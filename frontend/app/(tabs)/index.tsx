@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
@@ -32,6 +33,8 @@ export default function DeviceScreen() {
     wifiIp,
     lastSsid,
     sendWifi,
+    settings,
+    updateBrightness,
   } = useMatrix();
   const toast = useToast();
 
@@ -39,10 +42,13 @@ export default function DeviceScreen() {
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [sending, setSending] = useState(false);
+  const [bright, setBright] = useState(settings.brightness);
 
   useEffect(() => {
     if (lastSsid) setSsid(lastSsid);
   }, [lastSsid]);
+
+  useEffect(() => setBright(settings.brightness), [settings.brightness]);
 
   const connecting = bleStatus === "scanning" || bleStatus === "connecting";
   const connected = bleStatus === "connected";
@@ -163,6 +169,34 @@ export default function DeviceScreen() {
             <Text style={styles.flashText}>Flash test pattern</Text>
           </Pressable>
         )}
+
+        {/* Display */}
+        <SectionLabel>Display</SectionLabel>
+        <Card>
+          <View style={styles.radiusHeader}>
+            <View style={styles.rowLeft}>
+              <Ionicons name="sunny" size={18} color={colors.brand} />
+              <Text style={styles.brightLabel}>Brightness</Text>
+            </View>
+            <Text style={styles.brightValue}>{bright}%</Text>
+          </View>
+          <Slider
+            style={{ width: "100%", height: 40 }}
+            minimumValue={5}
+            maximumValue={100}
+            step={1}
+            value={bright}
+            minimumTrackTintColor={colors.brand}
+            maximumTrackTintColor={colors.surfaceTertiary}
+            thumbTintColor="#ffffff"
+            onValueChange={(v) => {
+              setBright(Math.round(v));
+              Haptics.selectionAsync();
+            }}
+            onSlidingComplete={(v) => updateBrightness(Math.round(v))}
+          />
+          <Text style={styles.brightHint}>Dim the matrix at night or crank it for daylight.</Text>
+        </Card>
 
         {/* Wi-Fi */}
         <SectionLabel>Wi-Fi Setup</SectionLabel>
@@ -325,6 +359,29 @@ const styles = StyleSheet.create({
     fontFamily: fonts.textMedium,
     fontSize: fontSize.sm,
     color: colors.brand,
+  },
+  rowLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  radiusHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.xs,
+  },
+  brightLabel: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.lg,
+    color: colors.onSurface,
+  },
+  brightValue: {
+    fontFamily: fonts.displayBold,
+    fontSize: fontSize.xl,
+    color: colors.brand,
+  },
+  brightHint: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.xs,
+    color: colors.onSurfaceSecondary,
+    marginTop: spacing.xs,
   },
   fieldLabel: {
     fontFamily: fonts.textMedium,

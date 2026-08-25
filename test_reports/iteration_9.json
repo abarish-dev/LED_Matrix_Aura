@@ -1,0 +1,50 @@
+{
+  "summary": "Frontend-only regression PASS. All 5 new enhancements verified plus a full regression sweep on mobile viewport 390x844 against https://smart-matrix-hub.preview.emergentagent.com. (1) Device > Display > Brightness slider: mouse-drag on the RN-Web slider thumb updates the 'NN%' label live (verified: 80% -> 34%), fires onSlidingComplete which persists to AsyncStorage (localStorage key 'aura_settings_v1' -> brightness:34), and the value rehydrates correctly to 34% after a hard reload. (2) Sports team logos: 32 <img> elements sourced from https://a.espncdn.com/i/teamlogos/nfl/500/*.png render on the NFL grid over each colored badge — screenshot confirms real logos for Cardinals/Falcons/Ravens/Bills/Panthers/Bears/Bengals/Browns/Cowboys/Jets/Eagles/Steelers/49ers/Seahawks/Bucs/Titans/Commanders. Switching leagues via the segmented control works and does not crash (logo count check for NBA/MLB/NHL in my initial run returned 0 because expo-image swaps <img> sources on segment change and my query fired before the load completed — visual inspection of screenshots confirms other leagues render logos too). (3) Rotation Order: selecting Chiefs / Cowboys / Ravens from the NFL grid immediately produces 3 rows in the Rotation Order section below the grid, each with a grip icon (reorder-three), the ESPN logo badge, the team name, 'NFL · KC|DAL|BAL' label and an X (close-circle) button — screenshot confirms all four elements per row. (4) X-remove: after scrolling the DraggableFlatList so the 'NFL · KC' row is on-screen and clicking its close-circle, KC disappears from the rotation list AND its selection check is cleared on the grid. Drag-to-reorder was NOT automated (long-press gesture on DraggableFlatList is unreliable through Playwright's touch emulation — per instructions this is acceptable). (5) Sports persistence: after reload the Rotation Order still lists all 3 previously-selected teams ('NFL · KC', 'NFL · DAL', 'NFL · BAL') in the same order. (6) Weather 'Preview Alert on Matrix' button: renders with eye icon, tapping while bleStatus='disconnected' shows the info toast 'Connect to the matrix first (Device tab).' with no crash or red screen. Regression: all 4 tabs load cleanly, Flights ZIP 28117 still resolves to Mooresville, NC via api.zippopotam.us (previous hydration bug from iteration_8 is FIXED — flights.tsx:26-27 now re-syncs local `zip`/`radius_` state via useEffect on f.zip / f.radiusMi), master toggles are present on every tab, and the SYNC FAB shows 'BLE needs a real device build to sync.' info toast when tapped disconnected. Deprecation warnings from iteration_8 (shadow* props, props.pointerEvents, useNativeDriver, plus a new React-19 element.ref warning from react-native-draggable-flatlist) still fire but are non-blocking.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Device > Brightness slider",
+        "issues": [
+          "The @react-native-community/slider renders as <div role=\"slider\"> on RN-Web but does NOT expose aria-valuenow / aria-valuemin / aria-valuemax attributes. That means screen readers can't announce the current brightness and keyboard (ArrowLeft/Right) navigation does not change the value. Mouse-drag and touch work fine, so the visible feature is OK, but a11y and automated verification via ARIA are broken. Consider using a slider that sets aria-value*, or wrapping in an accessibilityRole/accessibilityValue on native and role=slider + aria-* on web."
+        ]
+      },
+      {
+        "screen": "All (carry-over from iteration_8, NOT addressed)",
+        "issues": [
+          "Still zero testID props on any interactive element (brightness slider, team cards, rotation-order rows, X-remove buttons, league segment pills, 'Preview Alert on Matrix' button, SYNC FAB, master toggles, ZIP input). Tests continue to rely on visible-text selectors and geometry math — makes future regressions brittle. Recommend at minimum: brightness-slider, sports-team-card-{league}-{abbr}, rot-row-{league}-{abbr}, rot-remove-{league}-{abbr}, weather-preview-btn, sync-fab, tab-{device|flights|sports|weather}."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "react-native-draggable-flatlist / React 19", "issue": "Console error: 'Accessing element.ref was removed in React 19. ref is now a regular prop. It will be removed from the JSX Element type in a future release.' Fires on every Sports-tab mount, most likely from react-native-draggable-flatlist (or its internal ScaleDecorator). Non-blocking today but will break when the ref-as-prop deprecation becomes a hard error. Reference: /app/frontend/app/(tabs)/sports.tsx:4-7 (import DraggableFlatList, ScaleDecorator)."},
+      {"component": "shadow* style props (still not migrated)", "issue": "'shadow*' style props are deprecated. Use 'boxShadow'. Fires on every render (SyncFab.tsx and any Card with a shadow). Same finding as iteration_8. Non-blocking cosmetic warning."},
+      {"component": "props.pointerEvents (still not migrated)", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents'. Same as iteration_8 — /app/frontend/src/components/SyncFab.tsx still uses the prop. Non-blocking."},
+      {"component": "useNativeDriver on web", "issue": "'Animated: `useNativeDriver` is not supported because the native animated module is missing. Falling back to JS-based animation.' Fires when the Weather toast animates in after tapping 'Preview Alert on Matrix'. This is expected on web (Toast.tsx uses useNativeDriver: true) but noise-level and could be gated by Platform.OS !== 'web'."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_9.json"],
+  "action_items": [
+    "Consider adding accessibilityValue / aria-value* to the brightness slider so screen readers and keyboard users get a working slider. Mouse/touch drag already works.",
+    "Add testID props to interactive elements (see design_issues above) — same request as iteration_8, still not implemented.",
+    "Migrate shadow* -> boxShadow and move pointerEvents from prop to style in SyncFab.tsx to silence long-standing warnings.",
+    "Track react-native-draggable-flatlist compatibility with React 19: 'element.ref' warning will become an error in a future React release. Watch the library repo for a fix or pin React version if needed.",
+    "Optionally gate Toast.tsx animation with useNativeDriver: Platform.OS !== 'web' to silence the web-only warning."
+  ],
+  "critical_code_review_comments": [
+    "sports.tsx uses DraggableFlatList as the ROOT scroller with the entire hero/toggle/segment/grid as ListHeaderComponent — this works but nests a horizontal ScrollView (segment row) inside a VirtualizedList which throws the classic 'VirtualizedLists should never be nested inside plain ScrollViews...' warning in some RN versions. Not seen in this run but worth checking on a real device.",
+    "teamLogoUrl() (teams.ts:161) hits ESPN's public CDN with no timeout / cache-control override. expo-image's memory-disk cachePolicy helps, but for teams whose abbreviation differs from ESPN's slug (e.g., NBA 'GS' vs ESPN 'gs' — some may be 'gsw', 'nyk', 'sas' etc.), the image will 404 silently and only the color badge + abbr text show. This is documented and acceptable, but worth listing the known mismatches in a comment.",
+    "buildFullPayload() in matrix.tsx now includes `brightness` at the top-level of the payload — good — but the BLE 'brightness' live-push command (matrix.tsx:272) emits {value: 0..100} while other commands use nested objects. Consistent shape (either all flat or all nested) would make firmware parsing simpler.",
+    "onValueChange on the brightness slider (index.tsx:192) fires Haptics.selectionAsync() on every intermediate step — on native this is ~40-60 taps during one drag, which can feel spammy. Consider throttling or firing only on onSlidingComplete.",
+    "No error boundary around the tab router (same as iteration_8) — an uncaught render error in Sports (e.g., from the react-19 ref warning becoming an error) would crash the whole app on device."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "6/6 new features PASS + all 4 regression checks PASS"},
+  "seed_data_creation": "None. localStorage was cleared once at the start of the second test run to verify persistence from scratch.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public URL: https://smart-matrix-hub.preview.emergentagent.com. Viewport 390x844. AsyncStorage on web maps to localStorage key 'aura_settings_v1'. To interact with the brightness slider on RN-Web, DO NOT use keyboard arrows or aria-valuenow — they don't work. Use mouse.down / move / up on the thumb: track spans role=slider div, min=5, max=100, so thumb x = trackX + trackW * (value-5)/95. To interact with the Rotation Order X-remove, the DraggableFlatList maintains its own scroll — use element.scrollIntoView() BEFORE clicking the last [tabindex=0] descendant of the row. Drag-to-reorder cannot be reliably automated through Playwright's touch emulation. Team logos load from https://a.espncdn.com/i/teamlogos/{league}/500/{abbr}.png with expo-image (memory-disk cache) — allow ~1s after a segment switch before asserting logo counts. No backend to test; no auth flow.",
+  "rca_of_issue": "N/A — no functional bugs found in this round. Previous iteration_8 ZIP-hydration bug is confirmed fixed at /app/frontend/app/(tabs)/flights.tsx:26-27."
+}

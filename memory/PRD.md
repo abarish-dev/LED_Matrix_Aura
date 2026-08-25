@@ -55,7 +55,15 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - Firmware compiles in the user's VS Code/PlatformIO; not built in this env.
 - Airline/team logos on the matrix are text stubs pending bitmap assets.
 
+## Updates (2026-06 — enhancement round)
+- [x] **Logo Pack**: real ESPN team logos on Sports cards + rotation rows (`teamLogoUrl` in `src/data/teams.ts`, layered over colored badge with text fallback). Firmware `include/Logos.h` scaffolding + `Display::drawLogo` for embedded RGB565 team/airline bitmaps.
+- [x] **Brightness Control**: Device-tab slider (5–100%), persisted + live `{command:"brightness",value}`; firmware `Display::setBrightness` maps to `setBrightness8`.
+- [x] **Flight Details**: firmware now fetches `alt_baro` + `track` from adsb.lol and the flight card shows altitude + compass heading.
+- [x] **Team Reorder**: Sports tab is a `DraggableFlatList` — hold & drag followed teams to set matrix rotation order (array order = rotation order); X to remove. Persists.
+- [x] **Weather Test**: Weather-tab "Preview Alert on Matrix" button → `{command:"weather_test"}`; firmware flashes a sample severe-storm card.
+- All verified via testing_agent iteration_9 (frontend). BLE remains device-build-only.
+
 ## Backlog
-- **P2:** Bundle airline + team logo bitmaps into firmware and blit them.
-- **P2:** Panel geometry auto-detect / in-app brightness control.
-- **P3:** UFC event details card in-app; per-team score preview.
+- **P2:** Bundle real airline/team logo bitmaps into firmware (`Logos.h` registry ready).
+- **P2:** Panel geometry auto-detect.
+- **P3:** UFC event details card in-app; per-team score preview; slider a11y (aria-value*).

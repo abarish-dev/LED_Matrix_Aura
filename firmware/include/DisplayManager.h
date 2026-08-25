@@ -56,15 +56,34 @@ inline void flashTest() {
   clear(); flip();
 }
 
-// A single flight "card".
-inline void flight(const String& callsign, int distanceMi, const String& airline) {
+inline void setBrightness(int pct) {
+  pct = constrain(pct, 0, 100);
+  dma->setBrightness8((uint8_t)map(pct, 0, 100, 0, 255));
+}
+
+static const char* headingToCompass(int deg) {
+  if (deg < 0) return "";
+  static const char* dirs[] = {"N","NE","E","SE","S","SW","W","NW"};
+  return dirs[(int)((deg + 22) / 45) % 8];
+}
+
+// A single flight "card": callsign, airline, distance, altitude + heading.
+inline void flight(const String& callsign, int distanceMi, const String& airline,
+                   int altFt = 0, int headingDeg = -1) {
   clear();
   dma->drawRect(0, 0, MATRIX_W, MATRIX_H, rgb(60, 40, 5));
-  centerText(callsign.c_str(), 6, rgb(245, 158, 11), 1);
-  centerText(airline.c_str(), 24, rgb(230, 230, 230), 1);
-  char buf[24];
-  snprintf(buf, sizeof(buf), "%d mi away", distanceMi);
-  centerText(buf, 44, rgb(160, 160, 160), 1);
+  centerText(callsign.c_str(), 4, rgb(245, 158, 11), 1);
+  centerText(airline.c_str(), 18, rgb(230, 230, 230), 1);
+  char buf[28];
+  snprintf(buf, sizeof(buf), "%d mi", distanceMi);
+  centerText(buf, 34, rgb(160, 160, 160), 1);
+  if (altFt > 0 || headingDeg >= 0) {
+    if (headingDeg >= 0)
+      snprintf(buf, sizeof(buf), "%dft %s", altFt, headingToCompass(headingDeg));
+    else
+      snprintf(buf, sizeof(buf), "%d ft", altFt);
+    centerText(buf, 48, rgb(120, 170, 255), 1);
+  }
   flip();
 }
 
@@ -103,6 +122,12 @@ inline void message(const char* line1, const char* line2) {
   centerText(line1, 20, rgb(245, 158, 11), 1);
   if (line2) centerText(line2, 40, rgb(160, 160, 160), 1);
   flip();
+}
+
+// Blit an RGB565 logo bitmap (see Logos.h) at (x,y).
+inline void drawLogo(const uint16_t* bitmap, int w, int h, int x, int y) {
+  if (!bitmap) return;
+  dma->drawRGBBitmap(x, y, (uint16_t*)bitmap, w, h);
 }
 
 } // namespace Display

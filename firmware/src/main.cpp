@@ -15,12 +15,14 @@
 #include "DisplayManager.h"
 #include "BleProvisioning.h"
 #include "DataServices.h"
+#include "Logos.h"
 
 // ---- Global definitions (declared extern in Config.h) ----------------------
 AuraSettings   gSettings;
 volatile bool  gWifiCredsChanged = false;
 volatile bool  gConfigChanged    = false;
 volatile bool  gFlashTest        = false;
+volatile bool  gWeatherTest      = false;
 
 // ---- Timing ----------------------------------------------------------------
 static const uint32_t CARD_MS  = 8000;    // seconds per card
@@ -88,13 +90,22 @@ static void drawCurrentCard() {
   if (n == 0) { Display::message("AURA", "waiting for data"); return; }
 
   uint8_t t = types[cardIndex % n];
-  if (t == 0)      Display::flight(gFlight.callsign, gFlight.distanceMi, gFlight.airline);
-  else if (t == 1) Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status);
+  if (t == 0) {
+    Display::flight(gFlight.callsign, gFlight.distanceMi, gFlight.airline,
+                    gFlight.altFt, gFlight.headingDeg);
+    // Overlay the airline logo if one has been added to Logos.h.
+    String icao = gFlight.callsign.substring(0, 3);
+    const LogoAsset* lg = airlineLogo(icao);
+    if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
+  } else if (t == 1) {
+    Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status);
+  }
 }
 
 void setup() {
   Serial.begin(115200);
   Display::begin();
+  Display::setBrightness(gSettings.brightness);
   Display::boot();
   AuraBLE::begin();
   delay(1500);
@@ -103,6 +114,21 @@ void setup() {
 void loop() {
   // Flash test (one-shot from the app).
   if (gFlashTest) { gFlashTest = false; Display::flashTest(); lastCard = 0; }
+
+  // Weather preview (one-shot from the app).
+  if (gWeatherTest) {
+    gWeatherTest = false;
+    Display::weather("SEVERE THUNDERSTORM WARNING", Display::rgb(249, 115, 22));
+    delay(4000);
+    lastCard = 0;
+  }
+
+  // Apply any live config change (e.g. brightness) immediately.
+  if (gConfigChanged) {
+    gConfigChanged = false;
+    Display::setBrightness(gSettings.brightness);
+    lastCard = 0; // redraw on next tick
+  }
 
   // New Wi-Fi credentials -> (re)connect and report result to the app.
   if (gWifiCredsChanged) {

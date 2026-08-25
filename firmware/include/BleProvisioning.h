@@ -68,8 +68,13 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
       } else if (command == "weather") {
         applyWeather(doc.as<JsonObjectConst>());
         gConfigChanged = true;
+      } else if (command == "brightness") {
+        if (doc["value"].is<int>()) gSettings.brightness = doc["value"];
+        gConfigChanged = true;
       } else if (command == "flash_test") {
         gFlashTest = true;
+      } else if (command == "weather_test") {
+        gWeatherTest = true;
       }
       return;
     }
@@ -78,6 +83,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
     if (doc["flights"].is<JsonObjectConst>()) applyFlights(doc["flights"]);
     if (doc["sports"].is<JsonObjectConst>())  applySports(doc["sports"]);
     if (doc["weather"].is<JsonObjectConst>()) applyWeather(doc["weather"]);
+    if (doc["brightness"].is<int>())          gSettings.brightness = doc["brightness"];
     gConfigChanged = true;
 
     // Echo current settings back so the app's read-back "confirmed" succeeds.

@@ -45,6 +45,7 @@ struct AuraSettings {
   FlightCfg  flights;
   SportsCfg  sports;
   WeatherCfg weather;
+  int        brightness = 80;   // 0-100 (%)
   String     wifiSsid = "";
   String     wifiPass = "";
 };
@@ -56,3 +57,4 @@ extern AuraSettings gSettings;
 extern volatile bool gWifiCredsChanged;   // new SSID/pass received
 extern volatile bool gConfigChanged;      // any display config changed
 extern volatile bool gFlashTest;          // one-shot test pattern requested
+extern volatile bool gWeatherTest;        // one-shot sample weather alert

@@ -21,6 +21,7 @@ Sent on connect and when the user taps **SYNC**.
   "flights": { "enabled": true, "lat": 35.501, "lon": -80.874, "radiusMi": 25 },
   "sports":  { "enabled": true, "ufc": false, "teams": ["NFL:DAL", "NBA:LAL"] },
   "weather": { "enabled": true, "severity": "severe" },
+  "brightness": 80,
   "syncedAt": 1717000000000
 }
 ```
@@ -33,21 +34,27 @@ Each field edit pushes just its section:
 { "command": "flights", "enabled": true, "lat": 35.5, "lon": -80.8, "radiusMi": 30 }
 { "command": "sports",  "enabled": true, "ufc": true, "teams": ["MLB:NYY"] }
 { "command": "weather", "enabled": true, "severity": "moderate" }
+{ "command": "brightness", "value": 60 }
 ```
 `teams` entries are always `"<LEAGUE>:<ABBR>"` where LEAGUE ∈ NFL|NBA|MLB|NHL and
-ABBR is the ESPN abbreviation.
+ABBR is the ESPN abbreviation. The **order** of the array is the rotation order
+shown on the matrix (set by drag-to-reorder in the app).
 
 `severity` ∈ `minor | moderate | severe | extreme` (minimum threshold to display).
+`brightness` ∈ `0–100` (%).
 
 ## 3. Wi-Fi provisioning
 ```json
 { "command": "wifi", "ssid": "MyHomeWiFi", "pass": "hunter2" }
 ```
 
-## 4. Flash test
+## 4. One-shot tests
 ```json
 { "command": "flash_test", "ts": 1717000000000 }
+{ "command": "weather_test", "ts": 1717000000000 }
 ```
+`weather_test` flashes a sample "SEVERE THUNDERSTORM WARNING" card so you can see
+the alert layout without waiting for real weather.
 
 ---
 
