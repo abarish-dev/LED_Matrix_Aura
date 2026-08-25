@@ -8,6 +8,7 @@ import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type WifiStatus } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, PrimaryButton, ToggleRow } from "@/src/components/ui";
+import { currentHoliday } from "@/src/utils/holidays";
 
 const HERO =
   "https://images.pexels.com/photos/30547576/pexels-photo-30547576.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
@@ -81,6 +82,7 @@ export default function DeviceScreen() {
     updateBrightness,
     updateNightMode,
     updateWeekend,
+    updateHolidayThemes,
   } = useMatrix();
   const toast = useToast();
 
@@ -334,6 +336,40 @@ export default function DeviceScreen() {
           )}
         </Card>
 
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Holiday Themes"
+            icon="color-palette"
+            value={settings.holidayThemes}
+            onValueChange={(v) => updateHolidayThemes(v)}
+          />
+          {settings.holidayThemes &&
+            (() => {
+              const h = currentHoliday();
+              return (
+                <View style={styles.holidayRow}>
+                  {h ? (
+                    <>
+                      <Text style={styles.holidayEmoji}>{h.emoji}</Text>
+                      <Text style={styles.holidayText}>Today: {h.name}</Text>
+                      <View style={styles.swatches}>
+                        <View style={[styles.swatch, { backgroundColor: h.colors[0] }]} />
+                        <View style={[styles.swatch, { backgroundColor: h.colors[1] }]} />
+                      </View>
+                    </>
+                  ) : (
+                    <Text style={styles.holidayText}>
+                      No holiday today — the wall uses its normal amber accent.
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
+          <Text style={styles.brightHint}>
+            The matrix shifts its accent colors on holidays (red/green in December, etc.).
+          </Text>
+        </Card>
+
         {/* Wi-Fi */}
         <SectionLabel>Wi-Fi Setup</SectionLabel>
         <Card>
@@ -519,6 +555,16 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceSecondary,
     marginTop: spacing.xs,
   },
+  holidayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  holidayEmoji: { fontSize: 20 },
+  holidayText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurface },
+  swatches: { flexDirection: "row", gap: 6 },
+  swatch: { width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: colors.border },
   nightDivider: {
     height: 1,
     backgroundColor: colors.divider,

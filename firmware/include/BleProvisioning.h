@@ -40,11 +40,21 @@ static void applySports(JsonObjectConst o) {
     }
     gSettings.sports.count = n;
   }
+  if (o["rivals"].is<JsonArrayConst>()) {
+    JsonArrayConst arr = o["rivals"];
+    uint8_t n = 0;
+    for (JsonVariantConst v : arr) {
+      if (n >= MAX_TEAMS) break;
+      gSettings.sports.rivals[n++] = String((const char*)v);
+    }
+    gSettings.sports.rivalCount = n;
+  }
 }
 
 static void applyWeather(JsonObjectConst o) {
   if (o["enabled"].is<bool>())        gSettings.weather.enabled  = o["enabled"];
   if (o["severity"].is<const char*>())gSettings.weather.severity = String((const char*)o["severity"]);
+  if (o["showClock"].is<bool>())      gSettings.weather.showClock = o["showClock"];
 }
 
 static void applyNight(JsonObjectConst o) {
@@ -91,6 +101,9 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
       } else if (command == "night") {
         applyNight(doc.as<JsonObjectConst>());
         gConfigChanged = true;
+      } else if (command == "holiday") {
+        if (doc["enabled"].is<bool>()) gSettings.holidayThemes = doc["enabled"];
+        gConfigChanged = true;
       } else if (command == "flash_test") {
         gFlashTest = true;
       } else if (command == "weather_test") {
@@ -105,6 +118,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
     if (doc["weather"].is<JsonObjectConst>()) applyWeather(doc["weather"]);
     if (doc["nightMode"].is<JsonObjectConst>()) applyNight(doc["nightMode"]);
     if (doc["brightness"].is<int>())          gSettings.brightness = doc["brightness"];
+    if (doc["holidayThemes"].is<bool>())      gSettings.holidayThemes = doc["holidayThemes"];
     gConfigChanged = true;
 
     // Echo current settings back so the app's read-back "confirmed" succeeds.

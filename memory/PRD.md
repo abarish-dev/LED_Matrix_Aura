@@ -79,6 +79,10 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Weekend Mode**: `nightMode.weekend` second dimming schedule (Device tab, `updateWeekend`); firmware uses it on Sat/Sun (NTP `tm_wday`).
 - All verified via testing_agent iteration_11 (frontend). Persist in `aura_settings_v1`.
 
+## Updates (2026-06 — round 4)
+- [x] **Overhead Now panel** (Flights tab, above the toggle): live nearest aircraft with airline logo, callsign + airline, origin→destination, altitude, distance & heading. Positions via `adsb.lol`, airline/route via `adsbdb.com` (CORS-ok), logos via gstatic. Auto-refreshes every 20s. `src/services/adsb.ts`. NOTE: adsb.lol has no CORS header so the live list only resolves on a native device; web preview shows a graceful fallback.
+- Verified via testing_agent iteration_13 (frontend), no regressions.
+
 ## Backlog
 - **P2:** Panel geometry auto-detect.
-- **P3:** Proxy ESPN through backend so score preview shows in web preview too; slider a11y (aria-value*).
+- **P3:** Proxy adsb.lol/ESPN through backend so live views also show in web preview; add testIDs; migrate shadow*/pointerEvents props in SyncFab.

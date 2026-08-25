@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image } from "expo-image";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,6 +10,7 @@ import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, ToggleRow } from "@/src/components/ui";
 import { geocodeZip } from "@/src/services/geocode";
+import { nearbyPlanes, airlineLogoUrl, compass, type Plane } from "@/src/services/adsb";
 
 const HERO =
   "https://images.pexels.com/photos/6861359/pexels-photo-6861359.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
@@ -57,6 +59,30 @@ export default function FlightsScreen() {
 
   const located = f.lat != null && f.lon != null;
 
+  const [planes, setPlanes] = useState<Plane[]>([]);
+  const [planesLoading, setPlanesLoading] = useState(false);
+  const fetchIdRef = useRef(0);
+
+  const loadPlanes = useCallback(async () => {
+    if (f.lat == null || f.lon == null) return;
+    const id = ++fetchIdRef.current;
+    setPlanesLoading(true);
+    try {
+      const list = await nearbyPlanes(f.lat, f.lon, f.radiusMi, 4);
+      if (id !== fetchIdRef.current) return;
+      setPlanes(list);
+    } finally {
+      if (id === fetchIdRef.current) setPlanesLoading(false);
+    }
+  }, [f.lat, f.lon, f.radiusMi]);
+
+  useEffect(() => {
+    if (f.lat == null || f.lon == null) return;
+    loadPlanes();
+    const iv = setInterval(loadPlanes, 20000);
+    return () => clearInterval(iv);
+  }, [loadPlanes, f.lat, f.lon]);
+
   return (
     <KeyboardAwareScrollView
       style={styles.screen}
@@ -67,6 +93,64 @@ export default function FlightsScreen() {
       <Hero image={HERO} title="Flight Radar" subtitle="Overhead air traffic" icon="airplane" />
 
       <View style={styles.body}>
+        <View style={styles.overheadHeader}>
+          <SectionLabel>Overhead Now</SectionLabel>
+          {located && (
+            planesLoading ? (
+              <ActivityIndicator size="small" color={colors.brand} style={styles.overheadSpin} />
+            ) : (
+              <Ionicons
+                name="refresh"
+                size={16}
+                color={colors.onSurfaceSecondary}
+                style={styles.overheadSpin}
+                onPress={() => { Haptics.selectionAsync(); loadPlanes(); }}
+              />
+            )
+          )}
+        </View>
+        <Card style={styles.overheadCard}>
+          {!located ? (
+            <View style={styles.overheadEmpty}>
+              <Ionicons name="location-outline" size={22} color={colors.onSurfaceSecondary} />
+              <Text style={styles.overheadEmptyText}>Set your ZIP below to see planes near you.</Text>
+            </View>
+          ) : planes.length === 0 ? (
+            <View style={styles.overheadEmpty}>
+              <Ionicons name={planesLoading ? "search" : "airplane-outline"} size={22} color={colors.onSurfaceSecondary} />
+              <Text style={styles.overheadEmptyText}>
+                {planesLoading ? "Scanning the sky…" : "No aircraft in range right now. (Live view needs the phone app.)"}
+              </Text>
+            </View>
+          ) : (
+            planes.map((p, i) => (
+              <View key={p.callsign + i} style={[styles.planeRow, i > 0 && styles.planeRowBorder]}>
+                <View style={styles.planeLogo}>
+                  {p.airlineIata ? (
+                    <Image source={{ uri: airlineLogoUrl(p.airlineIata) }} style={styles.planeLogoImg} contentFit="contain" transition={200} />
+                  ) : (
+                    <Ionicons name="airplane" size={20} color={colors.brand} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.planeTitle} numberOfLines={1}>
+                    {p.callsign}{p.airlineName ? ` · ${p.airlineName}` : ""}
+                  </Text>
+                  <Text style={styles.planeSub} numberOfLines={1}>
+                    {p.from && p.to ? `${p.from} → ${p.to}` : p.type || "In flight"}
+                  </Text>
+                </View>
+                <View style={styles.planeMeta}>
+                  <Text style={styles.planeAlt}>{p.altFt ? `${p.altFt.toLocaleString()} ft` : "—"}</Text>
+                  <Text style={styles.planeDist}>
+                    {p.distanceMi} mi{p.headingDeg >= 0 ? ` ${compass(p.headingDeg)}` : ""}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </Card>
+
         <MasterToggle
           label="Flight Tracking"
           description="Show planes flying near you"
@@ -183,6 +267,44 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingBottom: 150 },
   body: { paddingHorizontal: spacing.lg },
+  overheadHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  overheadSpin: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  overheadCard: { padding: 0, overflow: "hidden" },
+  overheadEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
+  overheadEmptyText: {
+    flex: 1,
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    lineHeight: 18,
+  },
+  planeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  planeRowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
+  planeLogo: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  planeLogoImg: { width: 30, height: 30 },
+  planeTitle: { fontFamily: fonts.textMedium, fontSize: fontSize.base, color: colors.onSurface },
+  planeSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary },
+  planeMeta: { alignItems: "flex-end" },
+  planeAlt: { fontFamily: fonts.displayMedium, fontSize: fontSize.base, color: colors.brand },
+  planeDist: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   fieldLabel: {
     fontFamily: fonts.textMedium,
     fontSize: fontSize.sm,

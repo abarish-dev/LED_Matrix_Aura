@@ -19,9 +19,10 @@ Sent on connect and when the user taps **SYNC**.
 ```json
 {
   "flights": { "enabled": true, "lat": 35.501, "lon": -80.874, "radiusMi": 25, "trackFlight": false, "flightIdent": "", "landingAlert": true },
-  "sports":  { "enabled": true, "ufc": false, "teams": ["NFL:DAL", "NBA:LAL"] },
-  "weather": { "enabled": true, "severity": "severe" },
+  "sports":  { "enabled": true, "ufc": false, "teams": ["NFL:DAL", "NBA:LAL"], "rivals": ["NFL:DAL"] },
+  "weather": { "enabled": true, "severity": "severe", "showClock": true },
   "brightness": 80,
+  "holidayThemes": true,
   "nightMode": { "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20, "weekend": { "enabled": false, "startHour": 23, "endHour": 8, "dimLevel": 20 } },
   "syncedAt": 1717000000000
 }
@@ -33,8 +34,9 @@ app's read-back **confirmed** succeeds.
 Each field edit pushes just its section:
 ```json
 { "command": "flights", "enabled": true, "lat": 35.5, "lon": -80.8, "radiusMi": 30, "trackFlight": true, "flightIdent": "AAL123", "landingAlert": true }
-{ "command": "sports",  "enabled": true, "ufc": true, "teams": ["MLB:NYY"] }
-{ "command": "weather", "enabled": true, "severity": "moderate" }
+{ "command": "sports",  "enabled": true, "ufc": true, "teams": ["MLB:NYY"], "rivals": ["MLB:NYY"] }
+{ "command": "weather", "enabled": true, "severity": "moderate", "showClock": true }
+{ "command": "holiday", "enabled": true }
 { "command": "brightness", "value": 60 }
 { "command": "night", "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20, "weekend": { "enabled": true, "startHour": 23, "endHour": 8, "dimLevel": 30 } }
 ```
@@ -53,6 +55,10 @@ nearest aircraft, draws a heading arrow, and — if `landingAlert` is on — fla
 "DESCENDING / LANDED" card when that flight drops sharply or gets very low.
 
 `nightMode.weekend` (when `enabled`) overrides the weekday schedule on Sat/Sun.
+
+`sports.rivals` are starred teams (subset of `teams`) the matrix draws with a
+bright amber border. `weather.showClock` adds a time + temperature card (temp via
+open-meteo, keyless). `holidayThemes` lets the wall tint its accent on holidays.
 
 ## 3. Wi-Fi provisioning
 ```json

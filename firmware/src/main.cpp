@@ -38,6 +38,24 @@ static Data::ScoreInfo   gScore;
 static Data::WeatherInfo gWeather;
 static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
+static int               gEtaMin = -1;      // rough arrival ETA for tracked flight
+static int               gTempF = -999;     // current local temperature (°F)
+
+// Holiday accent color (RGB565) for the current date, or 0 for none/disabled.
+static uint16_t holidayAccent() {
+  if (!gSettings.holidayThemes) return 0;
+  struct tm t;
+  if (!getLocalTime(&t, 50)) return 0;
+  int m = t.tm_mon + 1, d = t.tm_mday, md = m * 100 + d;
+  if (md >= 1201 && md <= 1226) return Display::rgb(229, 72, 77);   // Winter (red)
+  if (md >= 1227 || md <= 102)  return Display::rgb(245, 217, 10);  // New Year (gold)
+  if (md >= 212 && md <= 215)   return Display::rgb(229, 72, 77);   // Valentine's
+  if (md >= 315 && md <= 318)   return Display::rgb(48, 164, 108);  // St. Patrick's
+  if (md >= 701 && md <= 705)   return Display::rgb(59, 130, 246);  // Independence
+  if (md >= 1024 && md <= 1031) return Display::rgb(247, 107, 21);  // Halloween
+  if (md >= 1120 && md <= 1130) return Display::rgb(247, 107, 21);  // Thanksgiving
+  return 0;
+}
 
 static bool wifiConnect() {
   if (gSettings.wifiSsid.isEmpty()) return false;
@@ -102,10 +120,20 @@ static void refreshData() {
                                        gSettings.flights.lat, gSettings.flights.lon);
       // Landing / descent detection for the tracked flight.
       static int prevAlt = -1;
-      if (gSettings.flights.landingAlert && gFlight.ok && gFlight.altFt > 0) {
-        if (gFlight.altFt < 1200) gLandingFlash = 2;              // very low / landing
-        else if (prevAlt > 0 && (prevAlt - gFlight.altFt) > 1500 &&
-                 gFlight.altFt < 12000) gLandingFlash = 1;        // descending
+      gEtaMin = -1;
+      if (gFlight.ok && gFlight.altFt > 0) {
+        if (prevAlt > 0 && prevAlt > gFlight.altFt) {
+          int perMin = (prevAlt - gFlight.altFt) * 2; // ~30s fetch -> per-minute
+          if (perMin > 50) {
+            int eta = gFlight.altFt / perMin;
+            gEtaMin = eta > 120 ? -1 : eta;
+          }
+        }
+        if (gSettings.flights.landingAlert) {
+          if (gFlight.altFt < 1200) gLandingFlash = 2;              // very low / landing
+          else if (prevAlt > 0 && (prevAlt - gFlight.altFt) > 1500 &&
+                   gFlight.altFt < 12000) gLandingFlash = 1;        // descending
+        }
         prevAlt = gFlight.altFt;
       }
     } else {
@@ -129,6 +157,9 @@ static void refreshData() {
   if (gSettings.weather.enabled)
     gWeather = Data::activeAlert(gSettings.flights.lat, gSettings.flights.lon,
                                  gSettings.weather.severity);
+
+  if (gSettings.weather.showClock)
+    gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon);
 }
 
 static void drawCurrentCard() {
@@ -142,18 +173,35 @@ static void drawCurrentCard() {
   uint8_t types[3]; uint8_t n = 0;
   if (gSettings.flights.enabled && gFlight.ok) types[n++] = 0;
   if (gSettings.sports.enabled  && gScore.ok)  types[n++] = 1;
+  if (gSettings.weather.showClock)             types[n++] = 2;
   if (n == 0) { Display::message("AURA", "waiting for data"); return; }
 
   uint8_t t = types[cardIndex % n];
+  uint16_t accent = holidayAccent();
+  if (t == 2) {
+    struct tm tmv;
+    String ts = "--:--";
+    if (getLocalTime(&tmv, 50)) {
+      int hr = tmv.tm_hour % 12; if (hr == 0) hr = 12;
+      char b[8]; snprintf(b, sizeof(b), "%d:%02d", hr, tmv.tm_min);
+      ts = b;
+    }
+    Display::clock(ts, gTempF, accent);
+    return;
+  }
   if (t == 0) {
     Display::flight(gFlight.callsign, gFlight.distanceMi, gFlight.airline,
-                    gFlight.altFt, gFlight.headingDeg);
+                    gFlight.altFt, gFlight.headingDeg, accent, gEtaMin);
     // Overlay the airline logo if one has been added to Logos.h.
     String icao = gFlight.callsign.substring(0, 3);
     const LogoAsset* lg = airlineLogo(icao);
     if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
   } else if (t == 1) {
-    Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status);
+    // Brighten border for a starred rivalry team, else use the holiday accent.
+    uint16_t border = accent;
+    for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
+      if (gSettings.sports.rivals[i] == gScoreKey) { border = Display::rgb(245, 158, 11); break; }
+    Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status, border);
     int colon = gScoreKey.indexOf(':');
     if (colon > 0) {
       const LogoAsset* lg = teamLogo(gScoreKey.substring(0, colon),

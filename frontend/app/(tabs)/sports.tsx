@@ -1,10 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import DraggableFlatList, {
-  ScaleDecorator,
-  type RenderItemParams,
-} from "react-native-draggable-flatlist";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
@@ -61,7 +57,7 @@ function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
 }
 
 export default function SportsScreen() {
-  const { settings, updateSports, toggleTeam, reorderTeams } = useMatrix();
+  const { settings, updateSports, toggleTeam, reorderTeams, toggleRival } = useMatrix();
   const s = settings.sports;
   const [seg, setSeg] = useState<Segment>("NFL");
   const [scores, setScores] = useState<Record<string, ScoreLine | null>>({});
@@ -103,9 +99,22 @@ export default function SportsScreen() {
   const countForLeague = (lg: League) =>
     s.teams.filter((t) => t.league === lg).length;
 
-  const renderRotationRow = ({ item, drag, isActive }: RenderItemParams<SavedTeam>) => {
+  const move = (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= s.teams.length) return;
+    const arr = [...s.teams];
+    [arr[index], arr[j]] = [arr[j], arr[index]];
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    reorderTeams(arr);
+  };
+
+  const isFollowed = (league: string, abbr: string) =>
+    s.teams.some((t) => t.league === league && t.abbr === abbr);
+
+  const renderRotationRow = (item: SavedTeam, index: number) => {
+    const key = `${item.league}:${item.abbr}`;
     const t = findTeam(item.league, item.abbr);
-    const line = scores[`${item.league}:${item.abbr}`];
+    const line = scores[key];
     const scoreStr = scoreText(line, item.abbr);
     const scored =
       line &&
@@ -120,58 +129,65 @@ export default function SportsScreen() {
           : "tie"
       : null;
     const outcomeColor =
-      outcome === "win"
-        ? colors.success
-        : outcome === "loss"
-          ? colors.error
-          : outcome === "tie"
-            ? colors.onSurfaceTertiary
-            : null;
+      outcome === "win" ? colors.success : outcome === "loss" ? colors.error : outcome === "tie" ? colors.onSurfaceTertiary : null;
+
+    const isRival = s.rivals.includes(key);
+    // Rivalry game: the live opponent is another team you follow in this league.
+    const rivalryGame = !!line && isFollowed(item.league, line.oppAbbr);
+    const highlight = isRival || rivalryGame;
+
     return (
-      <ScaleDecorator>
-        <Pressable
-          onLongPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            drag();
-          }}
-          delayLongPress={150}
-          style={[
-            styles.rotRow,
-            isActive && styles.rotRowActive,
-            outcomeColor && { borderLeftColor: outcomeColor, borderLeftWidth: 4 },
-          ]}
-        >
-          <Ionicons name="reorder-three" size={22} color={colors.onSurfaceSecondary} />
-          <TeamBadge league={item.league} abbr={item.abbr} color={t?.color ?? "#555"} size={34} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.rotName}>{t?.name ?? item.abbr}</Text>
-            {scoreStr ? (
-              <Text
-                style={[styles.rotScore, outcomeColor ? { color: outcomeColor } : null]}
-                numberOfLines={1}
-              >
-                {scoreStr}
-              </Text>
-            ) : (
-              <Text style={styles.rotLeague}>{item.league} · {item.abbr}</Text>
+      <View
+        key={key}
+        style={[
+          styles.rotRow,
+          highlight && styles.rotRowRival,
+          outcomeColor && !highlight ? { borderLeftColor: outcomeColor, borderLeftWidth: 4 } : null,
+        ]}
+      >
+        <TeamBadge league={item.league} abbr={item.abbr} color={t?.color ?? "#555"} size={34} />
+        <View style={{ flex: 1 }}>
+          <View style={styles.rotNameRow}>
+            <Text style={styles.rotName} numberOfLines={1}>{t?.name ?? item.abbr}</Text>
+            {rivalryGame && (
+              <View style={styles.rivalryTag}>
+                <Text style={styles.rivalryTagText}>RIVALRY</Text>
+              </View>
             )}
           </View>
-          <Pressable
-            hitSlop={10}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              toggleTeam(item);
-            }}
-          >
-            <Ionicons name="close-circle" size={22} color={colors.onSurfaceSecondary} />
-          </Pressable>
+          {scoreStr ? (
+            <Text style={[styles.rotScore, outcomeColor ? { color: outcomeColor } : null]} numberOfLines={1}>
+              {scoreStr}
+            </Text>
+          ) : (
+            <Text style={styles.rotLeague}>{item.league} · {item.abbr}</Text>
+          )}
+        </View>
+
+        <Pressable hitSlop={8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleRival(key); }} style={styles.rowBtn}>
+          <Ionicons name={isRival ? "star" : "star-outline"} size={20} color={isRival ? colors.brand : colors.onSurfaceSecondary} />
         </Pressable>
-      </ScaleDecorator>
+        <View style={styles.reorderCol}>
+          <Pressable hitSlop={6} onPress={() => move(index, -1)} disabled={index === 0} style={styles.rowBtnSm}>
+            <Ionicons name="chevron-up" size={18} color={index === 0 ? colors.surfaceTertiary : colors.onSurfaceSecondary} />
+          </Pressable>
+          <Pressable hitSlop={6} onPress={() => move(index, 1)} disabled={index === s.teams.length - 1} style={styles.rowBtnSm}>
+            <Ionicons name="chevron-down" size={18} color={index === s.teams.length - 1 ? colors.surfaceTertiary : colors.onSurfaceSecondary} />
+          </Pressable>
+        </View>
+        <Pressable hitSlop={8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleTeam(item); }} style={styles.rowBtn}>
+          <Ionicons name="close-circle" size={22} color={colors.onSurfaceSecondary} />
+        </Pressable>
+      </View>
     );
   };
 
-  const Header = (
-    <View>
+  return (
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <Hero image={HERO} title="Scoreboard" subtitle="Your teams, live scores" icon="trophy" />
       <View style={styles.body}>
         <MasterToggle
@@ -189,18 +205,13 @@ export default function SportsScreen() {
             return (
               <Pressable
                 key={sg}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setSeg(sg);
-                }}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSeg(sg); }}
                 style={[styles.segPill, active && styles.segPillActive]}
               >
                 <Text style={[styles.segText, active && styles.segTextActive]}>{sg}</Text>
                 {cnt > 0 && (
                   <View style={[styles.segBadge, active && styles.segBadgeActive]}>
-                    <Text style={[styles.segBadgeText, active && { color: colors.onBrandPrimary }]}>
-                      {cnt}
-                    </Text>
+                    <Text style={[styles.segBadgeText, active && { color: colors.onBrandPrimary }]}>{cnt}</Text>
                   </View>
                 )}
               </Pressable>
@@ -229,35 +240,24 @@ export default function SportsScreen() {
                   <Text style={styles.ufcDate}>{ufc.date || "Upcoming"}</Text>
                 </View>
                 <Text style={styles.ufcName}>{ufc.shortName || ufc.name}</Text>
-                {!!ufc.headline && (
-                  <Text style={styles.ufcHeadline}>{ufc.headline}</Text>
-                )}
+                {!!ufc.headline && <Text style={styles.ufcHeadline}>{ufc.headline}</Text>}
               </View>
             ) : (
-              <Text style={styles.ufcNote}>
-                No upcoming UFC event found right now.
-              </Text>
+              <Text style={styles.ufcNote}>No upcoming UFC event found right now.</Text>
             )}
           </Card>
         ) : (
           <View style={styles.grid}>
             {TEAMS[seg as League].map((team) => {
-              const selected = s.teams.some(
-                (t) => t.league === seg && t.abbr === team.abbr,
-              );
+              const selected = isFollowed(seg, team.abbr);
               return (
                 <Pressable
                   key={team.abbr}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    toggleTeam({ league: seg as League, abbr: team.abbr });
-                  }}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleTeam({ league: seg as League, abbr: team.abbr }); }}
                   style={[styles.teamCard, selected && styles.teamCardActive]}
                 >
                   {selected && (
-                    <View style={styles.check}>
-                      <Text style={styles.checkMark}>✓</Text>
-                    </View>
+                    <View style={styles.check}><Text style={styles.checkMark}>✓</Text></View>
                   )}
                   <TeamBadge league={seg as League} abbr={team.abbr} color={team.color} size={46} />
                   <Text style={styles.teamName} numberOfLines={1}>{team.name}</Text>
@@ -268,39 +268,22 @@ export default function SportsScreen() {
         )}
 
         <SectionLabel>Rotation Order</SectionLabel>
-        {s.teams.length === 0 && (
+        {s.teams.length === 0 ? (
           <Text style={styles.rotEmpty}>
-            Pick teams above — hold & drag them here to set the order they cycle
-            on the matrix.
+            Pick teams above — they appear here in the order they cycle on the
+            matrix. Reorder with the arrows and tap ★ to flag a rivalry.
           </Text>
+        ) : (
+          s.teams.map((item, i) => renderRotationRow(item, i))
         )}
+
+        <Text style={styles.footer}>
+          {seg === "UFC"
+            ? "The matrix pulls the next UFC card live from ESPN."
+            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ rows glow brighter on the wall; rows tint green when winning, red when losing.`}
+        </Text>
       </View>
-    </View>
-  );
-
-  const Footer = (
-    <View style={styles.body}>
-      <Text style={styles.footer}>
-        {seg === "UFC"
-          ? "The matrix pulls the next UFC card live from ESPN."
-          : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"} across all leagues. Hold a row to drag it.`}
-      </Text>
-    </View>
-  );
-
-  return (
-    <DraggableFlatList
-      style={styles.screen}
-      data={s.teams}
-      keyExtractor={(item) => `${item.league}:${item.abbr}`}
-      renderItem={renderRotationRow}
-      onDragEnd={({ data }) => reorderTeams(data)}
-      ListHeaderComponent={Header}
-      ListFooterComponent={Footer}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      activationDistance={12}
-    />
+    </ScrollView>
   );
 }
 
@@ -323,30 +306,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   segPillActive: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
-  segText: {
-    fontFamily: fonts.displayMedium,
-    fontSize: fontSize.lg,
-    color: colors.onSurfaceSecondary,
-    letterSpacing: 0.5,
-  },
+  segText: { fontFamily: fonts.displayMedium, fontSize: fontSize.lg, color: colors.onSurfaceSecondary, letterSpacing: 0.5 },
   segTextActive: { color: colors.brand },
-  segBadge: {
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: 9,
-    backgroundColor: colors.surfaceTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  segBadge: { minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" },
   segBadgeActive: { backgroundColor: colors.brand },
   segBadgeText: { fontFamily: fonts.textMedium, fontSize: 10, color: colors.onSurfaceSecondary },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
   teamCard: {
     width: "31.5%",
     aspectRatio: 0.92,
@@ -360,63 +325,23 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   teamCardActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
-  check: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.brand,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 2,
-  },
+  check: { position: "absolute", top: 6, right: 6, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", zIndex: 2 },
   checkMark: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: "900" },
   badge: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
   badgeText: { fontFamily: fonts.displayBold, fontSize: fontSize.base, letterSpacing: 0.3 },
   teamName: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurface, textAlign: "center" },
-  ufcNote: {
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    marginTop: spacing.sm,
-    lineHeight: 18,
-  },
-  ufcDivider: {
-    height: 1,
-    backgroundColor: colors.divider,
-    marginVertical: spacing.md,
-  },
+  ufcNote: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: spacing.sm, lineHeight: 18 },
+  ufcDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
   ufcLoading: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   ufcNext: { gap: 4 },
   ufcHeaderRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  ufcDate: {
-    fontFamily: fonts.textMedium,
-    fontSize: fontSize.sm,
-    color: colors.brand,
-    letterSpacing: 0.3,
-  },
-  ufcName: {
-    fontFamily: fonts.display,
-    fontSize: fontSize.xl,
-    color: colors.onSurface,
-  },
-  ufcHeadline: {
-    fontFamily: fonts.text,
-    fontSize: fontSize.base,
-    color: colors.onSurfaceSecondary,
-  },
-  rotScore: {
-    fontFamily: fonts.textMedium,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceTertiary,
-  },
+  ufcDate: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.brand, letterSpacing: 0.3 },
+  ufcName: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurface },
+  ufcHeadline: { fontFamily: fonts.text, fontSize: fontSize.base, color: colors.onSurfaceSecondary },
   rotRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
+    gap: spacing.sm,
     marginBottom: spacing.sm,
     padding: spacing.md,
     borderRadius: radius.md,
@@ -424,21 +349,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  rotRowActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
-  rotName: { fontFamily: fonts.text, fontSize: fontSize.lg, color: colors.onSurface },
+  rotRowRival: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  rotNameRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  rotName: { fontFamily: fonts.text, fontSize: fontSize.lg, color: colors.onSurface, flexShrink: 1 },
+  rivalryTag: { backgroundColor: colors.brand, borderRadius: radius.sm, paddingHorizontal: 5, paddingVertical: 1 },
+  rivalryTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.onBrandPrimary, letterSpacing: 0.5 },
   rotLeague: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
-  rotEmpty: {
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    lineHeight: 18,
-  },
-  footer: {
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    lineHeight: 18,
-    marginTop: spacing.lg,
-    textAlign: "center",
-  },
+  rotScore: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceTertiary },
+  rowBtn: { padding: 4 },
+  rowBtnSm: { paddingHorizontal: 2, paddingVertical: 1 },
+  reorderCol: { alignItems: "center" },
+  rotEmpty: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, lineHeight: 18 },
+  footer: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, lineHeight: 18, marginTop: spacing.lg, textAlign: "center" },
 });

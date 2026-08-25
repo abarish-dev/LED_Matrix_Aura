@@ -5,7 +5,7 @@ import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
-import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton } from "@/src/components/ui";
+import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
 
 const HERO =
   "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc3Rvcm15JTIwd2VhdGhlciUyMHJhZGFyJTIwYWJzdHJhY3QlMjBtYXB8ZW58MHx8fHwxNzg3NjE0Mjc2fDA&ixlib=rb-4.1.0&q=85";
@@ -72,6 +72,19 @@ export default function WeatherScreen() {
           </Text>
         </Card>
 
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Time & Temperature"
+            icon="time"
+            value={w.showClock}
+            onValueChange={(v) => updateWeather({ showClock: v })}
+          />
+          <Text style={styles.clockHint}>
+            Show a clock and the current local temperature on the matrix between
+            other cards. The matrix keeps time over Wi-Fi.
+          </Text>
+        </Card>
+
         <SectionLabel>Minimum Severity</SectionLabel>
         {SEVERITIES.map((sev) => {
           const active = w.severity === sev.id;
@@ -131,6 +144,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.text,
     fontSize: fontSize.sm,
     color: colors.onSurfaceSecondary,
+  },
+  clockHint: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    marginTop: spacing.sm,
+    lineHeight: 18,
   },
   sevCard: {
     flexDirection: "row",

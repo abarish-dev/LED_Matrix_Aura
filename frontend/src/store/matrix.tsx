@@ -43,9 +43,10 @@ export type Settings = {
     flightIdent: string;
     landingAlert: boolean;
   };
-  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean };
-  weather: { enabled: boolean; severity: Severity };
+  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[] };
+  weather: { enabled: boolean; severity: Severity; showClock: boolean };
   brightness: number; // 0-100 matrix brightness
+  holidayThemes: boolean; // shift accent colors on holidays
   nightMode: {
     enabled: boolean;
     startHour: number; // 0-23
@@ -73,9 +74,10 @@ export const DEFAULT_SETTINGS: Settings = {
     flightIdent: "",
     landingAlert: true,
   },
-  sports: { enabled: true, teams: [], ufc: false },
-  weather: { enabled: true, severity: "severe" },
+  sports: { enabled: true, teams: [], ufc: false, rivals: [] },
+  weather: { enabled: true, severity: "severe", showClock: false },
   brightness: 80,
+  holidayThemes: true,
   nightMode: {
     enabled: false,
     startHour: 22,
@@ -108,7 +110,9 @@ type MatrixContextValue = {
   updateWeather: (patch: Partial<Settings["weather"]>) => void;
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
+  toggleRival: (key: string) => void;
   updateBrightness: (value: number) => void;
+  updateHolidayThemes: (value: boolean) => void;
   updateNightMode: (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => void;
   updateWeekend: (patch: Partial<Settings["nightMode"]["weekend"]>) => void;
 
@@ -144,12 +148,15 @@ export function buildFullPayload(s: Settings) {
       enabled: s.sports.enabled,
       ufc: s.sports.ufc,
       teams: s.sports.teams.map((t) => `${t.league}:${t.abbr}`),
+      rivals: s.sports.rivals,
     },
     weather: {
       enabled: s.weather.enabled,
       severity: s.weather.severity,
+      showClock: s.weather.showClock,
     },
     brightness: s.brightness,
+    holidayThemes: s.holidayThemes,
     nightMode: {
       enabled: s.nightMode.enabled,
       startHour: s.nightMode.startHour,
@@ -212,6 +219,10 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
               ? saved.brightness
               : DEFAULT_SETTINGS.brightness,
           nightMode: { ...DEFAULT_SETTINGS.nightMode, ...(saved.nightMode ?? {}) },
+          holidayThemes:
+            typeof saved.holidayThemes === "boolean"
+              ? saved.holidayThemes
+              : DEFAULT_SETTINGS.holidayThemes,
         });
       }
       const ssid = await storage.getItem<string>("aura_last_ssid", "");
@@ -263,6 +274,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           enabled: next.sports.enabled,
           ufc: next.sports.ufc,
           teams: next.sports.teams.map((t) => `${t.league}:${t.abbr}`),
+          rivals: next.sports.rivals,
         });
         return next;
       });
@@ -278,6 +290,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         livePush("weather", {
           enabled: next.weather.enabled,
           severity: next.weather.severity,
+          showClock: next.weather.showClock,
         });
         return next;
       });
@@ -296,12 +309,17 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
               (t) => !(t.league === team.league && t.abbr === team.abbr),
             )
           : [...prev.sports.teams, team];
-        const next = { ...prev, sports: { ...prev.sports, teams } };
+        const key = `${team.league}:${team.abbr}`;
+        const rivals = exists
+          ? prev.sports.rivals.filter((r) => r !== key)
+          : prev.sports.rivals;
+        const next = { ...prev, sports: { ...prev.sports, teams, rivals } };
         persist(next);
         livePush("sports", {
           enabled: next.sports.enabled,
           ufc: next.sports.ufc,
           teams: teams.map((t) => `${t.league}:${t.abbr}`),
+          rivals: next.sports.rivals,
         });
         return next;
       });
@@ -318,6 +336,28 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           enabled: next.sports.enabled,
           ufc: next.sports.ufc,
           teams: teams.map((t) => `${t.league}:${t.abbr}`),
+          rivals: next.sports.rivals,
+        });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
+  const toggleRival = useCallback(
+    (key: string) => {
+      setSettings((prev) => {
+        const has = prev.sports.rivals.includes(key);
+        const rivals = has
+          ? prev.sports.rivals.filter((r) => r !== key)
+          : [...prev.sports.rivals, key];
+        const next = { ...prev, sports: { ...prev.sports, rivals } };
+        persist(next);
+        livePush("sports", {
+          enabled: next.sports.enabled,
+          ufc: next.sports.ufc,
+          teams: next.sports.teams.map((t) => `${t.league}:${t.abbr}`),
+          rivals,
         });
         return next;
       });
@@ -331,6 +371,18 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         const next = { ...prev, brightness: value };
         persist(next);
         livePush("brightness", { value });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
+  const updateHolidayThemes = useCallback(
+    (value: boolean) => {
+      setSettings((prev) => {
+        const next = { ...prev, holidayThemes: value };
+        persist(next);
+        livePush("holiday", { enabled: value });
         return next;
       });
     },
@@ -449,7 +501,9 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     updateWeather,
     toggleTeam,
     reorderTeams,
+    toggleRival,
     updateBrightness,
+    updateHolidayThemes,
     updateNightMode,
     updateWeekend,
     connect,

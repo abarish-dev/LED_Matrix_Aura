@@ -82,24 +82,29 @@ inline void drawArrow(int cx, int cy, int deg, int len, uint16_t color) {
   }
 }
 
-// A single flight "card": callsign, airline, distance, altitude + heading.
+// A single flight "card": callsign, airline, distance, altitude + heading + ETA.
 inline void flight(const String& callsign, int distanceMi, const String& airline,
-                   int altFt = 0, int headingDeg = -1) {
+                   int altFt = 0, int headingDeg = -1,
+                   uint16_t border = 0, int etaMin = -1) {
   clear();
-  dma->drawRect(0, 0, MATRIX_W, MATRIX_H, rgb(60, 40, 5));
-  centerText(callsign.c_str(), 4, rgb(245, 158, 11), 1);
-  centerText(airline.c_str(), 18, rgb(230, 230, 230), 1);
+  dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border ? border : rgb(60, 40, 5));
+  centerText(callsign.c_str(), 3, rgb(245, 158, 11), 1);
+  centerText(airline.c_str(), 15, rgb(230, 230, 230), 1);
   char buf[28];
   snprintf(buf, sizeof(buf), "%d mi", distanceMi);
-  centerText(buf, 34, rgb(160, 160, 160), 1);
+  centerText(buf, 28, rgb(160, 160, 160), 1);
   if (altFt > 0 || headingDeg >= 0) {
     if (headingDeg >= 0)
       snprintf(buf, sizeof(buf), "%dft %s", altFt, headingToCompass(headingDeg));
     else
       snprintf(buf, sizeof(buf), "%d ft", altFt);
-    centerText(buf, 48, rgb(120, 170, 255), 1);
+    centerText(buf, 40, rgb(120, 170, 255), 1);
   }
-  // Heading arrow in the top-right corner.
+  if (etaMin >= 0) {
+    if (etaMin <= 10) snprintf(buf, sizeof(buf), "ARRIVING ~%dm", etaMin);
+    else              snprintf(buf, sizeof(buf), "ETA ~%d min", etaMin);
+    centerText(buf, 53, rgb(16, 185, 129), 1);
+  }
   if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(245, 158, 11));
   flip();
 }
@@ -116,8 +121,9 @@ inline void landing(const String& callsign, bool landed) {
 
 // A single game score "card".
 inline void score(const String& home, int hs, const String& away, int as,
-                   const String& status) {
+                   const String& status, uint16_t border = 0) {
   clear();
+  if (border) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border);
   char l[24];
   snprintf(l, sizeof(l), "%s %d", away.c_str(), as);
   centerText(l, 8, rgb(255, 255, 255), 1);
@@ -148,6 +154,24 @@ inline void message(const char* line1, const char* line2) {
   clear();
   centerText(line1, 20, rgb(245, 158, 11), 1);
   if (line2) centerText(line2, 40, rgb(160, 160, 160), 1);
+  flip();
+}
+
+// Clock + temperature card. Pass tempF = -999 if unavailable.
+inline void clock(const String& timeStr, int tempF, uint16_t accent = 0) {
+  clear();
+  if (accent) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, accent);
+  dma->setTextSize(2);
+  int16_t x1, y1; uint16_t w, h;
+  dma->getTextBounds(timeStr.c_str(), 0, 0, &x1, &y1, &w, &h);
+  dma->setCursor((MATRIX_W - (int)w) / 2, 14);
+  dma->setTextColor(rgb(245, 158, 11));
+  dma->print(timeStr);
+  if (tempF > -999) {
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%d\xF7""F", tempF); // ÷ used as degree glyph fallback
+    centerText(buf, 42, rgb(120, 170, 255), 1);
+  }
   flip();
 }
 

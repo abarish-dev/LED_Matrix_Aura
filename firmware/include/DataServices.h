@@ -196,4 +196,18 @@ inline WeatherInfo activeAlert(double lat, double lon, const String& minSeverity
   return out;
 }
 
+// ---- Weather: current temperature (°F) from open-meteo (keyless) -----------
+inline int currentTempF(double lat, double lon) {
+  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(lat, 4) +
+               "&longitude=" + String(lon, 4) +
+               "&current=temperature_2m&temperature_unit=fahrenheit";
+  String body = httpGet(url);
+  if (body.isEmpty()) return -999;
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return -999;
+  if (doc["current"]["temperature_2m"].is<float>())
+    return (int)round((float)doc["current"]["temperature_2m"]);
+  return -999;
+}
+
 } // namespace Data

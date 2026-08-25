@@ -37,11 +37,14 @@ struct SportsCfg {
   bool    ufc     = false;
   uint8_t count   = 0;
   String  teams[MAX_TEAMS];   // stored as "NFL:DAL"
+  uint8_t rivalCount = 0;
+  String  rivals[MAX_TEAMS];  // starred rivalry teams "NFL:DAL"
 };
 
 struct WeatherCfg {
-  bool   enabled  = true;
-  String severity = "severe"; // minor | moderate | severe | extreme
+  bool   enabled   = true;
+  String severity  = "severe"; // minor | moderate | severe | extreme
+  bool   showClock = false;    // show a time + temperature card
 };
 
 struct NightWindow {
@@ -65,6 +68,7 @@ struct AuraSettings {
   WeatherCfg weather;
   NightCfg   night;
   int        brightness = 80;   // 0-100 (%)
+  bool       holidayThemes = true;
   String     wifiSsid = "";
   String     wifiPass = "";
 };

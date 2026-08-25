@@ -1,0 +1,49 @@
+{
+  "summary": "Frontend-only regression PASS at https://smart-matrix-hub.preview.emergentagent.com (viewport 390x844). Top priority Sports scroll bug is CONFIRMED FIXED. All 4 NEW features verified end-to-end plus regressions. (1) SPORTS SCROLL BUG FIX: with 4 NFL teams selected (Chiefs, Cowboys, Ravens, 49ers) the entire Sports screen scrolls smoothly from the hero image, past the master toggle, league pills, team grid, and all the way down to the 'Rotation Order' rows and 'Following 4 teams…' footer using standard mouse wheel scroll. No swipe/drag gesture is required and the DraggableFlatList crash / scroll-lock reported by the user is gone. Only one scrollable RN ScrollView container is present now (scrollHeight ~2064px vs client 780px). Rotation Order section renders 4 rows cleanly. (2) SPORTS REORDER VIA ARROWS: chevron-up (Ionicon U+f241) is on top, chevron-down (U+f232) below it, per rotation row. Tapping the down chevron on row 0 (Chiefs) moved Chiefs to row 1 and Cowboys to row 0 — storage confirms sports.teams order changed from [KC,DAL,BAL,SF] to [DAL,KC,BAL,SF] and this persists across a full page reload. Up-chevron on the first row and down-chevron on the last row are no-ops (order unchanged when clicked) which matches the disabled prop. (3) SPORTS RIVAL STAR: tapping the star-outline (U+f599) on the row 0 team added 'NFL:DAL' to settings.sports.rivals; after reload the storage still contains 'NFL:DAL', the row 0 now shows the filled star glyph (U+f595) with the amber brand tint, and the entire row uses the highlighted (rival) border style. Removing that team via the X (close-circle) button both drops the team from sports.teams AND clears its rival flag from sports.rivals in the same setState (verified). (4) WEATHER 'TIME & TEMPERATURE' TOGGLE: toggling ON flips settings.weather.showClock from false -> true, and the value persists across a full reload. (5) DEVICE 'HOLIDAY THEMES' TOGGLE: default is ON (settings.holidayThemes=true) with the 'Today: <holiday>' or 'No holiday today…' preview line; toggling OFF flips to false and persists across reload. REGRESSION: all 4 tabs (Device/Flights/Sports/Weather) load without red-screen; Sports league row shows all 5 pills (NFL/NBA/MLB/NHL/UFC); team logos render in the grid; team select/deselect works; Rotation Order rows render cleanly; SYNC FAB shows the 'Connect to the matrix first' info toast when disconnected; Weather severity radios (Minor/Moderate/Severe/Extreme) render and 'Preview Alert on Matrix' fires the info toast when disconnected; Flights tab shows the ZIP UI. NO red-screen errors; no unhandled crashes. Deprecation warnings from prior iterations (shadow*, props.pointerEvents, useNativeDriver on web) still fire but are non-blocking. ESPN scoreboard endpoints continue to be CORS-blocked on web (device-only feature, per app owner — NOT a bug).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Sports rotation row score fetch (ESPN)",
+        "issue": "ESPN scoreboard endpoints are CORS-blocked in the web preview so the green/red win-loss left-accent tint code path never triggers on web; rows show the plain 'LEAGUE · ABBR' fallback. Not a bug per the review request (device-only). Null-guard in sports.tsx:119-132 is safe and does not throw.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "All screens (carry-over from prior iterations — still not addressed)",
+        "issues": [
+          "Zero testID props on interactive elements. Regression scripts must still walk the DOM by visible text and by Ionicon PUA glyph unicode. Suggested targets on Sports: rotation-row-{index}-star, rotation-row-{index}-up, rotation-row-{index}-down, rotation-row-{index}-remove, team-card-{league}-{abbr}, league-pill-{NFL|NBA|MLB|NHL|UFC}. On Weather: weather-showclock-toggle. On Device: holiday-themes-toggle. On global: sync-fab."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "'shadow*' style props are deprecated. Use boxShadow. Still fires from SyncFab/Card on mount. Non-blocking. Reference: /app/frontend/src/components/SyncFab.tsx and shared Card component."},
+      {"component": "props.pointerEvents", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents.' Still fires from SyncFab. Non-blocking. Reference: /app/frontend/src/components/SyncFab.tsx."},
+      {"component": "useNativeDriver on web", "issue": "'Animated: useNativeDriver is not supported...' fires when Toast animates. Could be gated behind Platform.OS !== 'web'. Non-blocking. Reference: Toast component."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_12.json"],
+  "action_items": [
+    "(Repeated ask from iter 8-11) Add testID props to interactive elements so tests don't need to walk the DOM by PUA glyph unicode. Priority: rotation-row buttons (star/up/down/remove), weather-showclock-toggle, holiday-themes-toggle, sync-fab.",
+    "(Repeated) Consider routing ESPN through a light backend proxy so score preview + UFC card render on the web preview too.",
+    "(Repeated) Migrate shadow* -> boxShadow and move pointerEvents from prop to style in SyncFab.tsx to silence long-standing deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "sports.tsx switched from react-native-draggable-flatlist to a plain ScrollView + manual up/down chevron reorder (store.reorderTeams). The single ScrollView is now the only scroll container so the child taps no longer intercept the pan — fixes the user-reported scroll-lock. Good.",
+    "sports.tsx:102-109 move() correctly clamps index (returns early if j<0 or j>=teams.length). Combined with the Pressable disabled prop (line 171 for up, 174 for down) the first row can't go up and last row can't go down. Good defensive layering.",
+    "matrix.tsx:301-328 toggleTeam clears the rival flag when a team is removed (rivals filtered by key). This matches the review-request spec that removing a team via X also clears its rival flag. Verified in the automated run.",
+    "matrix.tsx:347-366 toggleRival is a simple set-add / set-remove on sports.rivals by string key 'LEAGUE:ABBR'. Persists via existing persist() call. Clean.",
+    "matrix.tsx:380-390 updateHolidayThemes persists to aura_settings_v1 and live-pushes { command:'holiday', enabled } — consistent with other single-value toggles.",
+    "matrix.tsx hydration (line 209-232) merges saved.* onto DEFAULT_SETTINGS with shallow spreads. holidayThemes and weather.showClock hydrate correctly (typeof-check for holidayThemes, spread merge for weather so new fields inherit defaults from older snapshots). Good backwards-compat.",
+    "holidays.ts is a pure date lookup with hardcoded windows; today (2026-01-25) falls outside every window so currentHoliday() returns null and the UI shows the 'No holiday today…' fallback. Confirmed working."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "5/5 features PASS + all regression checks PASS"},
+  "seed_data_creation": "localStorage cleared at start of each verification pass to test default state and persistence from scratch. Reused 4-team NFL selection (Chiefs, Cowboys, Ravens, 49ers) as fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public URL: https://smart-matrix-hub.preview.emergentagent.com. Viewport 390x844. AsyncStorage on web -> localStorage key 'aura_settings_v1'. No testIDs on any element. Ionicons on RN web render as private-use-area glyphs (U+E000..U+F8FF) inside a span with fontFamily 'ionicons'; find them by isPUA text char length 1. Reliable per-row selector: locate the 'NFL · XX' (or NBA/MLB/NHL) label span, then pick icons on the same y (+/-30px). Column layout (from left): star (~x=279), chev-up (x=312, top), chev-down (x=312, bottom), close-X (~x=346). Star-outline glyph is U+f599; filled star (rival flagged) is U+f595. ESPN endpoints and UFC endpoint are CORS-blocked on web — do NOT report as bugs. adsb.lol may CORS-fail. BLE unsupported on web — expected. Sports.teams stored as [{league,abbr}]; Sports.rivals stored as string[] with 'LEAGUE:ABBR' keys. holidayThemes defaults to true; weather.showClock defaults to false. Full settings snapshot after test run: {holidayThemes:false, weather.showClock:true, sports.rivals:['NFL:DAL'], sports.teams=[DAL,KC,BAL,SF]} verified round-trips a reload without diff.",
+  "rca_of_issue": "N/A — no functional bugs found. Sports scroll bug (user report) is CONFIRMED FIXED by the sports.tsx migration from react-native-draggable-flatlist to a plain ScrollView with manual reorder chevrons. All 4 new features (chevron reorder, rival star, weather showClock, device holidayThemes) work and persist across reload as spec'd."
+}
