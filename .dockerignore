@@ -1,0 +1,12 @@
+# The Aura app deploys as Expo (frontend) + FastAPI (backend) + MongoDB only.
+# The PlatformIO/Arduino matrix firmware is a separate hardware artifact the user
+# builds in VS Code — it is NOT part of the app deployment. Exclude it.
+firmware/
+firmware/**
+
+# Docs / dev artifacts not needed at runtime
+FIRMWARE_BLE_SPEC.md
+design_guidelines.json
+test_reports/
+tests/
+memory/

@@ -1,0 +1,3 @@
+# Exclude the PlatformIO/Arduino matrix firmware from any Expo/EAS build.
+firmware/
+firmware/**
