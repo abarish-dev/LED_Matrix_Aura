@@ -7,7 +7,7 @@ import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
-import { Hero, Card, SectionLabel, MasterToggle } from "@/src/components/ui";
+import { Hero, Card, SectionLabel, MasterToggle, ToggleRow } from "@/src/components/ui";
 import { geocodeZip } from "@/src/services/geocode";
 
 const HERO =
@@ -20,11 +20,19 @@ export default function FlightsScreen() {
 
   const [zip, setZip] = useState(f.zip);
   const [radius_, setRadius] = useState(f.radiusMi);
+  const [ident, setIdent] = useState(f.flightIdent);
   const [looking, setLooking] = useState(false);
 
   // Re-sync local input state once store hydrates from AsyncStorage.
   useEffect(() => setZip(f.zip), [f.zip]);
   useEffect(() => setRadius(f.radiusMi), [f.radiusMi]);
+  useEffect(() => setIdent(f.flightIdent), [f.flightIdent]);
+
+  const onIdent = (val: string) => {
+    const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    setIdent(clean);
+    updateFlights({ flightIdent: clean });
+  };
 
   const onZip = async (val: string) => {
     const clean = val.replace(/[^0-9]/g, "").slice(0, 5);
@@ -123,6 +131,35 @@ export default function FlightsScreen() {
           </View>
         </Card>
 
+        <SectionLabel>Track a Specific Flight</SectionLabel>
+        <Card>
+          <ToggleRow
+            label="Follow one flight"
+            icon="navigate"
+            value={f.trackFlight}
+            onValueChange={(v) => updateFlights({ trackFlight: v })}
+          />
+          {f.trackFlight && (
+            <>
+              <View style={styles.trackDivider} />
+              <Text style={styles.fieldLabel}>Flight number / callsign</Text>
+              <TextInput
+                value={ident}
+                onChangeText={onIdent}
+                placeholder="e.g. AA1234 or UAL123"
+                placeholderTextColor={colors.onSurfaceSecondary}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                style={styles.input}
+              />
+              <Text style={styles.locText}>
+                Great for following a family member's trip — the matrix pins this
+                flight and shows its altitude, heading and distance.
+              </Text>
+            </>
+          )}
+        </Card>
+
         <Text style={styles.footer}>
           The matrix fetches live ADS-B traffic from adsb.lol within this radius
           and shows the closest aircraft with its airline logo.
@@ -187,6 +224,11 @@ const styles = StyleSheet.create({
     color: colors.brand,
   },
   scaleRow: { flexDirection: "row", justifyContent: "space-between" },
+  trackDivider: {
+    height: 1,
+    backgroundColor: colors.divider,
+    marginVertical: spacing.md,
+  },
   scaleText: {
     fontFamily: fonts.text,
     fontSize: fontSize.xs,

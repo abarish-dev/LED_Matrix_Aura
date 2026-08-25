@@ -63,7 +63,15 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Weather Test**: Weather-tab "Preview Alert on Matrix" button → `{command:"weather_test"}`; firmware flashes a sample severe-storm card.
 - All verified via testing_agent iteration_9 (frontend). BLE remains device-build-only.
 
+## Updates (2026-06 — round 2 enhancements)
+- [x] **Real logo bitmaps embedded**: `firmware/tools/generate_logos.py` downloads 123 team + 12 airline logos, converts to 16×16 RGB565, writes `include/logos/generated_logos.h`; `Logos.h` exposes `teamLogo()/airlineLogo()`; blitted on the flight + score cards.
+- [x] **Score preview**: Sports rotation rows show a live ESPN score/matchup line per team (`src/services/espn.ts`, keyless, cached; graceful fallback). NOTE: ESPN is CORS-blocked in web preview so it only shows on a native device build.
+- [x] **UFC card**: UFC segment shows the next event name/date/headline fight (`getNextUfc`), with loading + empty states.
+- [x] **Night Dimming**: Device-tab schedule (toggle + From/To hour steppers + dim-level slider); firmware syncs NTP time (`TZ_INFO`) and auto-dims within the window.
+- [x] **Track a Specific Flight**: Flights-tab toggle + callsign input to pin one flight (family travel); firmware uses adsb.lol `/v2/callsign/<ident>`.
+- [x] **Fixed** user-reported bug: Sports league row was a horizontal ScrollView (UFC cut off, no mouse-drag) → now a fixed equal-width row; all 5 leagues always visible.
+- All verified via testing_agent iteration_10 (frontend). Settings persist in `aura_settings_v1`.
+
 ## Backlog
-- **P2:** Bundle real airline/team logo bitmaps into firmware (`Logos.h` registry ready).
 - **P2:** Panel geometry auto-detect.
-- **P3:** UFC event details card in-app; per-team score preview; slider a11y (aria-value*).
+- **P3:** Proxy ESPN through backend so score preview shows in web preview too; slider a11y (aria-value*).

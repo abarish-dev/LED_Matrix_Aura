@@ -23,6 +23,8 @@ static void applyFlights(JsonObjectConst o) {
   if (o["lat"].is<double>())    gSettings.flights.lat      = o["lat"];
   if (o["lon"].is<double>())    gSettings.flights.lon      = o["lon"];
   if (o["radiusMi"].is<int>())  gSettings.flights.radiusMi = o["radiusMi"];
+  if (o["trackFlight"].is<bool>())        gSettings.flights.trackFlight = o["trackFlight"];
+  if (o["flightIdent"].is<const char*>()) gSettings.flights.flightIdent = String((const char*)o["flightIdent"]);
 }
 
 static void applySports(JsonObjectConst o) {
@@ -42,6 +44,13 @@ static void applySports(JsonObjectConst o) {
 static void applyWeather(JsonObjectConst o) {
   if (o["enabled"].is<bool>())        gSettings.weather.enabled  = o["enabled"];
   if (o["severity"].is<const char*>())gSettings.weather.severity = String((const char*)o["severity"]);
+}
+
+static void applyNight(JsonObjectConst o) {
+  if (o["enabled"].is<bool>())   gSettings.night.enabled   = o["enabled"];
+  if (o["startHour"].is<int>())  gSettings.night.startHour = o["startHour"];
+  if (o["endHour"].is<int>())    gSettings.night.endHour   = o["endHour"];
+  if (o["dimLevel"].is<int>())   gSettings.night.dimLevel  = o["dimLevel"];
 }
 
 class CharCallbacks : public NimBLECharacteristicCallbacks {
@@ -71,6 +80,9 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
       } else if (command == "brightness") {
         if (doc["value"].is<int>()) gSettings.brightness = doc["value"];
         gConfigChanged = true;
+      } else if (command == "night") {
+        applyNight(doc.as<JsonObjectConst>());
+        gConfigChanged = true;
       } else if (command == "flash_test") {
         gFlashTest = true;
       } else if (command == "weather_test") {
@@ -83,6 +95,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
     if (doc["flights"].is<JsonObjectConst>()) applyFlights(doc["flights"]);
     if (doc["sports"].is<JsonObjectConst>())  applySports(doc["sports"]);
     if (doc["weather"].is<JsonObjectConst>()) applyWeather(doc["weather"]);
+    if (doc["nightMode"].is<JsonObjectConst>()) applyNight(doc["nightMode"]);
     if (doc["brightness"].is<int>())          gSettings.brightness = doc["brightness"];
     gConfigChanged = true;
 

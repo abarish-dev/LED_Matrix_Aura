@@ -7,7 +7,7 @@ import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type WifiStatus } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
-import { Hero, Card, SectionLabel, PrimaryButton } from "@/src/components/ui";
+import { Hero, Card, SectionLabel, PrimaryButton, ToggleRow } from "@/src/components/ui";
 
 const HERO =
   "https://images.pexels.com/photos/30547576/pexels-photo-30547576.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
@@ -18,6 +18,50 @@ function rssiBars(rssi: number | null): number {
   if (rssi >= -67) return 3;
   if (rssi >= -78) return 2;
   return 1;
+}
+
+function fmtHour(h: number): string {
+  const period = h < 12 ? "AM" : "PM";
+  let hr = h % 12;
+  if (hr === 0) hr = 12;
+  return `${hr} ${period}`;
+}
+
+function HourStepper({
+  label,
+  hour,
+  onChange,
+}: {
+  label: string;
+  hour: number;
+  onChange: (h: number) => void;
+}) {
+  return (
+    <View style={styles.stepper}>
+      <Text style={styles.stepperLabel}>{label}</Text>
+      <View style={styles.stepperControls}>
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            onChange((hour + 23) % 24);
+          }}
+          style={styles.stepBtn}
+        >
+          <Ionicons name="remove" size={18} color={colors.brand} />
+        </Pressable>
+        <Text style={styles.stepperValue}>{fmtHour(hour)}</Text>
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            onChange((hour + 1) % 24);
+          }}
+          style={styles.stepBtn}
+        >
+          <Ionicons name="add" size={18} color={colors.brand} />
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 export default function DeviceScreen() {
@@ -35,6 +79,7 @@ export default function DeviceScreen() {
     sendWifi,
     settings,
     updateBrightness,
+    updateNightMode,
   } = useMatrix();
   const toast = useToast();
 
@@ -196,6 +241,51 @@ export default function DeviceScreen() {
             onSlidingComplete={(v) => updateBrightness(Math.round(v))}
           />
           <Text style={styles.brightHint}>Dim the matrix at night or crank it for daylight.</Text>
+        </Card>
+
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Night Dimming"
+            icon="moon"
+            value={settings.nightMode.enabled}
+            onValueChange={(v) => updateNightMode({ enabled: v })}
+          />
+          {settings.nightMode.enabled && (
+            <>
+              <View style={styles.nightDivider} />
+              <View style={styles.nightRow}>
+                <HourStepper
+                  label="From"
+                  hour={settings.nightMode.startHour}
+                  onChange={(h) => updateNightMode({ startHour: h })}
+                />
+                <HourStepper
+                  label="To"
+                  hour={settings.nightMode.endHour}
+                  onChange={(h) => updateNightMode({ endHour: h })}
+                />
+              </View>
+              <View style={[styles.radiusHeader, { marginTop: spacing.md }]}>
+                <Text style={styles.brightLabel}>Dim to</Text>
+                <Text style={styles.brightValue}>{settings.nightMode.dimLevel}%</Text>
+              </View>
+              <Slider
+                style={{ width: "100%", height: 40 }}
+                minimumValue={0}
+                maximumValue={80}
+                step={5}
+                value={settings.nightMode.dimLevel}
+                minimumTrackTintColor={colors.brand}
+                maximumTrackTintColor={colors.surfaceTertiary}
+                thumbTintColor="#ffffff"
+                onValueChange={() => Haptics.selectionAsync()}
+                onSlidingComplete={(v) => updateNightMode({ dimLevel: Math.round(v) })}
+              />
+              <Text style={styles.brightHint}>
+                Between these hours the matrix dims to this level automatically.
+              </Text>
+            </>
+          )}
         </Card>
 
         {/* Wi-Fi */}
@@ -382,6 +472,41 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.onSurfaceSecondary,
     marginTop: spacing.xs,
+  },
+  nightDivider: {
+    height: 1,
+    backgroundColor: colors.divider,
+    marginVertical: spacing.md,
+  },
+  nightRow: { flexDirection: "row", gap: spacing.md },
+  stepper: { flex: 1 },
+  stepperLabel: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    marginBottom: spacing.xs,
+  },
+  stepperControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.xs,
+    height: 44,
+  },
+  stepBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepperValue: {
+    fontFamily: fonts.display,
+    fontSize: fontSize.lg,
+    color: colors.onSurface,
   },
   fieldLabel: {
     fontFamily: fonts.textMedium,

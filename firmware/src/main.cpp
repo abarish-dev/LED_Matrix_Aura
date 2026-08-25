@@ -11,6 +11,7 @@
 // ============================================================================
 #include <Arduino.h>
 #include <WiFi.h>
+#include <time.h>
 #include "Config.h"
 #include "DisplayManager.h"
 #include "BleProvisioning.h"
@@ -35,6 +36,7 @@ static uint8_t  cardIndex = 0;
 static Data::FlightInfo  gFlight;
 static Data::ScoreInfo   gScore;
 static Data::WeatherInfo gWeather;
+static String            gScoreKey;   // "NFL:DAL" of the current score card
 
 static bool wifiConnect() {
   if (gSettings.wifiSsid.isEmpty()) return false;
@@ -43,7 +45,36 @@ static bool wifiConnect() {
   WiFi.begin(gSettings.wifiSsid.c_str(), gSettings.wifiPass.c_str());
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
-  return WiFi.status() == WL_CONNECTED;
+  if (WiFi.status() == WL_CONNECTED) {
+    // NTP for the Night Dimming schedule. Change TZ_INFO to your timezone
+    // (POSIX TZ string). Default is US Eastern.
+    #ifndef TZ_INFO
+    #define TZ_INFO "EST5EDT,M3.2.0,M11.1.0"
+    #endif
+    configTzTime(TZ_INFO, "pool.ntp.org", "time.nist.gov");
+    return true;
+  }
+  return false;
+}
+
+// Is hour `h` inside the [start,end) night window (may wrap past midnight)?
+static bool inNightWindow(int h, int start, int end) {
+  if (start == end) return false;
+  if (start < end)  return h >= start && h < end;
+  return h >= start || h < end;
+}
+
+// Apply brightness, honoring the Night Dimming schedule if enabled.
+static void applyBrightnessForNow() {
+  int b = gSettings.brightness;
+  if (gSettings.night.enabled) {
+    struct tm t;
+    if (getLocalTime(&t, 50) &&
+        inNightWindow(t.tm_hour, gSettings.night.startHour, gSettings.night.endHour)) {
+      b = gSettings.night.dimLevel;
+    }
+  }
+  Display::setBrightness(b);
 }
 
 static uint16_t severityColor(const String& s) {
@@ -56,9 +87,14 @@ static uint16_t severityColor(const String& s) {
 static void refreshData() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  if (gSettings.flights.enabled)
-    gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
-                                  gSettings.flights.radiusMi);
+  if (gSettings.flights.enabled) {
+    if (gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty())
+      gFlight = Data::flightByCallsign(gSettings.flights.flightIdent,
+                                       gSettings.flights.lat, gSettings.flights.lon);
+    else
+      gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
+                                    gSettings.flights.radiusMi);
+  }
 
   if (gSettings.sports.enabled && gSettings.sports.count > 0) {
     // Rotate through followed teams one per refresh.
@@ -68,6 +104,7 @@ static void refreshData() {
     int colon = entry.indexOf(':');
     if (colon > 0)
       gScore = Data::teamGame(entry.substring(0, colon), entry.substring(colon + 1));
+    gScoreKey = entry;
     ti++;
   }
 
@@ -99,6 +136,12 @@ static void drawCurrentCard() {
     if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
   } else if (t == 1) {
     Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status);
+    int colon = gScoreKey.indexOf(':');
+    if (colon > 0) {
+      const LogoAsset* lg = teamLogo(gScoreKey.substring(0, colon),
+                                     gScoreKey.substring(colon + 1));
+      if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
+    }
   }
 }
 
@@ -123,10 +166,10 @@ void loop() {
     lastCard = 0;
   }
 
-  // Apply any live config change (e.g. brightness) immediately.
+  // Apply any live config change (e.g. brightness / night schedule) immediately.
   if (gConfigChanged) {
     gConfigChanged = false;
-    Display::setBrightness(gSettings.brightness);
+    applyBrightnessForNow();
     lastCard = 0; // redraw on next tick
   }
 
@@ -135,7 +178,7 @@ void loop() {
     gWifiCredsChanged = false;
     bool ok = wifiConnect();
     AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
-    if (ok) { refreshData(); lastFetch = millis(); }
+    if (ok) { applyBrightnessForNow(); refreshData(); lastFetch = millis(); }
   }
 
   uint32_t now = millis();
@@ -145,6 +188,7 @@ void loop() {
   if (now - lastCard >= CARD_MS) {
     lastCard = now;
     cardIndex++;
+    applyBrightnessForNow();   // re-evaluate the night schedule each card
     drawCurrentCard();
   }
 

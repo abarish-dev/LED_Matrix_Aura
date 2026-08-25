@@ -90,8 +90,38 @@ inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
   return out;
 }
 
-// ---- Sports: latest game for a team from ESPN ------------------------------
-inline ScoreInfo teamGame(const String& league, const String& abbr) {
+// ---- Flights: a specific flight by callsign from adsb.lol ------------------
+inline FlightInfo flightByCallsign(const String& callsign, double homeLat, double homeLon) {
+  FlightInfo out;
+  String cs = callsign; cs.trim(); cs.toUpperCase();
+  if (cs.isEmpty()) return out;
+  String url = "https://api.adsb.lol/v2/callsign/" + cs;
+  String body = httpGet(url);
+  if (body.isEmpty()) return out;
+
+  JsonDocument doc;
+  JsonDocument filter;
+  filter["ac"][0]["flight"] = true;
+  filter["ac"][0]["lat"] = true;
+  filter["ac"][0]["lon"] = true;
+  filter["ac"][0]["alt_baro"] = true;
+  filter["ac"][0]["track"] = true;
+  if (deserializeJson(doc, body, DeserializationOption::Filter(filter))) return out;
+
+  JsonArrayConst arr = doc["ac"].as<JsonArrayConst>();
+  if (arr.isNull() || arr.size() == 0) return out;
+  JsonObjectConst ac = arr[0];
+  out.callsign = cs;
+  out.airline = airlineFromCallsign(cs);
+  out.altFt = ac["alt_baro"].is<int>() ? (int)ac["alt_baro"] : 0;
+  out.headingDeg = ac["track"].is<float>() ? (int)round((float)ac["track"]) : -1;
+  if (ac["lat"].is<double>() && ac["lon"].is<double>())
+    out.distanceMi = (int)round(haversineMi(homeLat, homeLon, ac["lat"], ac["lon"]));
+  out.ok = true;
+  return out;
+}
+
+// ---- Sports: latest game for a team from ESPN ------------------------------inline ScoreInfo teamGame(const String& league, const String& abbr) {
   ScoreInfo out;
   String path;
   if (league == "NFL") path = "football/nfl";

@@ -23,10 +23,12 @@
 static const uint8_t MAX_TEAMS = 16;
 
 struct FlightCfg {
-  bool   enabled  = true;
-  double lat      = 0.0;
-  double lon      = 0.0;
-  int    radiusMi = 25;
+  bool   enabled     = true;
+  double lat         = 0.0;
+  double lon         = 0.0;
+  int    radiusMi    = 25;
+  bool   trackFlight = false;   // follow one specific flight
+  String flightIdent = "";      // callsign / flight number to follow
 };
 
 struct SportsCfg {
@@ -41,10 +43,18 @@ struct WeatherCfg {
   String severity = "severe"; // minor | moderate | severe | extreme
 };
 
+struct NightCfg {
+  bool enabled   = false;
+  int  startHour = 22;  // 0-23
+  int  endHour   = 7;   // 0-23
+  int  dimLevel  = 20;  // 0-100 (%)
+};
+
 struct AuraSettings {
   FlightCfg  flights;
   SportsCfg  sports;
   WeatherCfg weather;
+  NightCfg   night;
   int        brightness = 80;   // 0-100 (%)
   String     wifiSsid = "";
   String     wifiPass = "";

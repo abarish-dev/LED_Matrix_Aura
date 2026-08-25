@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import DraggableFlatList, {
   ScaleDecorator,
@@ -17,6 +17,7 @@ import {
   readableOn,
   type League,
 } from "@/src/data/teams";
+import { getTeamScore, getNextUfc, type ScoreLine, type UfcEvent } from "@/src/services/espn";
 
 const HERO =
   "https://images.pexels.com/photos/15779126/pexels-photo-15779126.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
@@ -49,16 +50,63 @@ function TeamBadge({
   );
 }
 
+function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
+  if (!line) return "";
+  if (line.state === "pre") {
+    return `${line.atHome ? "vs" : "@"} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}`;
+  }
+  const ts = line.teamScore ?? 0;
+  const os = line.oppScore ?? 0;
+  return `${abbr} ${ts}–${os} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}`;
+}
+
 export default function SportsScreen() {
   const { settings, updateSports, toggleTeam, reorderTeams } = useMatrix();
   const s = settings.sports;
   const [seg, setSeg] = useState<Segment>("NFL");
+  const [scores, setScores] = useState<Record<string, ScoreLine | null>>({});
+  const [ufc, setUfc] = useState<UfcEvent | null>(null);
+  const [ufcLoading, setUfcLoading] = useState(true);
+
+  const teamKey = s.teams.map((t) => `${t.league}:${t.abbr}`).join(",");
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const entries = await Promise.all(
+        s.teams.map(async (t) => {
+          const line = await getTeamScore(t.league, t.abbr);
+          return [`${t.league}:${t.abbr}`, line] as const;
+        }),
+      );
+      if (active) setScores(Object.fromEntries(entries));
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamKey]);
+
+  useEffect(() => {
+    let active = true;
+    setUfcLoading(true);
+    getNextUfc().then((e) => {
+      if (active) {
+        setUfc(e);
+        setUfcLoading(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const countForLeague = (lg: League) =>
     s.teams.filter((t) => t.league === lg).length;
 
   const renderRotationRow = ({ item, drag, isActive }: RenderItemParams<SavedTeam>) => {
     const t = findTeam(item.league, item.abbr);
+    const line = scores[`${item.league}:${item.abbr}`];
+    const scoreStr = scoreText(line, item.abbr);
     return (
       <ScaleDecorator>
         <Pressable
@@ -73,7 +121,19 @@ export default function SportsScreen() {
           <TeamBadge league={item.league} abbr={item.abbr} color={t?.color ?? "#555"} size={34} />
           <View style={{ flex: 1 }}>
             <Text style={styles.rotName}>{t?.name ?? item.abbr}</Text>
-            <Text style={styles.rotLeague}>{item.league} · {item.abbr}</Text>
+            {scoreStr ? (
+              <Text
+                style={[
+                  styles.rotScore,
+                  line?.state === "in" && { color: colors.success },
+                ]}
+                numberOfLines={1}
+              >
+                {scoreStr}
+              </Text>
+            ) : (
+              <Text style={styles.rotLeague}>{item.league} · {item.abbr}</Text>
+            )}
           </View>
           <Pressable
             hitSlop={10}
@@ -101,11 +161,7 @@ export default function SportsScreen() {
         />
 
         <SectionLabel>League</SectionLabel>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.segRow}
-        >
+        <View style={styles.segRow}>
           {SEGMENTS.map((sg) => {
             const active = seg === sg;
             const cnt = sg === "UFC" ? (s.ufc ? 1 : 0) : countForLeague(sg);
@@ -129,7 +185,7 @@ export default function SportsScreen() {
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
 
         {seg === "UFC" ? (
           <Card style={{ marginTop: spacing.md }}>
@@ -139,10 +195,28 @@ export default function SportsScreen() {
               value={s.ufc}
               onValueChange={(v) => updateSports({ ufc: v })}
             />
-            <Text style={styles.ufcNote}>
-              Shows the next UFC event, headline bout and live results on the
-              matrix. No team selection needed.
-            </Text>
+            <View style={styles.ufcDivider} />
+            {ufcLoading ? (
+              <View style={styles.ufcLoading}>
+                <ActivityIndicator color={colors.brand} />
+                <Text style={styles.ufcNote}>Loading next event…</Text>
+              </View>
+            ) : ufc ? (
+              <View style={styles.ufcNext}>
+                <View style={styles.ufcHeaderRow}>
+                  <Ionicons name="calendar" size={14} color={colors.brand} />
+                  <Text style={styles.ufcDate}>{ufc.date || "Upcoming"}</Text>
+                </View>
+                <Text style={styles.ufcName}>{ufc.shortName || ufc.name}</Text>
+                {!!ufc.headline && (
+                  <Text style={styles.ufcHeadline}>{ufc.headline}</Text>
+                )}
+              </View>
+            ) : (
+              <Text style={styles.ufcNote}>
+                No upcoming UFC event found right now.
+              </Text>
+            )}
           </Card>
         ) : (
           <View style={styles.grid}>
@@ -213,12 +287,14 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingBottom: 150 },
   body: { paddingHorizontal: spacing.lg },
-  segRow: { gap: spacing.sm, paddingVertical: spacing.xs },
+  segRow: { flexDirection: "row", gap: spacing.xs, paddingVertical: spacing.xs },
   segPill: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: spacing.xs,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceSecondary,
@@ -285,6 +361,35 @@ const styles = StyleSheet.create({
     color: colors.onSurfaceSecondary,
     marginTop: spacing.sm,
     lineHeight: 18,
+  },
+  ufcDivider: {
+    height: 1,
+    backgroundColor: colors.divider,
+    marginVertical: spacing.md,
+  },
+  ufcLoading: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  ufcNext: { gap: 4 },
+  ufcHeaderRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  ufcDate: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.sm,
+    color: colors.brand,
+    letterSpacing: 0.3,
+  },
+  ufcName: {
+    fontFamily: fonts.display,
+    fontSize: fontSize.xl,
+    color: colors.onSurface,
+  },
+  ufcHeadline: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.base,
+    color: colors.onSurfaceSecondary,
+  },
+  rotScore: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceTertiary,
   },
   rotRow: {
     flexDirection: "row",

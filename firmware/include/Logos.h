@@ -1,25 +1,17 @@
 // ============================================================================
 //  Logos.h — airline + team logo assets for the matrix.
 //
-//  HUB75 panels can't decode PNG/SVG at runtime cheaply, so logos are stored as
-//  pre-converted RGB565 bitmaps (uint16_t arrays) and blitted with
-//  Display::drawLogo(). This header is the registry + lookup; drop generated
-//  arrays into `logos/` and register them below.
+//  Logos are pre-converted to 16x16 RGB565 bitmaps (uint16_t arrays) and blitted
+//  with Display::drawLogo(). The actual pixel data + registry tables live in
+//  the auto-generated `logos/generated_logos.h`.
 //
-//  ── How to add a logo ──────────────────────────────────────────────────────
-//  1. Grab the artwork:
-//       Teams   : https://a.espncdn.com/i/teamlogos/<league>/500/<abbr>.png
-//       Airlines: any square PNG of the airline mark
-//  2. Resize to a matrix-friendly size (16x16, 20x20 or 24x24) and convert to
-//     an RGB565 C array. Easy options:
-//       • https://lvgl.io/tools/imageconverter  (output: "C array", RGB565)
-//       • ImageMagick + a short script, or the `image2cpp` web tool.
-//  3. Save as `logos/dal_16.h` containing:
-//       static const uint16_t DAL_16[16*16] = { 0x0000, ... };
-//  4. #include it here and add a row to TEAM_LOGOS / AIRLINE_LOGOS.
+//  ── Regenerating / adding logos ────────────────────────────────────────────
+//    python3 tools/generate_logos.py
+//  Edit the TEAMS / AIRLINES lists at the top of that script to add or change
+//  entries (teams pull from ESPN's CDN, airlines from Google Flights logos).
 //
-//  Until you add assets, lookups return nullptr and the display falls back to
-//  the text badge (callsign / abbreviation), which always works.
+//  If a lookup returns nullptr the display falls back to the text badge
+//  (callsign / abbreviation), which always works.
 // ============================================================================
 #pragma once
 #include <Arduino.h>
@@ -31,14 +23,8 @@ struct LogoAsset {
   uint8_t         h;
 };
 
-// ---- Example (commented; uncomment once you generate a real array) ---------
-// #include "logos/dal_16.h"
-// static const LogoAsset TEAM_LOGOS[] = {
-//   { "NFL:DAL", DAL_16, 16, 16 },
-// };
-
-static const LogoAsset TEAM_LOGOS[]    = {};   // add rows here
-static const LogoAsset AIRLINE_LOGOS[] = {};   // add rows here
+// Pixel arrays + TEAM_LOGOS[] / AIRLINE_LOGOS[] tables (auto-generated).
+#include "logos/generated_logos.h"
 
 static const LogoAsset* findLogo(const LogoAsset* table, size_t n, const String& key) {
   for (size_t i = 0; i < n; i++)

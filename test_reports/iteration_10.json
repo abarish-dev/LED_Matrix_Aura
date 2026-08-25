@@ -1,0 +1,50 @@
+{
+  "summary": "Frontend-only regression PASS. All 5 new features and every listed regression check verified on mobile viewport 390x844 against https://smart-matrix-hub.preview.emergentagent.com. (1) SPORTS LEAGUE-ROW BUG FIX: all 5 pills (NFL x=38, NBA x=110, MLB x=183, NHL x=255, UFC x=328) render fully within a 390px viewport with document.scrollWidth === clientWidth === 390 -> zero horizontal scroll; each pill is tappable and swaps the content area correctly (NFL grid <-> UFC card). (2) NEW UFC CARD: tapping the UFC pill shows the 'UFC Fight Night' toggle and, after a brief loading spinner, gracefully renders 'No upcoming UFC event found right now.' (ESPN returned an empty events array during off-schedule window / CORS-blocked on web preview -- both handled without a crash). (3) NEW SPORTS SCORE PREVIEW: after selecting Chiefs / Cowboys / Ravens from the NFL grid, the Rotation Order list renders three rows without crashing; the ESPN scoreboard fetch is triggered per team and, when it fails (CORS on web preview), the row silently falls back to the 'NFL - KC|DAL|BAL' label -- no red screen, no unhandled promise rejection. (4) NEW FLIGHTS 'Track a Specific Flight': the 'Follow one flight' toggle, when flipped ON, reveals the 'Flight number / callsign' TextInput; typing 'aa1234-!x' yields 'AA1234X' (uppercased + non-alphanumerics stripped + <=8 chars). Toggle state and ident both persist to AsyncStorage (localStorage key 'aura_settings_v1' -> flights.trackFlight:true, flights.flightIdent:'AA1234X') and re-hydrate correctly after a hard reload (input shows 'AA1234X'). (5) NEW DEVICE 'Night Dimming': the toggle reveals the From/To hour steppers (initial 10 PM / 7 AM) and the 'Dim to 20%' slider; tapping the '+' on the From stepper advances the hour (localStorage confirms startHour: 22 -> 23) and the Night Dimming controls remain visible after a full reload with nightMode.enabled:true persisted. REGRESSION: brightness slider still shows 80% and persists; all 4 tabs load; Flights ZIP 28117 still resolves to 'Mooresville, NC' via api.zippopotam.us (hydration fix from iteration_9 still in effect); NFL team logos render on the grid; team select/deselect works and Rotation Order populates. Live SYNC FAB, Weather severity radios and 'Preview Alert on Matrix' were previously verified in iteration_9 and not re-run this round. NO red-screen errors, NO unhandled crashes. Deprecation warnings from previous iterations (shadow*, props.pointerEvents, React-19 element.ref from react-native-draggable-flatlist, useNativeDriver on web) still fire but are non-blocking.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Sports score preview + UFC next-event (ESPN fetch)",
+        "issue": "ESPN endpoints (site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard and .../mma/ufc/scoreboard) fail with 'blocked by CORS policy: No Access-Control-Allow-Origin header' when called from the web preview origin. Per the app owner note this is expected on web (keyless network calls, off-season) and the UI degrades gracefully -- Rotation Order rows fall back to 'LEAGUE - ABBR' and the UFC card shows the 'No upcoming UFC event found right now.' empty state. On a native iOS/Android build fetch bypasses CORS and this will work. NOT a bug per the review request; flagged for context only.",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "All (carry-over -- still not addressed)",
+        "issues": [
+          "Zero testID props anywhere in the app; all Playwright selectors still rely on visible text and DOM tree-walking (e.g. climbing from the 'Follow one flight' Text to its sibling role=switch). This makes regressions brittle. Same finding as iteration_8 and iteration_9."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "react-native-draggable-flatlist / React 19", "issue": "Console error 'Accessing element.ref was removed in React 19. ref is now a regular prop.' still fires whenever the Sports tab mounts (DraggableFlatList / ScaleDecorator). Non-blocking today, will break when the ref-as-prop deprecation becomes a hard error. Reference: /app/frontend/app/(tabs)/sports.tsx:4-7."},
+      {"component": "shadow* style props", "issue": "'shadow*' style props are deprecated. Use boxShadow. Still fires from SyncFab.tsx and Card shadows. Non-blocking."},
+      {"component": "props.pointerEvents", "issue": "'props.pointerEvents is deprecated. Use style.pointerEvents.' Still fires from /app/frontend/src/components/SyncFab.tsx. Non-blocking."},
+      {"component": "useNativeDriver on web", "issue": "'Animated: useNativeDriver is not supported...' fires when Toast animates. Could be gated by Platform.OS !== 'web'. Non-blocking."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_10.json"],
+  "action_items": [
+    "Add testID props to key interactive elements to make automated regressions robust (repeated ask from iteration_8/9). Priority targets: league-pill-{NFL|NBA|MLB|NHL|UFC}, night-dim-toggle, night-from-plus/minus, night-to-plus/minus, night-dim-slider, follow-flight-toggle, flight-ident-input, ufc-next-event-card.",
+    "Consider bundling ESPN fetches through a lightweight CORS proxy or the /api backend so score previews and the UFC card actually render on the web preview. Today the graceful fallback is fine on device but the web preview always shows the empty/fallback state.",
+    "Migrate shadow* -> boxShadow and move pointerEvents from prop to style in SyncFab.tsx to silence long-standing deprecation warnings.",
+    "Track react-native-draggable-flatlist compatibility with React 19; the element.ref warning will become a hard error."
+  ],
+  "critical_code_review_comments": [
+    "espn.ts caches by URL with a 60s TTL but does not distinguish 'no games today' (data.events === []) from 'network error' -- both produce a null ScoreLine and thus the 'LEAGUE - ABBR' fallback. Fine for the UI but hides real failures; consider surfacing a small 'offline' icon vs an empty-schedule state.",
+    "espn.ts fetchJson swallows all errors (catch {} at line 38). On a real device this masks 4xx/5xx / DNS failures. Consider logging with a debug flag.",
+    "sports.tsx re-runs the score fetch effect whenever the teams array key changes (correct), but it also refetches every mount because the effect has no persistent cache tied to component lifecycle beyond espn.ts's Map. Selecting/deselecting teams rapidly can queue many parallel fetches; consider a Promise.allSettled + AbortController wired to `active` so unmount really cancels.",
+    "index.tsx HourStepper does not disable the +/- buttons or debounce -- rapid taps fire Haptics.selectionAsync() and updateNightMode() on every tick, which in turn triggers a debounced BLE livePush('night', ...). Fine, just noting.",
+    "matrix.tsx buildFullPayload includes nightMode -- confirmed shape matches the live-push 'night' command, good consistency.",
+    "flights.tsx 'Follow one flight' section renders the callsign TextInput unconditionally inside <>{}</> when f.trackFlight is true; when it's off the input is unmounted so any half-typed value is lost. That's the intended behavior but worth being explicit: the callsign IS persisted in AsyncStorage even when the toggle is off, so flipping OFF/ON preserves the ident. Verified via localStorage snapshot."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "5/5 new features PASS + all listed regression checks PASS"},
+  "seed_data_creation": "localStorage was cleared at the start of the run to verify default state and persistence from scratch.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public URL: https://smart-matrix-hub.preview.emergentagent.com. Viewport 390x844. AsyncStorage on web maps to localStorage key 'aura_settings_v1'. No testIDs -- rely on visible text + DOM traversal. To flip an RN ToggleRow programmatically, find the Text label then walk up ancestors and click the first descendant that matches 'input[type=\"checkbox\"], [role=\"switch\"]' (see script in this iteration). HourStepper +/- buttons are the first and second [tabindex=\"0\"] descendants of the stepper container -- index 1 is '+'. ESPN scoreboard endpoints will 100% fail with CORS on the web preview; the UI is designed to fall back to 'LEAGUE - ABBR' (rotation rows) and 'No upcoming UFC event found right now.' (UFC card) -- do not report these as bugs. adsb.lol may or may not respond over CORS; either is acceptable per instructions. BLE is expected to be unsupported on web -- do not report.",
+  "rca_of_issue": "N/A -- no functional bugs found this round. All 5 new features work as spec'd, all regressions still green."
+}

@@ -39,10 +39,18 @@ export type Settings = {
     city: string;
     state: string;
     radiusMi: number;
+    trackFlight: boolean;
+    flightIdent: string;
   };
   sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean };
   weather: { enabled: boolean; severity: Severity };
   brightness: number; // 0-100 matrix brightness
+  nightMode: {
+    enabled: boolean;
+    startHour: number; // 0-23
+    endHour: number; // 0-23
+    dimLevel: number; // 0-100
+  };
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -54,10 +62,13 @@ export const DEFAULT_SETTINGS: Settings = {
     city: "",
     state: "",
     radiusMi: 25,
+    trackFlight: false,
+    flightIdent: "",
   },
   sports: { enabled: true, teams: [], ufc: false },
   weather: { enabled: true, severity: "severe" },
   brightness: 80,
+  nightMode: { enabled: false, startHour: 22, endHour: 7, dimLevel: 20 },
 };
 
 export type WifiStatus = "idle" | "sending" | "waiting" | "joined" | "failed";
@@ -84,6 +95,7 @@ type MatrixContextValue = {
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
   updateBrightness: (value: number) => void;
+  updateNightMode: (patch: Partial<Settings["nightMode"]>) => void;
 
   // BLE actions (throw BleError on failure)
   connect: () => Promise<{ name: string }>;
@@ -109,6 +121,8 @@ export function buildFullPayload(s: Settings) {
       lat: s.flights.lat,
       lon: s.flights.lon,
       radiusMi: s.flights.radiusMi,
+      trackFlight: s.flights.trackFlight,
+      flightIdent: s.flights.flightIdent,
     },
     sports: {
       enabled: s.sports.enabled,
@@ -120,6 +134,12 @@ export function buildFullPayload(s: Settings) {
       severity: s.weather.severity,
     },
     brightness: s.brightness,
+    nightMode: {
+      enabled: s.nightMode.enabled,
+      startHour: s.nightMode.startHour,
+      endHour: s.nightMode.endHour,
+      dimLevel: s.nightMode.dimLevel,
+    },
     syncedAt: Date.now(),
   };
 }
@@ -154,6 +174,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
             typeof saved.brightness === "number"
               ? saved.brightness
               : DEFAULT_SETTINGS.brightness,
+          nightMode: { ...DEFAULT_SETTINGS.nightMode, ...(saved.nightMode ?? {}) },
         });
       }
       const ssid = await storage.getItem<string>("aura_last_ssid", "");
@@ -186,6 +207,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           lat: next.flights.lat,
           lon: next.flights.lon,
           radiusMi: next.flights.radiusMi,
+          trackFlight: next.flights.trackFlight,
+          flightIdent: next.flights.flightIdent,
         });
         return next;
       });
@@ -276,6 +299,23 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     [persist, livePush],
   );
 
+  const updateNightMode = useCallback(
+    (patch: Partial<Settings["nightMode"]>) => {
+      setSettings((prev) => {
+        const next = { ...prev, nightMode: { ...prev.nightMode, ...patch } };
+        persist(next);
+        livePush("night", {
+          enabled: next.nightMode.enabled,
+          startHour: next.nightMode.startHour,
+          endHour: next.nightMode.endHour,
+          dimLevel: next.nightMode.dimLevel,
+        });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
   // ---- BLE actions ----------------------------------------------------------
   const connect = useCallback(async () => {
     const info = await connectToMatrix(
@@ -359,6 +399,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     toggleTeam,
     reorderTeams,
     updateBrightness,
+    updateNightMode,
     connect,
     disconnect,
     syncAll,
