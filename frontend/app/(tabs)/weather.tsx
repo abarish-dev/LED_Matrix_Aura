@@ -1,12 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useAudioPlayer } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
-import { activeAlerts, severityColorHex, expiresLabel, type Alert } from "@/src/services/weather";
+import {
+  activeAlerts,
+  severityColorHex,
+  expiresLabel,
+  locationInfo,
+  type Alert,
+  type LocationInfo,
+} from "@/src/services/weather";
 
 const HERO =
   "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc3Rvcm15JTIwd2VhdGhlciUyMHJhZGFyJTIwYWJzdHJhY3QlMjBtYXB8ZW58MHx8fHwxNzg3NjE0Mjc2fDA&ixlib=rb-4.1.0&q=85";
@@ -34,7 +42,13 @@ export default function WeatherScreen() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [locInfo, setLocInfo] = useState<LocationInfo | null>(null);
+  const [detail, setDetail] = useState<Alert | null>(null);
   const fetchIdRef = useRef(0);
+  const seenIdsRef = useRef<Set<string>>(new Set());
+  const firstLoadRef = useRef(true);
+
+  const chime = useAudioPlayer(require("@/assets/sounds/alert.wav"));
 
   const loadAlerts = useCallback(async () => {
     if (f.lat == null || f.lon == null) return;
@@ -42,17 +56,45 @@ export default function WeatherScreen() {
     setAlertsLoading(true);
     const list = await activeAlerts(f.lat, f.lon);
     if (id !== fetchIdRef.current) return;
+
+    // Detect brand-new Severe/Extreme alerts for the optional chime.
+    const newSevere = list.filter(
+      (a) =>
+        !seenIdsRef.current.has(a.id) &&
+        (a.severity === "Severe" || a.severity === "Extreme"),
+    );
+    list.forEach((a) => seenIdsRef.current.add(a.id));
+    if (!firstLoadRef.current && newSevere.length > 0 && w.alertSound) {
+      try {
+        chime.seekTo(0);
+        chime.play();
+      } catch {
+        /* audio unavailable (e.g. web preview) */
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      toast.show(`⚠️ ${newSevere[0].event}`, "error");
+    }
+    firstLoadRef.current = false;
+
     setAlerts(list);
     setChecked(true);
     setAlertsLoading(false);
+  }, [f.lat, f.lon, w.alertSound, chime, toast]);
+
+  useEffect(() => {
+    if (f.lat == null || f.lon == null) return;
+    firstLoadRef.current = true;
+    seenIdsRef.current = new Set();
+    loadAlerts();
+    const iv = setInterval(loadAlerts, 60000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.lat, f.lon]);
 
   useEffect(() => {
     if (f.lat == null || f.lon == null) return;
-    loadAlerts();
-    const iv = setInterval(loadAlerts, 60000);
-    return () => clearInterval(iv);
-  }, [loadAlerts, f.lat, f.lon]);
+    locationInfo(f.lat, f.lon).then(setLocInfo);
+  }, [f.lat, f.lon]);
 
   const onPreview = async () => {
     if (bleStatus !== "connected") {
@@ -76,6 +118,18 @@ export default function WeatherScreen() {
       <Hero image={HERO} title="Weather Alerts" subtitle="Local NWS warnings" icon="thunderstorm" />
 
       <View style={styles.body}>
+        {located && (locInfo?.county || locInfo?.city) && (
+          <View style={styles.countyRow}>
+            <Ionicons name="navigate-circle" size={16} color={colors.brand} />
+            <Text style={styles.countyText}>
+              {locInfo?.county ? `${locInfo.county} County` : ""}
+              {locInfo?.county && locInfo?.state ? ", " : ""}
+              {locInfo?.state || ""}
+              {locInfo?.city ? `  ·  ${locInfo.city}` : ""}
+            </Text>
+          </View>
+        )}
+
         {located && alerts.length > 0 && (
           <>
             <View style={styles.alertHeaderRow}>
@@ -85,7 +139,11 @@ export default function WeatherScreen() {
             {alerts.slice(0, 5).map((a, i) => {
               const c = severityColorHex(a.severity);
               return (
-                <View key={a.event + i} style={[styles.alertCard, { borderLeftColor: c }]}>
+                <Pressable
+                  key={a.id + i}
+                  onPress={() => { Haptics.selectionAsync(); setDetail(a); }}
+                  style={[styles.alertCard, { borderLeftColor: c }]}
+                >
                   <View style={styles.alertTop}>
                     <Ionicons name="warning" size={16} color={c} />
                     <Text style={styles.alertEvent} numberOfLines={1}>{a.event}</Text>
@@ -94,8 +152,11 @@ export default function WeatherScreen() {
                     </View>
                   </View>
                   {!!a.area && <Text style={styles.alertArea} numberOfLines={2}>{a.area}</Text>}
-                  {!!a.expires && <Text style={styles.alertExpires}>{expiresLabel(a.expires)}</Text>}
-                </View>
+                  <View style={styles.alertFootRow}>
+                    {!!a.expires && <Text style={styles.alertExpires}>{expiresLabel(a.expires)}</Text>}
+                    <Text style={styles.tapHint}>Tap for details ›</Text>
+                  </View>
+                </Pressable>
               );
             })}
           </>
@@ -140,6 +201,19 @@ export default function WeatherScreen() {
           </Text>
         </Card>
 
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Alert Chime"
+            icon="notifications"
+            value={w.alertSound}
+            onValueChange={(v) => updateWeather({ alertSound: v })}
+          />
+          <Text style={styles.clockHint}>
+            Play a chime on your phone when a new severe or extreme alert appears
+            for your area.
+          </Text>
+        </Card>
+
         <SectionLabel>Minimum Severity</SectionLabel>
         {SEVERITIES.map((sev) => {
           const active = w.severity === sev.id;
@@ -180,7 +254,60 @@ export default function WeatherScreen() {
           your location and flashes any alert at or above this level.
         </Text>
       </View>
+      <AlertDetailModal alert={detail} onClose={() => setDetail(null)} />
     </ScrollView>
+  );
+}
+
+function AlertDetailModal({ alert, onClose }: { alert: Alert | null; onClose: () => void }) {
+  const c = alert ? severityColorHex(alert.severity) : colors.brand;
+  return (
+    <Modal
+      visible={!!alert}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalSheet}>
+          <View style={[styles.modalHandle]} />
+          {alert && (
+            <>
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalSevBar, { backgroundColor: c }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitle}>{alert.event}</Text>
+                  <Text style={[styles.modalSev, { color: c }]}>
+                    {alert.severity}
+                    {alert.expires ? `  ·  ${expiresLabel(alert.expires)}` : ""}
+                  </Text>
+                </View>
+                <Pressable hitSlop={10} onPress={onClose} style={styles.modalClose}>
+                  <Ionicons name="close" size={22} color={colors.onSurfaceSecondary} />
+                </Pressable>
+              </View>
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                {!!alert.area && <Text style={styles.modalArea}>{alert.area}</Text>}
+                {!!alert.headline && <Text style={styles.modalHeadline}>{alert.headline}</Text>}
+                {!!alert.description && (
+                  <>
+                    <Text style={styles.modalLabel}>DETAILS</Text>
+                    <Text style={styles.modalPara}>{alert.description}</Text>
+                  </>
+                )}
+                {!!alert.instruction && (
+                  <>
+                    <Text style={styles.modalLabel}>WHAT TO DO</Text>
+                    <Text style={[styles.modalPara, { color: colors.onSurface }]}>{alert.instruction}</Text>
+                  </>
+                )}
+                <View style={{ height: 24 }} />
+              </ScrollView>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -188,6 +315,45 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingBottom: 150 },
   body: { paddingHorizontal: spacing.lg },
+  countyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginTop: spacing.md,
+  },
+  countyText: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceTertiary },
+  alertFootRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
+  tapHint: { fontFamily: fonts.textMedium, fontSize: fontSize.xs, color: colors.brand },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  modalSheet: {
+    backgroundColor: colors.surfaceSecondary,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    maxHeight: "82%",
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  modalHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  modalSevBar: { width: 4, height: 40, borderRadius: 2 },
+  modalTitle: { fontFamily: fonts.displayBold, fontSize: fontSize["2xl"], color: colors.onSurface },
+  modalSev: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, marginTop: 2 },
+  modalClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
+  modalBody: { marginTop: spacing.md },
+  modalArea: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginBottom: spacing.sm },
+  modalHeadline: { fontFamily: fonts.textMedium, fontSize: fontSize.base, color: colors.onSurface, marginBottom: spacing.sm, lineHeight: 20 },
+  modalLabel: { fontFamily: fonts.displayMedium, fontSize: fontSize.xs, color: colors.brand, letterSpacing: 1.5, marginTop: spacing.md, marginBottom: spacing.xs },
+  modalPara: { fontFamily: fonts.text, fontSize: fontSize.base, color: colors.onSurfaceSecondary, lineHeight: 21 },
   alertHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   alertSpin: { marginTop: spacing.lg, marginBottom: spacing.sm },
   alertCard: {

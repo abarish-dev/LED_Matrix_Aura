@@ -53,7 +53,8 @@
           "bluetoothAlwaysPermission": "Connect to your LED matrix to sync settings"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

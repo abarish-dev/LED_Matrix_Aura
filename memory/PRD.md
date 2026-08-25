@@ -87,6 +87,12 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Active Alerts panel** (Weather tab, above the toggle): live NWS alerts for the user's location, each with severity chip + colored accent, short area, and expiry; sorted most-severe first. Shows a compact "No active alerts" line when clear, nothing before a ZIP is set. Auto-refreshes every 60s. `src/services/weather.ts` (api.weather.gov, keyless + CORS so it works in web too).
 - Verified via testing_agent iteration_14 (single/multiple/clear/no-ZIP states + regression).
 
+## Updates (2026-06 — round 6)
+- [x] **Alert Detail**: tap any active alert → slide-up sheet with full NWS DETAILS description + WHAT TO DO instructions (scrollable). `activeAlerts` now returns id/description/instruction.
+- [x] **County line**: Weather tab shows the user's county (+city) at top via `locationInfo()` (NWS /points + county zone).
+- [x] **Alert Chime**: `weather.alertSound` toggle plays a bundled chime (`assets/sounds/alert.wav`, expo-audio) + haptic + toast on a NEW Severe/Extreme alert; first load seeded silently. Phone-only (not pushed to matrix).
+- Verified via testing_agent iteration_15 (frontend), no regressions.
+
 ## Backlog
 - **P2:** Panel geometry auto-detect.
-- **P3:** Proxy adsb.lol/ESPN through backend for web-preview parity; add testIDs; migrate shadow*/pointerEvents props in SyncFab.
+- **P3:** Proxy adsb.lol/ESPN through backend for web-preview parity; add testIDs; migrate shadow*/pointerEvents props in SyncFab; code comment noting alertSound is phone-only.

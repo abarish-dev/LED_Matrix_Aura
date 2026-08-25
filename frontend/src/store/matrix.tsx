@@ -44,7 +44,7 @@ export type Settings = {
     landingAlert: boolean;
   };
   sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[] };
-  weather: { enabled: boolean; severity: Severity; showClock: boolean };
+  weather: { enabled: boolean; severity: Severity; showClock: boolean; alertSound: boolean };
   brightness: number; // 0-100 matrix brightness
   holidayThemes: boolean; // shift accent colors on holidays
   nightMode: {
@@ -75,7 +75,7 @@ export const DEFAULT_SETTINGS: Settings = {
     landingAlert: true,
   },
   sports: { enabled: true, teams: [], ufc: false, rivals: [] },
-  weather: { enabled: true, severity: "severe", showClock: false },
+  weather: { enabled: true, severity: "severe", showClock: false, alertSound: false },
   brightness: 80,
   holidayThemes: true,
   nightMode: {
