@@ -83,6 +83,10 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Overhead Now panel** (Flights tab, above the toggle): live nearest aircraft with airline logo, callsign + airline, origin→destination, altitude, distance & heading. Positions via `adsb.lol`, airline/route via `adsbdb.com` (CORS-ok), logos via gstatic. Auto-refreshes every 20s. `src/services/adsb.ts`. NOTE: adsb.lol has no CORS header so the live list only resolves on a native device; web preview shows a graceful fallback.
 - Verified via testing_agent iteration_13 (frontend), no regressions.
 
+## Updates (2026-06 — round 5)
+- [x] **Active Alerts panel** (Weather tab, above the toggle): live NWS alerts for the user's location, each with severity chip + colored accent, short area, and expiry; sorted most-severe first. Shows a compact "No active alerts" line when clear, nothing before a ZIP is set. Auto-refreshes every 60s. `src/services/weather.ts` (api.weather.gov, keyless + CORS so it works in web too).
+- Verified via testing_agent iteration_14 (single/multiple/clear/no-ZIP states + regression).
+
 ## Backlog
 - **P2:** Panel geometry auto-detect.
-- **P3:** Proxy adsb.lol/ESPN through backend so live views also show in web preview; add testIDs; migrate shadow*/pointerEvents props in SyncFab.
+- **P3:** Proxy adsb.lol/ESPN through backend for web-preview parity; add testIDs; migrate shadow*/pointerEvents props in SyncFab.

@@ -1,11 +1,12 @@
-import React from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
+import { activeAlerts, severityColorHex, expiresLabel, type Alert } from "@/src/services/weather";
 
 const HERO =
   "https://images.unsplash.com/photo-1630260667842-830a17d12ec9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwc3Rvcm15JTIwd2VhdGhlciUyMHJhZGFyJTIwYWJzdHJhY3QlMjBtYXB8ZW58MHx8fHwxNzg3NjE0Mjc2fDA&ixlib=rb-4.1.0&q=85";
@@ -30,6 +31,29 @@ export default function WeatherScreen() {
   const located = f.lat != null && f.lon != null;
   const toast = useToast();
 
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const fetchIdRef = useRef(0);
+
+  const loadAlerts = useCallback(async () => {
+    if (f.lat == null || f.lon == null) return;
+    const id = ++fetchIdRef.current;
+    setAlertsLoading(true);
+    const list = await activeAlerts(f.lat, f.lon);
+    if (id !== fetchIdRef.current) return;
+    setAlerts(list);
+    setChecked(true);
+    setAlertsLoading(false);
+  }, [f.lat, f.lon]);
+
+  useEffect(() => {
+    if (f.lat == null || f.lon == null) return;
+    loadAlerts();
+    const iv = setInterval(loadAlerts, 60000);
+    return () => clearInterval(iv);
+  }, [loadAlerts, f.lat, f.lon]);
+
   const onPreview = async () => {
     if (bleStatus !== "connected") {
       toast.show("Connect to the matrix first (Device tab).", "info");
@@ -52,6 +76,37 @@ export default function WeatherScreen() {
       <Hero image={HERO} title="Weather Alerts" subtitle="Local NWS warnings" icon="thunderstorm" />
 
       <View style={styles.body}>
+        {located && alerts.length > 0 && (
+          <>
+            <View style={styles.alertHeaderRow}>
+              <SectionLabel>Active Alerts</SectionLabel>
+              {alertsLoading && <ActivityIndicator size="small" color={colors.brand} style={styles.alertSpin} />}
+            </View>
+            {alerts.slice(0, 5).map((a, i) => {
+              const c = severityColorHex(a.severity);
+              return (
+                <View key={a.event + i} style={[styles.alertCard, { borderLeftColor: c }]}>
+                  <View style={styles.alertTop}>
+                    <Ionicons name="warning" size={16} color={c} />
+                    <Text style={styles.alertEvent} numberOfLines={1}>{a.event}</Text>
+                    <View style={[styles.sevChip, { backgroundColor: c + "22" }]}>
+                      <Text style={[styles.sevChipText, { color: c }]}>{a.severity}</Text>
+                    </View>
+                  </View>
+                  {!!a.area && <Text style={styles.alertArea} numberOfLines={2}>{a.area}</Text>}
+                  {!!a.expires && <Text style={styles.alertExpires}>{expiresLabel(a.expires)}</Text>}
+                </View>
+              );
+            })}
+          </>
+        )}
+        {located && checked && alerts.length === 0 && (
+          <View style={styles.allClear}>
+            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+            <Text style={styles.allClearText}>No active alerts for your area.</Text>
+          </View>
+        )}
+
         <MasterToggle
           label="Weather Alerts"
           description="Flash NWS alerts for your area"
@@ -133,6 +188,35 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingBottom: 150 },
   body: { paddingHorizontal: spacing.lg },
+  alertHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  alertSpin: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  alertCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 4,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  alertTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  alertEvent: { flex: 1, fontFamily: fonts.displayMedium, fontSize: fontSize.lg, color: colors.onSurface },
+  sevChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill },
+  sevChipText: { fontFamily: fonts.textMedium, fontSize: 10, letterSpacing: 0.5 },
+  alertArea: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 4 },
+  alertExpires: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, marginTop: 2 },
+  allClear: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  allClearText: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary },
   locCard: {
     flexDirection: "row",
     alignItems: "center",
