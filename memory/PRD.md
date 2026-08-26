@@ -142,3 +142,7 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Feels-Like Temp**: `currentConditions` requests Open-Meteo `apparent_temperature`; `CurrentWx.feelsF`. Summary Weather meta shows "Feels N°" when it differs from actual by ≥3°. Verified live on web.
 - [x] **Weather Hi/Lo On Wall**: new `weather.showHiLo` toggle (Weather tab, nested under Time & Temperature) sent in BLE full-sync + live `weather` push. Firmware: `WeatherCfg.showHiLo`, `Data::dailyHiLo(lat,lon,&hi,&lo)` (Open-Meteo), globals `gHiF/gLoF` fetched when showClock+showHiLo, and `Display::clock(...,hiF,loF)` draws "H84 L63" under the temp. BLE `applyWeather` reads `showHiLo`. Device-only rendering.
 
+## Updates (2026-06 — round 16)
+- [x] **Feels-Like On Wall**: new `weather.showFeels` toggle (Weather tab, nested) in BLE full-sync + live `weather` push. `currentConditions` already returns `feelsF`; firmware `currentTempF(lat,lon,&feels)` now also fetches `apparent_temperature`, global `gFeelsF`, and `Display::clock` renders a combined secondary line "~83 H84 L63" (feels + hi/lo). BLE `applyWeather` reads `showFeels`. Device-only rendering.
+- [x] **Weather Icon On Summary**: Summary Weather glance icon + accent now track live conditions (day/night aware): `wxGlyph(code,isDay)` → sunny/moon/partly-sunny/cloudy-night/cloudy/cloud/rainy/snow/thunderstorm, `wxAccent(code)` → amber(sun)/slate(cloud)/blue(rain)/purple(storm)/light-blue(snow). Added `CurrentWx.isDay` (Open-Meteo `is_day`). Verified on web (clear → sun + amber).
+

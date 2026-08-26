@@ -223,14 +223,18 @@ inline WeatherInfo activeAlert(double lat, double lon, const String& minSeverity
 }
 
 // ---- Weather: current temperature (°F) from open-meteo (keyless) -----------
-inline int currentTempF(double lat, double lon) {
+// Optionally also returns the apparent ("feels like") temp via `feels`.
+inline int currentTempF(double lat, double lon, int* feels = nullptr) {
+  if (feels) *feels = -999;
   String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(lat, 4) +
                "&longitude=" + String(lon, 4) +
-               "&current=temperature_2m&temperature_unit=fahrenheit";
+               "&current=temperature_2m,apparent_temperature&temperature_unit=fahrenheit";
   String body = httpGet(url);
   if (body.isEmpty()) return -999;
   JsonDocument doc;
   if (deserializeJson(doc, body)) return -999;
+  if (feels && doc["current"]["apparent_temperature"].is<float>())
+    *feels = (int)round((float)doc["current"]["apparent_temperature"]);
   if (doc["current"]["temperature_2m"].is<float>())
     return (int)round((float)doc["current"]["temperature_2m"]);
   return -999;

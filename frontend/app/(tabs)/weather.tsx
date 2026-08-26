@@ -287,6 +287,16 @@ export default function WeatherScreen() {
               <Text style={styles.clockHint}>
                 Add today&apos;s high and low under the temperature on the matrix.
               </Text>
+              <View style={styles.hiLoDivider} />
+              <ToggleRow
+                label="Feels-like temp"
+                icon="body"
+                value={w.showFeels}
+                onValueChange={(v) => updateWeather({ showFeels: v })}
+              />
+              <Text style={styles.clockHint}>
+                Show the &quot;feels like&quot; temperature on the matrix too.
+              </Text>
             </>
           )}
         </Card>

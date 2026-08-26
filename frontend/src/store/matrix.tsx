@@ -51,6 +51,7 @@ export type Settings = {
     severity: Severity;
     showClock: boolean;
     showHiLo: boolean;
+    showFeels: boolean;
     alertSound: boolean;
     quietHours: { enabled: boolean; startHour: number; endHour: number };
     secondLocation: { zip: string; lat: number | null; lon: number | null; city: string; state: string };
@@ -92,6 +93,7 @@ export const DEFAULT_SETTINGS: Settings = {
     severity: "severe",
     showClock: false,
     showHiLo: false,
+    showFeels: false,
     alertSound: false,
     quietHours: { enabled: false, startHour: 22, endHour: 7 },
     secondLocation: { zip: "", lat: null, lon: null, city: "", state: "" },
@@ -179,6 +181,7 @@ export function buildFullPayload(s: Settings) {
       severity: s.weather.severity,
       showClock: s.weather.showClock,
       showHiLo: s.weather.showHiLo,
+      showFeels: s.weather.showFeels,
     },
     brightness: s.brightness,
     holidayThemes: s.holidayThemes,
@@ -324,6 +327,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           severity: next.weather.severity,
           showClock: next.weather.showClock,
           showHiLo: next.weather.showHiLo,
+          showFeels: next.weather.showFeels,
         });
         return next;
       });

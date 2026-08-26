@@ -40,6 +40,7 @@ static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
 static int               gEtaMin = -1;      // rough arrival ETA for tracked flight
 static int               gTempF = -999;     // current local temperature (°F)
+static int               gFeelsF = -999;     // apparent ("feels like") temp (°F)
 static int               gHiF = -999;        // today's high (°F)
 static int               gLoF = -999;        // today's low (°F)
 
@@ -162,7 +163,10 @@ static void refreshData() {
                                  gSettings.weather.severity);
 
   if (gSettings.weather.showClock) {
-    gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon);
+    int feels = -999;
+    gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon,
+                                gSettings.weather.showFeels ? &feels : nullptr);
+    gFeelsF = gSettings.weather.showFeels ? feels : -999;
     if (gSettings.weather.showHiLo)
       Data::dailyHiLo(gSettings.flights.lat, gSettings.flights.lon, gHiF, gLoF);
     else { gHiF = -999; gLoF = -999; }
@@ -195,7 +199,8 @@ static void drawCurrentCard() {
     }
     Display::clock(ts, gTempF, accent,
                    gSettings.weather.showHiLo ? gHiF : -999,
-                   gSettings.weather.showHiLo ? gLoF : -999);
+                   gSettings.weather.showHiLo ? gLoF : -999,
+                   gSettings.weather.showFeels ? gFeelsF : -999);
     return;
   }
   if (t == 0) {

@@ -97,6 +97,7 @@ export type CurrentWx = {
   hiF: number | null; // today's high (°F)
   loF: number | null; // today's low (°F)
   feelsF: number | null; // apparent ("feels like") temperature (°F)
+  isDay: boolean; // daylight now (for sun/moon icon choice)
 };
 
 // WMO weather-code → friendly label + icon (Ionicons) + rain flag.
@@ -121,7 +122,7 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}` +
       `&longitude=${lon.toFixed(4)}` +
-      `&current=temperature_2m,precipitation,weather_code,apparent_temperature` +
+      `&current=temperature_2m,precipitation,weather_code,apparent_temperature,is_day` +
       `&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min` +
       `&temperature_unit=fahrenheit&timezone=auto&forecast_days=1`;
     const res = await fetch(url, { signal: ctrl.signal });
@@ -152,6 +153,7 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
       hiF,
       loF,
       feelsF,
+      isDay: cur.is_day == null ? true : cur.is_day === 1,
     };
   } catch {
     return null;

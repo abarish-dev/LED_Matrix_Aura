@@ -54,6 +54,27 @@ type LandingInfo = {
 
 const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 
+// Ionicons glyph that matches live weather conditions (day/night aware).
+function wxGlyph(code: number, isDay: boolean): keyof typeof Ionicons.glyphMap {
+  if (code === 0) return isDay ? "sunny" : "moon";
+  if (code === 1 || code === 2) return isDay ? "partly-sunny" : "cloudy-night";
+  if (code === 3) return "cloudy";
+  if (code === 45 || code === 48) return "cloud";
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
+  if (code >= 95) return "thunderstorm";
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "rainy";
+  return "partly-sunny";
+}
+
+// Accent color tuned to the condition.
+function wxAccent(code: number): string {
+  if (code === 0 || code === 1 || code === 2) return colors.warning; // sun
+  if (code >= 95) return "#8b5cf6"; // storm
+  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return colors.info; // rain
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "#93c5fd"; // snow
+  return colors.onSurfaceSecondary; // clouds / fog
+}
+
 /** "3h 12m" / "2d 4h" / "12m" until an ISO timestamp, or null if past. */
 function until(iso: string | null, now: number): string | null {
   if (!iso) return null;
@@ -613,8 +634,8 @@ export default function SummaryScreen() {
 
   const renderWeather = (drag: () => void, dragging: boolean) => (
     <GlanceCard
-      icon={(wx?.icon as keyof typeof Ionicons.glyphMap) ?? "partly-sunny"}
-      accent={colors.warning}
+      icon={wx ? wxGlyph(wx.code, wx.isDay) : "partly-sunny"}
+      accent={wx ? wxAccent(wx.code) : colors.warning}
       label="Weather"
       loading={wxLoading}
       dragging={dragging}
