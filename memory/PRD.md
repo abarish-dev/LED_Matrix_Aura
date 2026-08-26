@@ -101,3 +101,10 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 ## Backlog
 - **P2:** Panel geometry auto-detect.
 - **P3:** Proxy adsb.lol/ESPN through backend for web parity; add testIDs to Weather elements; migrate shadow*/pointerEvents (SyncFab) & useNativeDriver (Toast) for web.
+
+## Updates (2026-06 — round 8)
+- [x] **Splash → Chevron match**: `app.json` splash `backgroundColor` set to `#14171d` (light+dark) to match the glowing-chevron app icon. Generated a transparent matrix-dot chevron `assets/images/splash-image.png` from the icon via `tools/make_splash.py` (luminance+warmth knockout). App icon stays the original glowing chevron.
+- [x] **Summary tab (5th tab, "grid" icon)**: `app/(tabs)/summary.tsx` — calm live-glance dashboard branded with the chevron logo. Shows connection status pill, nearest overhead flight, favorite team (`sports.teams[0]`) score, current temp + rain, active weather alert, and Quick Controls (Settings / Flash Test / Alerts). Pull-to-refresh; 30s auto-refresh. Device tab kept unchanged as the landing screen.
+- [x] **Current conditions service**: `services/weather.ts` → `currentConditions(lat,lon)` via Open-Meteo (keyless + CORS, works in web preview). Returns tempF, WMO code→label/icon, isRaining, today's rainChance.
+- Weather glance verified live in web preview (Open-Meteo). Flights/scores glances are native-only (adsb.lol/ESPN CORS), consistent with existing tabs.
+

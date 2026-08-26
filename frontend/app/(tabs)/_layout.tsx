@@ -64,6 +64,15 @@ export default function TabsLayout() {
             ),
           }}
         />
+        <Tabs.Screen
+          name="summary"
+          options={{
+            title: "Summary",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="grid-outline" size={size} color={color} />
+            ),
+          }}
+        />
       </Tabs>
       <SyncFab />
     </View>

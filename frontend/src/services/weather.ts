@@ -85,6 +85,67 @@ export async function activeAlerts(lat: number, lon: number): Promise<Alert[]> {
   }
 }
 
+// ---- Current conditions (Open-Meteo, keyless + CORS-enabled) --------------
+
+export type CurrentWx = {
+  tempF: number;
+  code: number;
+  label: string; // "Clear", "Light rain", …
+  icon: string; // Ionicons glyph name
+  isRaining: boolean; // precipitating right now
+  rainChance: number | null; // today's max precip probability (%)
+};
+
+// WMO weather-code → friendly label + icon (Ionicons) + rain flag.
+function describeCode(code: number): { label: string; icon: string; rain: boolean } {
+  if (code === 0) return { label: "Clear", icon: "sunny", rain: false };
+  if (code === 1 || code === 2) return { label: "Partly cloudy", icon: "partly-sunny", rain: false };
+  if (code === 3) return { label: "Overcast", icon: "cloud", rain: false };
+  if (code === 45 || code === 48) return { label: "Fog", icon: "cloudy", rain: false };
+  if (code >= 51 && code <= 57) return { label: "Drizzle", icon: "rainy", rain: true };
+  if (code >= 61 && code <= 67) return { label: "Rain", icon: "rainy", rain: true };
+  if (code >= 71 && code <= 77) return { label: "Snow", icon: "snow", rain: false };
+  if (code >= 80 && code <= 82) return { label: "Rain showers", icon: "rainy", rain: true };
+  if (code === 85 || code === 86) return { label: "Snow showers", icon: "snow", rain: false };
+  if (code >= 95) return { label: "Thunderstorm", icon: "thunderstorm", rain: true };
+  return { label: "—", icon: "partly-sunny", rain: false };
+}
+
+export async function currentConditions(lat: number, lon: number): Promise<CurrentWx | null> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}` +
+      `&longitude=${lon.toFixed(4)}` +
+      `&current=temperature_2m,precipitation,weather_code` +
+      `&daily=precipitation_probability_max` +
+      `&temperature_unit=fahrenheit&timezone=auto&forecast_days=1`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const cur = data?.current;
+    if (!cur || typeof cur.temperature_2m !== "number") return null;
+    const code = typeof cur.weather_code === "number" ? cur.weather_code : 0;
+    const d = describeCode(code);
+    const precipNow = typeof cur.precipitation === "number" ? cur.precipitation : 0;
+    const chanceArr = data?.daily?.precipitation_probability_max;
+    const rainChance =
+      Array.isArray(chanceArr) && typeof chanceArr[0] === "number" ? chanceArr[0] : null;
+    return {
+      tempF: Math.round(cur.temperature_2m),
+      code,
+      label: d.label,
+      icon: d.icon,
+      isRaining: d.rain || precipNow > 0,
+      rainChance,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function expiresLabel(iso: string | null): string {
   if (!iso) return "";
   try {
