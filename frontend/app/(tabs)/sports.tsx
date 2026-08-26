@@ -216,6 +216,15 @@ export default function SportsScreen() {
           onValueChange={(v) => updateSports({ enabled: v })}
         />
 
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Show W/L streak on wall"
+            icon="flame"
+            value={s.showStreak}
+            onValueChange={(v) => updateSports({ showStreak: v })}
+          />
+        </Card>
+
         <SectionLabel>League</SectionLabel>
         <View style={styles.segRow}>
           {SEGMENTS.map((sg) => {

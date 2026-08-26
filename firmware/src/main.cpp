@@ -149,7 +149,8 @@ static void refreshData() {
     String entry = gSettings.sports.teams[ti];  // "NFL:DAL"
     int colon = entry.indexOf(':');
     if (colon > 0)
-      gScore = Data::teamGame(entry.substring(0, colon), entry.substring(colon + 1));
+      gScore = Data::teamGame(entry.substring(0, colon), entry.substring(colon + 1),
+                              gSettings.sports.showStreak);
     gScoreKey = entry;
     ti++;
   }
@@ -201,7 +202,7 @@ static void drawCurrentCard() {
     uint16_t border = accent;
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
       if (gSettings.sports.rivals[i] == gScoreKey) { border = Display::rgb(245, 158, 11); break; }
-    Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status, border);
+    Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status, border, gScore.streak);
     int colon = gScoreKey.indexOf(':');
     if (colon > 0) {
       const LogoAsset* lg = teamLogo(gScoreKey.substring(0, colon),

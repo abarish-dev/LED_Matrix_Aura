@@ -121,7 +121,7 @@ inline void landing(const String& callsign, bool landed) {
 
 // A single game score "card".
 inline void score(const String& home, int hs, const String& away, int as,
-                   const String& status, uint16_t border = 0) {
+                   const String& status, uint16_t border = 0, const String& streak = "") {
   clear();
   if (border) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border);
   char l[24];
@@ -130,6 +130,13 @@ inline void score(const String& home, int hs, const String& away, int as,
   snprintf(l, sizeof(l), "%s %d", home.c_str(), hs);
   centerText(l, 26, rgb(255, 255, 255), 1);
   centerText(status.c_str(), 46, rgb(16, 185, 129), 1);
+  if (streak.length() > 0) {
+    bool win = streak.charAt(0) == 'W';
+    dma->setTextSize(1);
+    dma->setTextColor(win ? rgb(16, 185, 129) : rgb(239, 68, 68));
+    dma->setCursor(MATRIX_W - (int)streak.length() * 6 - 3, 2);
+    dma->print(streak);
+  }
   flip();
 }
 

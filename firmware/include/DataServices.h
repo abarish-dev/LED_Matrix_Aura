@@ -15,7 +15,7 @@
 namespace Data {
 
 struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; int altFt=0; int headingDeg=-1; };
-struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; };
+struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; String streak; };
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
 
 static double haversineMi(double la1, double lo1, double la2, double lo2) {
@@ -121,7 +121,30 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
   return out;
 }
 
-// ---- Sports: latest game for a team from ESPN ------------------------------inline ScoreInfo teamGame(const String& league, const String& abbr) {
+// ---- Sports: W/L streak for a team from ESPN team endpoint -----------------
+static String teamStreak(const String& path, const String& teamId) {
+  if (teamId.isEmpty()) return "";
+  String url = "https://site.api.espn.com/apis/site/v2/sports/" + path + "/teams/" + teamId;
+  String body = httpGet(url);
+  if (body.isEmpty()) return "";
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return "";
+  JsonArrayConst items = doc["team"]["record"]["items"].as<JsonArrayConst>();
+  if (items.isNull() || items.size() == 0) return "";
+  for (JsonObjectConst st : items[0]["stats"].as<JsonArrayConst>()) {
+    String name = String((const char*)(st["name"] | ""));
+    if (name == "streak") {
+      float v = st["value"].is<float>() ? (float)st["value"] : 0;
+      int n = (int)round(fabs(v));
+      if (n == 0) return "";
+      return (v > 0 ? "W" : "L") + String(n);
+    }
+  }
+  return "";
+}
+
+// ---- Sports: latest game for a team from ESPN ------------------------------
+inline ScoreInfo teamGame(const String& league, const String& abbr, bool wantStreak = false) {
   ScoreInfo out;
   String path;
   if (league == "NFL") path = "football/nfl";
@@ -137,6 +160,7 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
   JsonDocument doc;
   if (deserializeJson(doc, body)) return out;
 
+  String myId;
   for (JsonObjectConst ev : doc["events"].as<JsonArrayConst>()) {
     JsonObjectConst comp = ev["competitions"][0];
     JsonArrayConst cs = comp["competitors"];
@@ -150,6 +174,7 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
       String ha = String((const char*)(c["homeAway"] | ""));
       String a  = String((const char*)(c["team"]["abbreviation"] | ""));
       int sc    = atoi((const char*)(c["score"] | "0"));
+      if (a.equalsIgnoreCase(abbr)) myId = String((const char*)(c["team"]["id"] | ""));
       if (ha == "home") { out.home = a; out.hs = sc; }
       else              { out.away = a; out.as = sc; }
     }
@@ -157,6 +182,7 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
     out.ok = true;
     break;
   }
+  if (out.ok && wantStreak) out.streak = teamStreak(path, myId);
   return out;
 }
 

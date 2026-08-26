@@ -31,6 +31,7 @@ static void applyFlights(JsonObjectConst o) {
 static void applySports(JsonObjectConst o) {
   if (o["enabled"].is<bool>()) gSettings.sports.enabled = o["enabled"];
   if (o["ufc"].is<bool>())     gSettings.sports.ufc     = o["ufc"];
+  if (o["showStreak"].is<bool>()) gSettings.sports.showStreak = o["showStreak"];
   if (o["teams"].is<JsonArrayConst>()) {
     JsonArrayConst arr = o["teams"];
     uint8_t n = 0;

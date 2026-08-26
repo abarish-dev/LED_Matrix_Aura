@@ -35,6 +35,7 @@ struct FlightCfg {
 struct SportsCfg {
   bool    enabled = true;
   bool    ufc     = false;
+  bool    showStreak = false;   // fetch + show W/L streak on score cards
   uint8_t count   = 0;
   String  teams[MAX_TEAMS];   // stored as "NFL:DAL"
   uint8_t rivalCount = 0;

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import { useAudioPlayer } from "expo-audio";
 import ReorderableList, {
   reorderItems,
   useReorderableDrag,
@@ -30,6 +31,7 @@ const CHEVRON = require("@/assets/images/splash-image.png");
 const REFRESH_MS = 30000;
 const ORDER_KEY = "aura_summary_order_v1";
 const HIDDEN_KEY = "aura_summary_hidden_v1";
+const COMPACT_KEY = "aura_summary_compact_v1";
 const DEFAULT_ORDER = ["overhead", "sports", "weather"];
 const CARD_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   overhead: "airplane",
@@ -77,6 +79,7 @@ function GlanceCard({
   loading,
   active,
   dragging,
+  compact,
   children,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
@@ -88,6 +91,7 @@ function GlanceCard({
   loading?: boolean;
   active?: boolean;
   dragging?: boolean;
+  compact?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -100,6 +104,7 @@ function GlanceCard({
       delayLongPress={220}
       style={({ pressed }) => [
         styles.glance,
+        compact && styles.glanceCompact,
         active && styles.glanceActive,
         dragging && styles.glanceDragging,
         pressed && !dragging && { opacity: 0.85 },
@@ -165,10 +170,13 @@ export default function SummaryScreen() {
   const [now, setNow] = useState(Date.now());
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
   const [hidden, setHidden] = useState<string[]>([]);
+  const [compact, setCompact] = useState(false);
 
   const reqRef = useRef(0);
   const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
   const missRef = useRef(0);
+  const chime = useAudioPlayer(require("@/assets/sounds/alert.wav"));
+  const prevLandingRef = useRef<string | null>(null);
 
   // Load persisted card order + hidden set.
   useEffect(() => {
@@ -179,7 +187,16 @@ export default function SummaryScreen() {
       setOrder(merged);
       const rawH = await storage.getItem<string>(HIDDEN_KEY, "");
       setHidden(rawH ? rawH.split(",").filter((k) => DEFAULT_ORDER.includes(k)) : []);
+      setCompact(await storage.getItem<boolean>(COMPACT_KEY, false));
     })();
+  }, []);
+
+  const toggleCompact = useCallback(() => {
+    Haptics.selectionAsync();
+    setCompact((prev) => {
+      storage.setItem(COMPACT_KEY, !prev);
+      return !prev;
+    });
   }, []);
 
   const hideCard = useCallback((key: string) => {
@@ -297,6 +314,21 @@ export default function SummaryScreen() {
     return () => clearInterval(t);
   }, []);
 
+  // Soft chime when a pinned flight first hits "landing soon".
+  useEffect(() => {
+    const key = landing && landing.state === "landing" ? landing.callsign : null;
+    if (key && key !== prevLandingRef.current && settings.flights.landingChime) {
+      try {
+        chime.seekTo(0);
+        chime.play();
+      } catch {
+        /* web / unsupported */
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    prevLandingRef.current = key;
+  }, [landing, settings.flights.landingChime, chime]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadAll();
@@ -369,6 +401,7 @@ export default function SummaryScreen() {
       onLongPress={drag}
       onHide={() => hideCard("overhead")}
       onPress={onPlaneTap}
+      compact={compact}
     >
       {!located ? (
         <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
@@ -393,14 +426,18 @@ export default function SummaryScreen() {
               </View>
             )}
           </View>
-          <Text style={styles.glanceMeta}>
-            {plane.from && plane.to ? `${plane.from} → ${plane.to}  ·  ` : ""}
-            {plane.altFt ? `${plane.altFt.toLocaleString()} ft  ·  ` : ""}
-            {plane.distanceMi} mi{plane.headingDeg >= 0 ? ` ${compass(plane.headingDeg)}` : ""}
-          </Text>
-          <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
-            {isTracked ? "Pinned to the wall · tap to stop" : "Tap to pin this flight to the wall"}
-          </Text>
+          {!compact && (
+            <>
+              <Text style={styles.glanceMeta}>
+                {plane.from && plane.to ? `${plane.from} → ${plane.to}  ·  ` : ""}
+                {plane.altFt ? `${plane.altFt.toLocaleString()} ft  ·  ` : ""}
+                {plane.distanceMi} mi{plane.headingDeg >= 0 ? ` ${compass(plane.headingDeg)}` : ""}
+              </Text>
+              <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
+                {isTracked ? "Pinned to the wall · tap to stop" : "Tap to pin this flight to the wall"}
+              </Text>
+            </>
+          )}
         </>
       ) : (
         <Text style={styles.glanceHint}>
@@ -420,6 +457,7 @@ export default function SummaryScreen() {
       onLongPress={drag}
       onHide={() => hideCard("sports")}
       onPress={() => router.push("/sports")}
+      compact={compact}
     >
       {!favTeam ? (
         <Text style={styles.glanceHint}>Pick a team on the Sports tab</Text>
@@ -471,20 +509,22 @@ export default function SummaryScreen() {
               </View>
             )}
           </View>
-          <Text
-            style={[
-              styles.glanceMeta,
-              score.state === "in" && { color: colors.brand, fontFamily: fonts.textMedium },
-            ]}
-          >
-            {score.state === "in"
-              ? `🔴 LIVE · ${score.detail}`
-              : score.state === "post"
-                ? score.detail
-                : gameCountdown
-                  ? `Starts in ${gameCountdown} · ${score.detail}`
-                  : score.detail}
-          </Text>
+          {!compact && (
+            <Text
+              style={[
+                styles.glanceMeta,
+                score.state === "in" && { color: colors.brand, fontFamily: fonts.textMedium },
+              ]}
+            >
+              {score.state === "in"
+                ? `🔴 LIVE · ${score.detail}`
+                : score.state === "post"
+                  ? score.detail
+                  : gameCountdown
+                    ? `Starts in ${gameCountdown} · ${score.detail}`
+                    : score.detail}
+            </Text>
+          )}
         </>
       ) : (
         <Text style={styles.glanceHint}>
@@ -504,6 +544,7 @@ export default function SummaryScreen() {
       onLongPress={drag}
       onHide={() => hideCard("weather")}
       onPress={() => router.push("/weather")}
+      compact={compact}
     >
       {!located ? (
         <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
@@ -512,14 +553,16 @@ export default function SummaryScreen() {
           <Text style={styles.glanceValue}>
             {wx.tempF}°F · {wx.label}
           </Text>
-          <Text style={styles.glanceMeta}>
-            {wx.isRaining
-              ? "🌧️ Raining now"
-              : wx.rainChance != null && wx.rainChance >= 30
-                ? `☔ ${wx.rainChance}% chance of rain today`
-                : "No rain expected"}
-            {f.city ? `  ·  ${f.city}` : ""}
-          </Text>
+          {!compact && (
+            <Text style={styles.glanceMeta}>
+              {wx.isRaining
+                ? "🌧️ Raining now"
+                : wx.rainChance != null && wx.rainChance >= 30
+                  ? `☔ ${wx.rainChance}% chance of rain today`
+                  : "No rain expected"}
+              {f.city ? `  ·  ${f.city}` : ""}
+            </Text>
+          )}
         </>
       ) : (
         <Text style={styles.glanceHint}>{wxLoading ? "Checking conditions…" : "Unavailable"}</Text>
@@ -610,7 +653,16 @@ export default function SummaryScreen() {
 
       <View style={styles.sectionRow}>
         <Text style={styles.sectionLabel}>On The Wall Now</Text>
-        <Text style={styles.reorderHint}>Hold &amp; drag to reorder</Text>
+        <View style={styles.sectionActions}>
+          <Text style={styles.reorderHint}>Hold &amp; drag to reorder</Text>
+          <Pressable onPress={toggleCompact} hitSlop={8} style={styles.compactBtn}>
+            <Ionicons
+              name={compact ? "expand-outline" : "contract-outline"}
+              size={16}
+              color={compact ? colors.brand : colors.onSurfaceSecondary}
+            />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -707,7 +759,7 @@ export default function SummaryScreen() {
         keyExtractor={(k) => k}
         renderItem={renderItem}
         shouldUpdateActiveItem
-        extraData={{ plane, score, wx, isTracked, landing, streak, secsToRefresh, connected, hidden }}
+        extraData={{ plane, score, wx, isTracked, landing, streak, secsToRefresh, connected, hidden, compact }}
         onReorder={({ from, to }: ReorderableListReorderEvent) => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setOrder((prev) => {
@@ -789,6 +841,17 @@ const styles = StyleSheet.create({
   landingTitle: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
   landingSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
   sectionRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+  sectionActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
+  compactBtn: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
   sectionLabel: {
     fontFamily: fonts.displayMedium,
     fontSize: fontSize.sm,
@@ -798,7 +861,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     marginTop: spacing.xl,
   },
-  reorderHint: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.surfaceTertiary, marginBottom: spacing.sm },
+  reorderHint: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.surfaceTertiary },
   glance: {
     flexDirection: "row",
     alignItems: "center",
@@ -811,6 +874,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   glanceActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  glanceCompact: { padding: spacing.md },
   glanceDragging: { borderColor: colors.borderStrong, backgroundColor: colors.surfaceTertiary },
   grip: { marginRight: -spacing.sm },
   glanceIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },

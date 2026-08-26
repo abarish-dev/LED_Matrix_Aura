@@ -125,3 +125,8 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Streak Badge**: W/L streak chip (e.g. "W3"/"L2", green/red) next to the record on the Summary Sports glance. New `espn.ts` `getTeamStreak(league, teamId)` reads `team.record.items[0].stats[streak]`; `ScoreLine.teamId` added. Native-only (ESPN CORS on web).
 - [x] **Collapse Cards**: each Summary glance has an eye-off button to hide it; hidden cards move to a "Hidden Cards" footer section with a tap-to-restore chip. Persists to AsyncStorage `aura_summary_hidden_v1`. Reorder logic preserves hidden cards' slots. Verified on web: hide→restore→persist all work.
 
+## Updates (2026-06 — round 12)
+- [x] **Streak On Wall**: new `sports.showStreak` toggle (Sports tab) is included in the BLE full-sync + live `sports` push. Firmware: `SportsCfg.showStreak`, `ScoreInfo.streak`, `Data::teamStreak(path,id)` + `teamGame(...,wantStreak)`, and `Display::score(...,streak)` renders "W3"/"L2" (green/red) top-right of the score card. Also fixed a pre-existing firmware bug where the `teamGame` signature was merged into its comment line. Native/device-only.
+- [x] **Quiet Landing Chime**: new `flights.landingChime` toggle (Flights tab). Summary plays a soft chime (expo-audio, `assets/sounds/alert.wav`) once when a pinned flight first transitions to "landing soon" (state === 'landing'), gated by the toggle + a transition ref. Native-only playback.
+- [x] **Compact Mode**: toggle button in the Summary "On The Wall Now" row shrinks all glance cards to tight one-line rows (hides secondary meta/hint lines, smaller padding). Persists to AsyncStorage `aura_summary_compact_v1`. Verified on web incl. persistence.
+

@@ -42,9 +42,10 @@ export type Settings = {
     trackFlight: boolean;
     flightIdent: string;
     landingAlert: boolean;
+    landingChime: boolean; // soft chime when a pinned flight is landing soon
     autoTracked: boolean; // pinned via Summary tap; auto-clears when out of range
   };
-  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[]; favorite: string | null };
+  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[]; favorite: string | null; showStreak: boolean };
   weather: {
     enabled: boolean;
     severity: Severity;
@@ -81,9 +82,10 @@ export const DEFAULT_SETTINGS: Settings = {
     trackFlight: false,
     flightIdent: "",
     landingAlert: true,
+    landingChime: true,
     autoTracked: false,
   },
-  sports: { enabled: true, teams: [], ufc: false, rivals: [], favorite: null },
+  sports: { enabled: true, teams: [], ufc: false, rivals: [], favorite: null, showStreak: false },
   weather: {
     enabled: true,
     severity: "severe",
@@ -168,6 +170,7 @@ export function buildFullPayload(s: Settings) {
       ufc: s.sports.ufc,
       teams: s.sports.teams.map((t) => `${t.league}:${t.abbr}`),
       rivals: s.sports.rivals,
+      showStreak: s.sports.showStreak,
     },
     weather: {
       enabled: s.weather.enabled,
@@ -294,6 +297,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           ufc: next.sports.ufc,
           teams: next.sports.teams.map((t) => `${t.league}:${t.abbr}`),
           rivals: next.sports.rivals,
+          showStreak: next.sports.showStreak,
         });
         return next;
       });

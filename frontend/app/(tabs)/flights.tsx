@@ -250,6 +250,16 @@ export default function FlightsScreen() {
               <Text style={styles.locText}>
                 Flash the matrix when this flight starts descending or lands.
               </Text>
+              <View style={styles.trackDivider} />
+              <ToggleRow
+                label="Landing chime"
+                icon="notifications"
+                value={f.landingChime}
+                onValueChange={(v) => updateFlights({ landingChime: v })}
+              />
+              <Text style={styles.locText}>
+                Play a soft chime on your phone when this flight is landing soon.
+              </Text>
             </>
           )}
         </Card>
