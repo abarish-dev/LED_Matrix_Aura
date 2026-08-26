@@ -223,20 +223,27 @@ inline WeatherInfo activeAlert(double lat, double lon, const String& minSeverity
 }
 
 // ---- Weather: current temperature (°F) from open-meteo (keyless) -----------
-// Optionally also returns the apparent ("feels like") temp via `feels`.
-inline int currentTempF(double lat, double lon, int* feels = nullptr) {
+// Optionally also returns apparent ("feels like") temp, weather code, and day flag.
+inline int currentTempF(double lat, double lon, int* feels = nullptr,
+                        int* code = nullptr, int* isDay = nullptr) {
   if (feels) *feels = -999;
+  if (code)  *code = -1;
+  if (isDay) *isDay = 1;
   String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(lat, 4) +
                "&longitude=" + String(lon, 4) +
-               "&current=temperature_2m,apparent_temperature&temperature_unit=fahrenheit";
+               "&current=temperature_2m,apparent_temperature,weather_code,is_day" +
+               "&temperature_unit=fahrenheit";
   String body = httpGet(url);
   if (body.isEmpty()) return -999;
   JsonDocument doc;
   if (deserializeJson(doc, body)) return -999;
-  if (feels && doc["current"]["apparent_temperature"].is<float>())
-    *feels = (int)round((float)doc["current"]["apparent_temperature"]);
-  if (doc["current"]["temperature_2m"].is<float>())
-    return (int)round((float)doc["current"]["temperature_2m"]);
+  JsonObjectConst cur = doc["current"];
+  if (feels && cur["apparent_temperature"].is<float>())
+    *feels = (int)round((float)cur["apparent_temperature"]);
+  if (code && cur["weather_code"].is<int>()) *code = (int)cur["weather_code"];
+  if (isDay && cur["is_day"].is<int>()) *isDay = (int)cur["is_day"];
+  if (cur["temperature_2m"].is<float>())
+    return (int)round((float)cur["temperature_2m"]);
   return -999;
 }
 

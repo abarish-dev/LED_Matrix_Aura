@@ -164,11 +164,60 @@ inline void message(const char* line1, const char* line2) {
   flip();
 }
 
+// A small (~14px) weather symbol drawn at top-left (x,y) of the clock card.
+inline void wxIcon(int x, int y, int code, bool isDay) {
+  const uint16_t sun = rgb(245, 200, 60), cloud = rgb(200, 200, 210),
+                 rain = rgb(90, 150, 255), snow = rgb(180, 220, 255),
+                 bolt = rgb(250, 220, 40), moon = rgb(220, 220, 180);
+  int cx = x + 7, cy = y + 6;
+  auto drawCloud = [&](uint16_t c) {
+    dma->fillCircle(cx - 3, cy + 1, 3, c);
+    dma->fillCircle(cx + 3, cy + 1, 3, c);
+    dma->fillCircle(cx, cy - 1, 4, c);
+    dma->fillRect(cx - 6, cy + 1, 12, 3, c);
+  };
+  bool clear = (code == 0);
+  bool partly = (code == 1 || code == 2);
+  bool rainy = ((code >= 51 && code <= 67) || (code >= 80 && code <= 82));
+  bool snowy = ((code >= 71 && code <= 77) || code == 85 || code == 86);
+  bool storm = (code >= 95);
+  if (clear || partly) {
+    if (isDay) {
+      dma->fillCircle(cx, cy, 3, sun);
+      for (int a = 0; a < 8; a++) {
+        float r = a * PI / 4.0;
+        dma->drawLine(cx + cos(r) * 5, cy + sin(r) * 5, cx + cos(r) * 7, cy + sin(r) * 7, sun);
+      }
+    } else {
+      dma->fillCircle(cx, cy, 4, moon);
+      dma->fillCircle(cx + 2, cy - 1, 4, rgb(0, 0, 0)); // crescent mask
+    }
+    if (partly) drawCloud(cloud);
+  } else if (storm) {
+    drawCloud(cloud);
+    dma->drawLine(cx, cy + 4, cx - 2, cy + 8, bolt);
+    dma->drawLine(cx - 2, cy + 8, cx + 1, cy + 8, bolt);
+    dma->drawLine(cx + 1, cy + 8, cx - 1, cy + 11, bolt);
+  } else if (rainy) {
+    drawCloud(cloud);
+    for (int i = -3; i <= 3; i += 3) dma->drawLine(cx + i, cy + 5, cx + i - 1, cy + 9, rain);
+  } else if (snowy) {
+    drawCloud(cloud);
+    dma->drawPixel(cx - 3, cy + 7, snow);
+    dma->drawPixel(cx, cy + 8, snow);
+    dma->drawPixel(cx + 3, cy + 7, snow);
+  } else {
+    drawCloud(cloud); // overcast / fog / unknown
+  }
+}
+
 // Clock + temperature card. Pass tempF = -999 if unavailable.
 inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
-                  int hiF = -999, int loF = -999, int feelsF = -999) {
+                  int hiF = -999, int loF = -999, int feelsF = -999,
+                  int wxCode = -1, bool isDay = true) {
   clear();
   if (accent) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, accent);
+  if (wxCode >= 0) wxIcon(3, 2, wxCode, isDay);
   dma->setTextSize(2);
   int16_t x1, y1; uint16_t w, h;
   dma->getTextBounds(timeStr.c_str(), 0, 0, &x1, &y1, &w, &h);

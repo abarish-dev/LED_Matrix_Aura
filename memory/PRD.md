@@ -146,3 +146,7 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Feels-Like On Wall**: new `weather.showFeels` toggle (Weather tab, nested) in BLE full-sync + live `weather` push. `currentConditions` already returns `feelsF`; firmware `currentTempF(lat,lon,&feels)` now also fetches `apparent_temperature`, global `gFeelsF`, and `Display::clock` renders a combined secondary line "~83 H84 L63" (feels + hi/lo). BLE `applyWeather` reads `showFeels`. Device-only rendering.
 - [x] **Weather Icon On Summary**: Summary Weather glance icon + accent now track live conditions (day/night aware): `wxGlyph(code,isDay)` → sunny/moon/partly-sunny/cloudy-night/cloudy/cloud/rainy/snow/thunderstorm, `wxAccent(code)` → amber(sun)/slate(cloud)/blue(rain)/purple(storm)/light-blue(snow). Added `CurrentWx.isDay` (Open-Meteo `is_day`). Verified on web (clear → sun + amber).
 
+## Updates (2026-06 — round 17)
+- [x] **Weather Icon On Wall**: new `weather.showWxIcon` toggle (Weather tab, nested) in BLE full-sync + live `weather` push. Firmware: `currentTempF(...,&code,&isDay)` now fetches `weather_code,is_day`; new `Display::wxIcon(x,y,code,isDay)` draws a ~14px sun/moon/partly/cloud/rain/snow/storm symbol at top-left of the clock card; `Display::clock(...,wxCode,isDay)` renders it; globals `gWxCode/gIsDay`; BLE `applyWeather` reads `showWxIcon`. Device-only rendering. Verified toggle renders on web.
+- Card transitions: user chose to KEEP the instant hard-cut (no fade/scroll) — firmware unchanged (`flipDMABuffer` swap every `CARD_MS`=8s).
+

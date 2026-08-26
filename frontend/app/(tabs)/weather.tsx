@@ -297,6 +297,16 @@ export default function WeatherScreen() {
               <Text style={styles.clockHint}>
                 Show the &quot;feels like&quot; temperature on the matrix too.
               </Text>
+              <View style={styles.hiLoDivider} />
+              <ToggleRow
+                label="Weather icon"
+                icon="partly-sunny"
+                value={w.showWxIcon}
+                onValueChange={(v) => updateWeather({ showWxIcon: v })}
+              />
+              <Text style={styles.clockHint}>
+                Draw a small sun / cloud / rain / storm symbol on the clock card.
+              </Text>
             </>
           )}
         </Card>

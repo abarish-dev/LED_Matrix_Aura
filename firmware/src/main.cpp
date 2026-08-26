@@ -43,6 +43,8 @@ static int               gTempF = -999;     // current local temperature (°F)
 static int               gFeelsF = -999;     // apparent ("feels like") temp (°F)
 static int               gHiF = -999;        // today's high (°F)
 static int               gLoF = -999;        // today's low (°F)
+static int               gWxCode = -1;       // current weather code (open-meteo)
+static int               gIsDay = 1;         // daylight flag (for sun/moon icon)
 
 // Holiday accent color (RGB565) for the current date, or 0 for none/disabled.
 static uint16_t holidayAccent() {
@@ -163,10 +165,14 @@ static void refreshData() {
                                  gSettings.weather.severity);
 
   if (gSettings.weather.showClock) {
-    int feels = -999;
+    int feels = -999, code = -1, isDay = 1;
     gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon,
-                                gSettings.weather.showFeels ? &feels : nullptr);
+                                gSettings.weather.showFeels ? &feels : nullptr,
+                                gSettings.weather.showWxIcon ? &code : nullptr,
+                                gSettings.weather.showWxIcon ? &isDay : nullptr);
     gFeelsF = gSettings.weather.showFeels ? feels : -999;
+    gWxCode = gSettings.weather.showWxIcon ? code : -1;
+    gIsDay = isDay;
     if (gSettings.weather.showHiLo)
       Data::dailyHiLo(gSettings.flights.lat, gSettings.flights.lon, gHiF, gLoF);
     else { gHiF = -999; gLoF = -999; }
@@ -200,7 +206,9 @@ static void drawCurrentCard() {
     Display::clock(ts, gTempF, accent,
                    gSettings.weather.showHiLo ? gHiF : -999,
                    gSettings.weather.showHiLo ? gLoF : -999,
-                   gSettings.weather.showFeels ? gFeelsF : -999);
+                   gSettings.weather.showFeels ? gFeelsF : -999,
+                   gSettings.weather.showWxIcon ? gWxCode : -1,
+                   gIsDay != 0);
     return;
   }
   if (t == 0) {
