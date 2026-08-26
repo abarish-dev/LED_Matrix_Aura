@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -85,6 +86,7 @@ export default function DeviceScreen() {
     updateHolidayThemes,
   } = useMatrix();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
 
   const [ssid, setSsid] = useState("");
   const [pass, setPass] = useState("");
@@ -144,7 +146,7 @@ export default function DeviceScreen() {
   return (
     <KeyboardAwareScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 190 }]}
       keyboardShouldPersistTaps="handled"
       bottomOffset={20}
     >

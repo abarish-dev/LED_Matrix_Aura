@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -18,6 +19,7 @@ const HERO =
 export default function FlightsScreen() {
   const { settings, updateFlights } = useMatrix();
   const f = settings.flights;
+  const insets = useSafeAreaInsets();
   const toast = useToast();
 
   const [zip, setZip] = useState(f.zip);
@@ -86,7 +88,7 @@ export default function FlightsScreen() {
   return (
     <KeyboardAwareScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 190 }]}
       keyboardShouldPersistTaps="handled"
       bottomOffset={20}
     >
@@ -275,7 +277,7 @@ export default function FlightsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
-  content: { paddingBottom: 150 },
+  content: { paddingBottom: 190 },
   body: { paddingHorizontal: spacing.lg },
   overheadHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   overheadSpin: { marginTop: spacing.lg, marginBottom: spacing.sm },

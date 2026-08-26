@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAudioPlayer } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -67,6 +68,7 @@ const SEVERITIES: {
 
 export default function WeatherScreen() {
   const { settings, updateWeather, updateQuietHours, updateSecondLocation, bleStatus, weatherTest } = useMatrix();
+  const insets = useSafeAreaInsets();
   const w = settings.weather;
   const f = settings.flights;
   const located = f.lat != null && f.lon != null;
@@ -188,7 +190,7 @@ export default function WeatherScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 190 }]}
       showsVerticalScrollIndicator={false}
     >
       <Hero image={HERO} title="Weather Alerts" subtitle="Local NWS warnings" icon="thunderstorm" />

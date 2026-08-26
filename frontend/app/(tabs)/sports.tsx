@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -103,6 +104,7 @@ function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
 
 export default function SportsScreen() {
   const { settings, updateSports, toggleTeam, reorderTeams, toggleRival, toggleFavorite } = useMatrix();
+  const insets = useSafeAreaInsets();
   const s = settings.sports;
   const primaryKey = s.favorites[0] ?? (s.teams[0] ? `${s.teams[0].league}:${s.teams[0].abbr}` : null);
   const primaryTeam = primaryKey
@@ -255,7 +257,7 @@ export default function SportsScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 190 }]}
       showsVerticalScrollIndicator={false}
     >
       <Hero image={HERO} title="Scoreboard" subtitle="Your teams, live scores" icon="trophy" />
