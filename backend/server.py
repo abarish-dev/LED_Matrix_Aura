@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -36,6 +37,12 @@ class StatusCheckCreate(BaseModel):
     client_name: str
 
 # Add your routes to the router instead of directly to app
+@api_router.get("/app-icon.png")
+async def app_icon():
+    """Serve the current app icon so it can be saved on a phone and uploaded
+    into the Android/iOS build 'App icon' field."""
+    return FileResponse(ROOT_DIR / "app_icon.png", media_type="image/png")
+
 @api_router.get("/")
 async def root():
     return {"message": "Hello World"}
