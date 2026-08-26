@@ -18,6 +18,7 @@ export type ScoreLine = {
   oppAbbr: string;
   atHome: boolean;
   startTime: string | null; // ISO kickoff/first-pitch time
+  record: string | null; // overall W-L record, e.g. "5-2"
 };
 
 type CacheEntry = { at: number; data: any };
@@ -77,6 +78,11 @@ export async function getTeamScore(
       st.state === "in" ? "in" : st.state === "post" ? "post" : "pre";
     const detail =
       state === "pre" ? shortTime(ev.date) : st.shortDetail ?? st.description ?? "";
+    const recs = Array.isArray(mine.records) ? mine.records : [];
+    const record =
+      recs.find((r: any) => r?.type === "total" || r?.name === "overall")?.summary ??
+      recs[0]?.summary ??
+      null;
     return {
       state,
       detail,
@@ -85,6 +91,7 @@ export async function getTeamScore(
       oppAbbr: (opp?.team?.abbreviation ?? "").toUpperCase(),
       atHome: mine.homeAway === "home",
       startTime: ev.date ?? null,
+      record,
     };
   }
   return null;

@@ -1,14 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import ReorderableList, {
+  reorderItems,
+  useReorderableDrag,
+  useIsActive,
+  type ReorderableListReorderEvent,
+} from "react-native-reorderable-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,6 +14,7 @@ import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
+import { storage } from "@/src/utils/storage";
 import { nearbyPlanes, compass, airlineLogoUrl, type Plane } from "@/src/services/adsb";
 import { getTeamScore, type ScoreLine } from "@/src/services/espn";
 import {
@@ -29,6 +28,15 @@ import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
 
 const CHEVRON = require("@/assets/images/splash-image.png");
 const REFRESH_MS = 30000;
+const ORDER_KEY = "aura_summary_order_v1";
+const DEFAULT_ORDER = ["overhead", "sports", "weather"];
+
+type LandingInfo = {
+  callsign: string;
+  altFt: number;
+  distanceMi: number;
+  state: "descending" | "landing";
+};
 
 const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 
@@ -52,16 +60,20 @@ function GlanceCard({
   accent,
   label,
   onPress,
+  onLongPress,
   loading,
   active,
+  dragging,
   children,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   accent: string;
   label: string;
   onPress: () => void;
+  onLongPress?: () => void;
   loading?: boolean;
   active?: boolean;
+  dragging?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -70,12 +82,18 @@ function GlanceCard({
         Haptics.selectionAsync();
         onPress();
       }}
+      onLongPress={onLongPress}
+      delayLongPress={220}
       style={({ pressed }) => [
         styles.glance,
         active && styles.glanceActive,
-        pressed && { opacity: 0.85 },
+        dragging && styles.glanceDragging,
+        pressed && !dragging && { opacity: 0.85 },
       ]}
     >
+      {onLongPress && (
+        <Ionicons name="reorder-two" size={18} color={colors.surfaceTertiary} style={styles.grip} />
+      )}
       <View style={[styles.glanceIcon, { backgroundColor: accent + "22" }]}>
         <Ionicons name={icon} size={20} color={accent} />
       </View>
@@ -113,20 +131,29 @@ export default function SummaryScreen() {
   const [wx, setWx] = useState<CurrentWx | null>(null);
   const [wxLoading, setWxLoading] = useState(false);
   const [alert, setAlert] = useState<Alert | null>(null);
+  const [landing, setLanding] = useState<LandingInfo | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
 
   const reqRef = useRef(0);
   const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
   const missRef = useRef(0);
 
-  // Detect if a fetched list still contains the auto-pinned flight; auto-revert
-  // to normal once it leaves range (only counts misses when other planes are
-  // visible, so the web preview's empty ADS-B response won't false-trigger).
+  // Load persisted card order.
+  useEffect(() => {
+    (async () => {
+      const raw = await storage.getItem<string>(ORDER_KEY, "");
+      const saved = raw ? raw.split(",").filter((k) => DEFAULT_ORDER.includes(k)) : [];
+      const merged = [...saved, ...DEFAULT_ORDER.filter((k) => !saved.includes(k))];
+      setOrder(merged);
+    })();
+  }, []);
+
   const checkAutoTrack = useCallback(
     (list: Plane[]) => {
       if (!(f.trackFlight && f.autoTracked && f.flightIdent)) return;
-      if (list.length === 0) return; // inconclusive
+      if (list.length === 0) return; // inconclusive (e.g. web has no ADS-B)
       const stillUp = list.some((p) => norm(p.callsign) === f.flightIdent);
       if (stillUp) {
         missRef.current = 0;
@@ -137,6 +164,28 @@ export default function SummaryScreen() {
       }
     },
     [f.trackFlight, f.autoTracked, f.flightIdent, updateFlights, toast],
+  );
+
+  // Landing-alert detection for the pinned flight.
+  const checkLanding = useCallback(
+    (list: Plane[]) => {
+      if (!(f.trackFlight && f.flightIdent)) {
+        setLanding(null);
+        return;
+      }
+      const pinned = list.find((p) => norm(p.callsign) === f.flightIdent);
+      if (pinned && pinned.vertRateFpm <= -300 && pinned.altFt > 0) {
+        setLanding({
+          callsign: pinned.callsign,
+          altFt: pinned.altFt,
+          distanceMi: pinned.distanceMi,
+          state: pinned.altFt < 3000 ? "landing" : "descending",
+        });
+      } else {
+        setLanding(null);
+      }
+    },
+    [f.trackFlight, f.flightIdent],
   );
 
   const loadAll = useCallback(async () => {
@@ -160,6 +209,7 @@ export default function SummaryScreen() {
           setPlane(list[0] ?? null);
           setPlaneLoading(false);
           checkAutoTrack(list);
+          checkLanding(list);
         }
       });
     }
@@ -174,7 +224,7 @@ export default function SummaryScreen() {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, checkAutoTrack]);
+  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, checkAutoTrack, checkLanding]);
 
   useEffect(() => {
     loadAll();
@@ -182,7 +232,6 @@ export default function SummaryScreen() {
     return () => clearInterval(iv);
   }, [loadAll]);
 
-  // 1-second ticker drives the live countdowns.
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -224,15 +273,10 @@ export default function SummaryScreen() {
     }
   };
 
-  const isTracked =
-    plane != null && f.trackFlight && f.flightIdent === norm(plane.callsign);
+  const isTracked = plane != null && f.trackFlight && f.flightIdent === norm(plane.callsign);
 
   const onPlaneTap = () => {
-    if (!located) {
-      router.push("/flights");
-      return;
-    }
-    if (!plane) {
+    if (!located || !plane) {
       router.push("/flights");
       return;
     }
@@ -252,16 +296,164 @@ export default function SummaryScreen() {
   const secsToRefresh = Math.max(0, Math.ceil((nextRefreshRef.current - now) / 1000));
   const gameCountdown = score?.state === "pre" ? until(score.startTime, now) : null;
 
-  return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
-      }
+  // ---- Glance renderers -----------------------------------------------------
+  const renderOverhead = (drag: () => void, dragging: boolean) => (
+    <GlanceCard
+      icon="airplane"
+      accent={isTracked ? colors.brand : colors.info}
+      label="Overhead"
+      loading={planeLoading}
+      active={isTracked}
+      dragging={dragging}
+      onLongPress={drag}
+      onPress={onPlaneTap}
     >
-      {/* Branded header */}
+      {!located ? (
+        <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
+      ) : plane ? (
+        <>
+          <View style={styles.planeLine}>
+            {plane.airlineIata ? (
+              <Image
+                source={{ uri: airlineLogoUrl(plane.airlineIata) }}
+                style={styles.planeLogo}
+                contentFit="contain"
+                transition={200}
+              />
+            ) : null}
+            <Text style={styles.glanceValue} numberOfLines={1}>
+              {plane.callsign}
+              {plane.airlineName ? ` · ${plane.airlineName}` : ""}
+            </Text>
+            {isTracked && (
+              <View style={styles.trackTag}>
+                <Text style={styles.trackTagText}>TRACKING</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.glanceMeta}>
+            {plane.from && plane.to ? `${plane.from} → ${plane.to}  ·  ` : ""}
+            {plane.altFt ? `${plane.altFt.toLocaleString()} ft  ·  ` : ""}
+            {plane.distanceMi} mi{plane.headingDeg >= 0 ? ` ${compass(plane.headingDeg)}` : ""}
+          </Text>
+          <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
+            {isTracked ? "Pinned to the wall · tap to stop" : "Tap to pin this flight to the wall"}
+          </Text>
+        </>
+      ) : (
+        <Text style={styles.glanceHint}>
+          {planeLoading ? "Scanning the sky…" : `No aircraft in range · rescanning in ${secsToRefresh}s`}
+        </Text>
+      )}
+    </GlanceCard>
+  );
+
+  const renderSports = (drag: () => void, dragging: boolean) => (
+    <GlanceCard
+      icon="trophy"
+      accent={colors.brand}
+      label={favTeam ? `${favTeam.league} · ${favMeta?.name ?? favTeam.abbr}` : "Sports"}
+      loading={scoreLoading}
+      dragging={dragging}
+      onLongPress={drag}
+      onPress={() => router.push("/sports")}
+    >
+      {!favTeam ? (
+        <Text style={styles.glanceHint}>Pick a team on the Sports tab</Text>
+      ) : score ? (
+        <>
+          <View style={styles.scoreLine}>
+            {favMeta && (
+              <View style={[styles.teamBadge, { backgroundColor: favMeta.color }]}>
+                <Text style={[styles.teamBadgeText, { color: readableOn(favMeta.color) }]}>
+                  {favTeam.abbr}
+                </Text>
+                <Image
+                  source={{ uri: teamLogoUrl(favTeam.league, favTeam.abbr) }}
+                  style={[StyleSheet.absoluteFill, { padding: 4 }]}
+                  contentFit="contain"
+                  transition={200}
+                  cachePolicy="memory-disk"
+                />
+              </View>
+            )}
+            <Text
+              style={[styles.glanceValue, score.state === "in" && { color: colors.brand }]}
+              numberOfLines={1}
+            >
+              {score.state === "pre"
+                ? `${score.atHome ? "vs" : "@"} ${score.oppAbbr}`
+                : `${favTeam.abbr} ${score.teamScore ?? 0}–${score.oppScore ?? 0} ${score.oppAbbr}`}
+            </Text>
+            {score.record && (
+              <View style={styles.recordChip}>
+                <Text style={styles.recordChipText}>{score.record}</Text>
+              </View>
+            )}
+          </View>
+          <Text
+            style={[
+              styles.glanceMeta,
+              score.state === "in" && { color: colors.brand, fontFamily: fonts.textMedium },
+            ]}
+          >
+            {score.state === "in"
+              ? `🔴 LIVE · ${score.detail}`
+              : score.state === "post"
+                ? score.detail
+                : gameCountdown
+                  ? `Starts in ${gameCountdown} · ${score.detail}`
+                  : score.detail}
+          </Text>
+        </>
+      ) : (
+        <Text style={styles.glanceHint}>
+          {scoreLoading ? "Loading score…" : "No recent game · needs phone app"}
+        </Text>
+      )}
+    </GlanceCard>
+  );
+
+  const renderWeather = (drag: () => void, dragging: boolean) => (
+    <GlanceCard
+      icon={(wx?.icon as keyof typeof Ionicons.glyphMap) ?? "partly-sunny"}
+      accent={colors.warning}
+      label="Weather"
+      loading={wxLoading}
+      dragging={dragging}
+      onLongPress={drag}
+      onPress={() => router.push("/weather")}
+    >
+      {!located ? (
+        <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
+      ) : wx ? (
+        <>
+          <Text style={styles.glanceValue}>
+            {wx.tempF}°F · {wx.label}
+          </Text>
+          <Text style={styles.glanceMeta}>
+            {wx.isRaining
+              ? "🌧️ Raining now"
+              : wx.rainChance != null && wx.rainChance >= 30
+                ? `☔ ${wx.rainChance}% chance of rain today`
+                : "No rain expected"}
+            {f.city ? `  ·  ${f.city}` : ""}
+          </Text>
+        </>
+      ) : (
+        <Text style={styles.glanceHint}>{wxLoading ? "Checking conditions…" : "Unavailable"}</Text>
+      )}
+    </GlanceCard>
+  );
+
+  const renderItem = ({ item }: { item: string }) => {
+    const r =
+      item === "overhead" ? renderOverhead : item === "sports" ? renderSports : renderWeather;
+    return <ReorderGlance render={r} />;
+  };
+
+  const Header = (
+    <View>
       <View style={styles.header}>
         <Image source={CHEVRON} style={styles.logo} contentFit="contain" />
         <View style={{ flex: 1 }}>
@@ -274,7 +466,6 @@ export default function SummaryScreen() {
         </View>
       </View>
 
-      {/* Connection status */}
       <Pressable
         onPress={onConnect}
         style={({ pressed }) => [styles.statusPill, pressed && { opacity: 0.85 }]}
@@ -310,146 +501,40 @@ export default function SummaryScreen() {
         />
       </Pressable>
 
-      <Text style={styles.sectionLabel}>On The Wall Now</Text>
+      {landing && (
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/flights");
+          }}
+          style={({ pressed }) => [
+            styles.landingCard,
+            landing.state === "landing" && styles.landingCardHot,
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Ionicons name="airplane" size={20} color={colors.brand} style={styles.landingIcon} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.landingTitle}>
+              {landing.callsign} · {landing.state === "landing" ? "Landing soon" : "Descending"}
+            </Text>
+            <Text style={styles.landingSub}>
+              {landing.altFt.toLocaleString()} ft · {landing.distanceMi} mi away · approaching
+            </Text>
+          </View>
+          <Ionicons name="trending-down" size={18} color={colors.brand} />
+        </Pressable>
+      )}
 
-      {/* Overhead flight — tap to pin/unpin as tracked flight */}
-      <GlanceCard
-        icon="airplane"
-        accent={isTracked ? colors.brand : colors.info}
-        label="Overhead"
-        loading={planeLoading}
-        active={isTracked}
-        onPress={onPlaneTap}
-      >
-        {!located ? (
-          <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
-        ) : plane ? (
-          <>
-            <View style={styles.planeLine}>
-              {plane.airlineIata ? (
-                <Image
-                  source={{ uri: airlineLogoUrl(plane.airlineIata) }}
-                  style={styles.planeLogo}
-                  contentFit="contain"
-                  transition={200}
-                />
-              ) : null}
-              <Text style={styles.glanceValue} numberOfLines={1}>
-                {plane.callsign}
-                {plane.airlineName ? ` · ${plane.airlineName}` : ""}
-              </Text>
-              {isTracked && (
-                <View style={styles.trackTag}>
-                  <Text style={styles.trackTagText}>TRACKING</Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.glanceMeta}>
-              {plane.from && plane.to ? `${plane.from} → ${plane.to}  ·  ` : ""}
-              {plane.altFt ? `${plane.altFt.toLocaleString()} ft  ·  ` : ""}
-              {plane.distanceMi} mi{plane.headingDeg >= 0 ? ` ${compass(plane.headingDeg)}` : ""}
-            </Text>
-            <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
-              {isTracked ? "Pinned to the wall · tap to stop" : "Tap to pin this flight to the wall"}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.glanceHint}>
-            {planeLoading
-              ? "Scanning the sky…"
-              : `No aircraft in range · rescanning in ${secsToRefresh}s`}
-          </Text>
-        )}
-      </GlanceCard>
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionLabel}>On The Wall Now</Text>
+        <Text style={styles.reorderHint}>Hold &amp; drag to reorder</Text>
+      </View>
+    </View>
+  );
 
-      {/* Favorite team */}
-      <GlanceCard
-        icon="trophy"
-        accent={colors.brand}
-        label={favTeam ? `${favTeam.league} · ${favMeta?.name ?? favTeam.abbr}` : "Sports"}
-        loading={scoreLoading}
-        onPress={() => router.push("/sports")}
-      >
-        {!favTeam ? (
-          <Text style={styles.glanceHint}>Pick a team on the Sports tab</Text>
-        ) : score ? (
-          <>
-            <View style={styles.scoreLine}>
-              {favMeta && (
-                <View style={[styles.teamBadge, { backgroundColor: favMeta.color }]}>
-                  <Text style={[styles.teamBadgeText, { color: readableOn(favMeta.color) }]}>
-                    {favTeam.abbr}
-                  </Text>
-                  <Image
-                    source={{ uri: teamLogoUrl(favTeam.league, favTeam.abbr) }}
-                    style={[StyleSheet.absoluteFill, { padding: 4 }]}
-                    contentFit="contain"
-                    transition={200}
-                    cachePolicy="memory-disk"
-                  />
-                </View>
-              )}
-              <Text
-                style={[styles.glanceValue, score.state === "in" && { color: colors.brand }]}
-                numberOfLines={1}
-              >
-                {score.state === "pre"
-                  ? `${score.atHome ? "vs" : "@"} ${score.oppAbbr}`
-                  : `${favTeam.abbr} ${score.teamScore ?? 0}–${score.oppScore ?? 0} ${score.oppAbbr}`}
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.glanceMeta,
-                score.state === "in" && { color: colors.brand, fontFamily: fonts.textMedium },
-              ]}
-            >
-              {score.state === "in"
-                ? `🔴 LIVE · ${score.detail}`
-                : score.state === "post"
-                  ? score.detail
-                  : gameCountdown
-                    ? `Starts in ${gameCountdown} · ${score.detail}`
-                    : score.detail}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.glanceHint}>
-            {scoreLoading ? "Loading score…" : "No recent game · needs phone app"}
-          </Text>
-        )}
-      </GlanceCard>
-
-      {/* Weather / temperature */}
-      <GlanceCard
-        icon={(wx?.icon as keyof typeof Ionicons.glyphMap) ?? "partly-sunny"}
-        accent={colors.warning}
-        label="Weather"
-        loading={wxLoading}
-        onPress={() => router.push("/weather")}
-      >
-        {!located ? (
-          <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
-        ) : wx ? (
-          <>
-            <Text style={styles.glanceValue}>
-              {wx.tempF}°F · {wx.label}
-            </Text>
-            <Text style={styles.glanceMeta}>
-              {wx.isRaining
-                ? "🌧️ Raining now"
-                : wx.rainChance != null && wx.rainChance >= 30
-                  ? `☔ ${wx.rainChance}% chance of rain today`
-                  : "No rain expected"}
-              {f.city ? `  ·  ${f.city}` : ""}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.glanceHint}>{wxLoading ? "Checking conditions…" : "Unavailable"}</Text>
-        )}
-      </GlanceCard>
-
-      {/* Weather alert (only when active) */}
+  const Footer = (
+    <View>
       {alert && (
         <Pressable
           onPress={() => {
@@ -512,8 +597,45 @@ export default function SummaryScreen() {
         A live glance at everything on your matrix. Pull down to refresh. Flights and
         scores stream on the phone build; weather works everywhere.
       </Text>
-    </ScrollView>
+    </View>
   );
+
+  return (
+    <View style={styles.screen}>
+      <ReorderableList
+        data={order}
+        keyExtractor={(k) => k}
+        renderItem={renderItem}
+        shouldUpdateActiveItem
+        extraData={{ plane, score, wx, isTracked, landing, secsToRefresh, connected }}
+        onReorder={({ from, to }: ReorderableListReorderEvent) => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setOrder((v) => {
+            const next = reorderItems(v, from, to);
+            storage.setItem(ORDER_KEY, next.join(","));
+            return next;
+          });
+        }}
+        ListHeaderComponent={Header}
+        ListFooterComponent={Footer}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
+        }
+      />
+    </View>
+  );
+}
+
+function ReorderGlance({
+  render,
+}: {
+  render: (drag: () => void, dragging: boolean) => React.ReactNode;
+}) {
+  const drag = useReorderableDrag();
+  const isActive = useIsActive();
+  return <>{render(drag, isActive)}</>;
 }
 
 const styles = StyleSheet.create({
@@ -535,12 +657,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   livePulse: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
-  liveText: {
-    fontFamily: fonts.mono,
-    fontSize: fontSize.xs,
-    color: colors.onSurfaceSecondary,
-    letterSpacing: 0.5,
-  },
+  liveText: { fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.onSurfaceSecondary, letterSpacing: 0.5 },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -554,6 +671,22 @@ const styles = StyleSheet.create({
   statusDot: { width: 12, height: 12, borderRadius: 6 },
   statusTitle: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurface },
   statusSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
+  landingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.brandTertiary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  landingCardHot: { backgroundColor: "#3a2a05" },
+  landingIcon: { transform: [{ rotate: "135deg" }] },
+  landingTitle: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
+  landingSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
+  sectionRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   sectionLabel: {
     fontFamily: fonts.displayMedium,
     fontSize: fontSize.sm,
@@ -563,6 +696,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     marginTop: spacing.xl,
   },
+  reorderHint: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.surfaceTertiary, marginBottom: spacing.sm },
   glance: {
     flexDirection: "row",
     alignItems: "center",
@@ -575,6 +709,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   glanceActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  glanceDragging: { borderColor: colors.borderStrong, backgroundColor: colors.surfaceTertiary },
+  grip: { marginRight: -spacing.sm },
   glanceIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   glanceLabel: {
     fontFamily: fonts.textMedium,
@@ -602,6 +738,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   teamBadgeText: { fontFamily: fonts.displayBold, fontSize: 10 },
+  recordChip: {
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  recordChipText: { fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.onSurfaceTertiary },
   alertCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -613,6 +756,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     padding: spacing.md,
     marginBottom: spacing.sm,
+    marginTop: spacing.sm,
   },
   alertEvent: { fontFamily: fonts.displayMedium, fontSize: fontSize.lg, color: colors.onSurface },
   alertArea: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },

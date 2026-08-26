@@ -115,3 +115,8 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Favorite Star**: gold star on Sports rotation rows sets `sports.favorite` (new store field + `setFavoriteTeam`); that team leads the Summary Sports glance and shows a "SUMMARY" tag. Rivalry flag moved to a distinct flame icon. Removing a team clears its favorite.
 - [x] **New logo (Sunburst)**: amber glowing sun + airplane + trophy mashup replaces the chevron. Applied to `icon.png`, `adaptive-icon.png` (bg `#14171d`), `favicon.png`; transparent glowing version drives `splash-image.png` + the Summary header. Generated via `tools/gen_logo.py` (gpt-image-1) + `tools/apply_logo.py`.
 
+## Updates (2026-06 — round 10)
+- [x] **Reorder Glances (drag)**: Summary cards are drag-to-reorder. Switched from `react-native-draggable-flatlist` (broken with Reanimated 4) to **`react-native-reorderable-list` 0.18.1** (`ReorderableList` + `useReorderableDrag`/`useIsActive` + `reorderItems`). Order persists to AsyncStorage `aura_summary_order_v1`. Verified on web: drag Weather→top persisted across reload.
+- [x] **Landing Alert Glance**: when the pinned flight is descending (`vertRateFpm <= -300`), a "Descending"/"Landing soon" card appears atop Summary (state = 'landing' if alt < 3000ft). New `vertRateFpm` field on `adsb.ts` Plane (from `baro_rate`/`geom_rate`). Native-only (needs live ADS-B).
+- [x] **Team Record**: favorite team's overall W-L record shown as a chip on the Summary Sports glance. New `record` on `espn.ts` ScoreLine (competitor `records[].summary`). Native-only (ESPN CORS-blocked on web).
+

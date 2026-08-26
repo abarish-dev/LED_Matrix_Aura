@@ -12,6 +12,7 @@ export type Plane = {
   altFt: number;
   distanceMi: number;
   headingDeg: number;
+  vertRateFpm: number; // vertical rate (ft/min); negative = descending
   type: string; // aircraft type code
 };
 
@@ -109,6 +110,12 @@ export async function nearbyPlanes(
         altFt: typeof a.alt_baro === "number" ? a.alt_baro : 0,
         distanceMi: Math.round(haversineMi(lat, lon, a.lat, a.lon)),
         headingDeg: typeof a.track === "number" ? Math.round(a.track) : -1,
+        vertRateFpm:
+          typeof a.baro_rate === "number"
+            ? a.baro_rate
+            : typeof a.geom_rate === "number"
+              ? a.geom_rate
+              : 0,
         type: String(a.t ?? ""),
       } as Plane;
     })
