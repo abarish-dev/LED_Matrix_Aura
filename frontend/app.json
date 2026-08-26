@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "Aura",
+    "name": "Aura 2",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "auratwo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.bluetoothledsync.hltjsu",
+      "bundleIdentifier": "com.emergent.auratwo.hltjsu",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Connect to your LED matrix to sync settings",
         "NSBluetoothPeripheralUsageDescription": "Connect to your LED matrix to sync settings"
@@ -22,7 +22,7 @@
         "backgroundColor": "#14171d"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.bluetoothledsync.hltjsu",
+      "package": "com.emergent.auratwo.hltjsu",
       "permissions": [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
