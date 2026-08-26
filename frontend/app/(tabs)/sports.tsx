@@ -57,7 +57,7 @@ function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
 }
 
 export default function SportsScreen() {
-  const { settings, updateSports, toggleTeam, reorderTeams, toggleRival } = useMatrix();
+  const { settings, updateSports, toggleTeam, reorderTeams, toggleRival, setFavoriteTeam } = useMatrix();
   const s = settings.sports;
   const [seg, setSeg] = useState<Segment>("NFL");
   const [scores, setScores] = useState<Record<string, ScoreLine | null>>({});
@@ -135,6 +135,9 @@ export default function SportsScreen() {
     // Rivalry game: the live opponent is another team you follow in this league.
     const rivalryGame = !!line && isFollowed(item.league, line.oppAbbr);
     const highlight = isRival || rivalryGame;
+    // Favorite = the team that leads the Summary glance (defaults to the first).
+    const favActive = s.favorite ? s.favorite === key : index === 0;
+    const favExplicit = s.favorite === key;
 
     return (
       <View
@@ -149,6 +152,12 @@ export default function SportsScreen() {
         <View style={{ flex: 1 }}>
           <View style={styles.rotNameRow}>
             <Text style={styles.rotName} numberOfLines={1}>{t?.name ?? item.abbr}</Text>
+            {favActive && (
+              <View style={styles.favTag}>
+                <Ionicons name="star" size={8} color={colors.onBrandPrimary} />
+                <Text style={styles.favTagText}>SUMMARY</Text>
+              </View>
+            )}
             {rivalryGame && (
               <View style={styles.rivalryTag}>
                 <Text style={styles.rivalryTagText}>RIVALRY</Text>
@@ -164,8 +173,18 @@ export default function SportsScreen() {
           )}
         </View>
 
+        <Pressable
+          hitSlop={8}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setFavoriteTeam(favExplicit ? null : key);
+          }}
+          style={styles.rowBtn}
+        >
+          <Ionicons name={favActive ? "star" : "star-outline"} size={20} color={favActive ? colors.brand : colors.onSurfaceSecondary} />
+        </Pressable>
         <Pressable hitSlop={8} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleRival(key); }} style={styles.rowBtn}>
-          <Ionicons name={isRival ? "star" : "star-outline"} size={20} color={isRival ? colors.brand : colors.onSurfaceSecondary} />
+          <Ionicons name={isRival ? "flame" : "flame-outline"} size={20} color={isRival ? "#f97316" : colors.onSurfaceSecondary} />
         </Pressable>
         <View style={styles.reorderCol}>
           <Pressable hitSlop={6} onPress={() => move(index, -1)} disabled={index === 0} style={styles.rowBtnSm}>
@@ -280,7 +299,7 @@ export default function SportsScreen() {
         <Text style={styles.footer}>
           {seg === "UFC"
             ? "The matrix pulls the next UFC card live from ESPN."
-            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ rows glow brighter on the wall; rows tint green when winning, red when losing.`}
+            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ leads the Summary glance · 🔥 flags a rivalry · rows tint green when winning, red when losing.`}
         </Text>
       </View>
     </ScrollView>
@@ -354,6 +373,18 @@ const styles = StyleSheet.create({
   rotName: { fontFamily: fonts.text, fontSize: fontSize.lg, color: colors.onSurface, flexShrink: 1 },
   rivalryTag: { backgroundColor: colors.brand, borderRadius: radius.sm, paddingHorizontal: 5, paddingVertical: 1 },
   rivalryTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.onBrandPrimary, letterSpacing: 0.5 },
+  favTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    backgroundColor: colors.brandTertiary,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    borderRadius: radius.sm,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  favTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.brand, letterSpacing: 0.5 },
   rotLeague: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   rotScore: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceTertiary },
   rowBtn: { padding: 4 },

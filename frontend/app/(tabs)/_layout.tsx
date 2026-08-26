@@ -31,6 +31,15 @@ export default function TabsLayout() {
         <Tabs.Screen
           name="index"
           options={{
+            title: "Summary",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="grid-outline" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="device"
+          options={{
             title: "Device",
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="hardware-chip-outline" size={size} color={color} />
@@ -61,15 +70,6 @@ export default function TabsLayout() {
             title: "Weather",
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="thunderstorm-outline" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="summary"
-          options={{
-            title: "Summary",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="grid-outline" size={size} color={color} />
             ),
           }}
         />

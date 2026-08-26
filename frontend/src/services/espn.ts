@@ -17,6 +17,7 @@ export type ScoreLine = {
   oppScore: number | null;
   oppAbbr: string;
   atHome: boolean;
+  startTime: string | null; // ISO kickoff/first-pitch time
 };
 
 type CacheEntry = { at: number; data: any };
@@ -83,6 +84,7 @@ export async function getTeamScore(
       oppScore: opp?.score != null ? parseInt(opp.score, 10) : null,
       oppAbbr: (opp?.team?.abbreviation ?? "").toUpperCase(),
       atHome: mine.homeAway === "home",
+      startTime: ev.date ?? null,
     };
   }
   return null;

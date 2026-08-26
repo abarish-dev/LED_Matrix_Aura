@@ -1,0 +1,28 @@
+{
+  "summary": "Round 9 frontend-only smoke test on Expo web preview (mobile viewport 390x844). All 4 new features + relocated landing verified. Summary is the landing tab with AURA logo/title, tab-bar order matches spec (Summary, Device, Flights, Sports, Weather). Live countdown pill ticks DOWN (observed 25s → 21s → 20s over ~5s). Overhead card is tappable and navigates to /flights with no crash when no ZIP is set. Entering ZIP 10001 on Flights geocoded to 'New York City, NY · 40.748, -73.997', and the Summary Weather glance populated with real Open-Meteo data ('71°F · Overcast', 'No rain expected · New York City'). Sports tab: NFL segment default, tapping the Cowboys card added it to Rotation and Summary glance immediately reflected 'NFL · COWBOYS' with a SUMMARY pill on the row (default index-0 fallback works and setFavoriteTeam action is wired). Device tab retains connection pill, brightness slider, Night Dimming toggle (with schedule expansion), Holiday Themes toggle, and Wi-Fi Setup form (SSID/password). Persistence verified: after localStorage.clear() + reload, aura_settings_v1 stored zip='10001', city='New York City', teams=[{league:'NFL', abbr:'DAL'}]. No red-screen errors and no page-level exceptions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "RN Web deprecation", "issue": "Console warnings: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. These originate from library internals (likely react-native-web / RN core styles) and are not blocking, but should be tracked. Reference: browser console during initial app load."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_17.json"],
+  "action_items": [
+    "No functional fixes required for this round — all 7 items in the review request PASS.",
+    "Optional: address RN-web deprecation warnings ('shadow*' → boxShadow, pointerEvents style migration) at a future cleanup pass; non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "index.tsx: Sports favorite fallback (favActive = s.favorite ? s.favorite === key : index === 0) correctly makes the first team implicitly favorite, but the Summary glance derives favTeam from settings.sports.teams[0] when favorite is null. This is consistent between tabs.",
+    "matrix.tsx setFavoriteTeam only persists; it does not livePush to BLE. Intentional (SUMMARY-glance only), just noting for future BLE parity.",
+    "index.tsx onPlaneTap falls back to router.push('/flights') when !located OR when !plane — matches the review requirement for the web-safe no-crash tap."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only round)", "frontend": "100% (7/7)"},
+  "seed_data_creation": "None. Test used ZIP 10001 and NFL Cowboys card selection at runtime; both cleared via localStorage.clear() at start.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "App base URL: https://smart-matrix-hub.preview.emergentagent.com (frontend/.env EXPO_PUBLIC_BACKEND_URL). AsyncStorage key on web is 'aura_settings_v1' in localStorage. Expo Router preserves last-visited tab across reload, so if you reload while on /device you will land there — check localStorage directly for persistence assertions instead of relying on the Summary glance after reload. Native-only paths (BLE, adsb.lol flights, ESPN scores) intentionally show helper hints on web and MUST NOT be reported as bugs. Open-Meteo and NWS alerts work on web."
+}

@@ -1,111 +1,205 @@
-import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import Slider from "@react-native-community/slider";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
-import { useMatrix, type WifiStatus } from "@/src/store/matrix";
+import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
-import { Hero, Card, SectionLabel, PrimaryButton, ToggleRow } from "@/src/components/ui";
-import { currentHoliday } from "@/src/utils/holidays";
+import { nearbyPlanes, compass, airlineLogoUrl, type Plane } from "@/src/services/adsb";
+import { getTeamScore, type ScoreLine } from "@/src/services/espn";
+import {
+  activeAlerts,
+  currentConditions,
+  severityColorHex,
+  type Alert,
+  type CurrentWx,
+} from "@/src/services/weather";
+import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
 
-const HERO =
-  "https://images.pexels.com/photos/30547576/pexels-photo-30547576.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
+const CHEVRON = require("@/assets/images/splash-image.png");
+const REFRESH_MS = 30000;
 
-function rssiBars(rssi: number | null): number {
-  if (rssi == null) return 0;
-  if (rssi >= -55) return 4;
-  if (rssi >= -67) return 3;
-  if (rssi >= -78) return 2;
-  return 1;
+const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
+
+/** "3h 12m" / "2d 4h" / "12m" until an ISO timestamp, or null if past. */
+function until(iso: string | null, now: number): string | null {
+  if (!iso) return null;
+  const diff = new Date(iso).getTime() - now;
+  if (diff <= 0) return null;
+  const mins = Math.floor(diff / 60000);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return "under 1m";
 }
 
-function fmtHour(h: number): string {
-  const period = h < 12 ? "AM" : "PM";
-  let hr = h % 12;
-  if (hr === 0) hr = 12;
-  return `${hr} ${period}`;
-}
-
-function HourStepper({
+function GlanceCard({
+  icon,
+  accent,
   label,
-  hour,
-  onChange,
+  onPress,
+  loading,
+  active,
+  children,
 }: {
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: string;
   label: string;
-  hour: number;
-  onChange: (h: number) => void;
+  onPress: () => void;
+  loading?: boolean;
+  active?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <View style={styles.stepper}>
-      <Text style={styles.stepperLabel}>{label}</Text>
-      <View style={styles.stepperControls}>
-        <Pressable
-          onPress={() => {
-            Haptics.selectionAsync();
-            onChange((hour + 23) % 24);
-          }}
-          style={styles.stepBtn}
-        >
-          <Ionicons name="remove" size={18} color={colors.brand} />
-        </Pressable>
-        <Text style={styles.stepperValue}>{fmtHour(hour)}</Text>
-        <Pressable
-          onPress={() => {
-            Haptics.selectionAsync();
-            onChange((hour + 1) % 24);
-          }}
-          style={styles.stepBtn}
-        >
-          <Ionicons name="add" size={18} color={colors.brand} />
-        </Pressable>
+    <Pressable
+      onPress={() => {
+        Haptics.selectionAsync();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.glance,
+        active && styles.glanceActive,
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <View style={[styles.glanceIcon, { backgroundColor: accent + "22" }]}>
+        <Ionicons name={icon} size={20} color={accent} />
       </View>
-    </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.glanceLabel}>{label}</Text>
+        {children}
+      </View>
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.onSurfaceSecondary} />
+      ) : (
+        <Ionicons name="chevron-forward" size={18} color={colors.surfaceTertiary} />
+      )}
+    </Pressable>
   );
 }
 
-export default function DeviceScreen() {
-  const {
-    bleStatus,
-    deviceName,
-    rssi,
-    bleSupported,
-    connect,
-    disconnect,
-    flashTest,
-    wifiStatus,
-    wifiIp,
-    lastSsid,
-    sendWifi,
-    settings,
-    updateBrightness,
-    updateNightMode,
-    updateWeekend,
-    updateHolidayThemes,
-  } = useMatrix();
+export default function SummaryScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const toast = useToast();
+  const { settings, bleStatus, deviceName, connect, flashTest, updateFlights } = useMatrix();
+  const f = settings.flights;
+  const located = f.lat != null && f.lon != null;
 
-  const [ssid, setSsid] = useState("");
-  const [pass, setPass] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [bright, setBright] = useState(settings.brightness);
+  const favKey = settings.sports.favorite;
+  const favTeam =
+    (favKey ? settings.sports.teams.find((t) => `${t.league}:${t.abbr}` === favKey) : null) ??
+    settings.sports.teams[0] ??
+    null;
+
+  const [plane, setPlane] = useState<Plane | null>(null);
+  const [planeLoading, setPlaneLoading] = useState(false);
+  const [score, setScore] = useState<ScoreLine | null>(null);
+  const [scoreLoading, setScoreLoading] = useState(false);
+  const [wx, setWx] = useState<CurrentWx | null>(null);
+  const [wxLoading, setWxLoading] = useState(false);
+  const [alert, setAlert] = useState<Alert | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  const reqRef = useRef(0);
+  const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
+  const missRef = useRef(0);
+
+  // Detect if a fetched list still contains the auto-pinned flight; auto-revert
+  // to normal once it leaves range (only counts misses when other planes are
+  // visible, so the web preview's empty ADS-B response won't false-trigger).
+  const checkAutoTrack = useCallback(
+    (list: Plane[]) => {
+      if (!(f.trackFlight && f.autoTracked && f.flightIdent)) return;
+      if (list.length === 0) return; // inconclusive
+      const stillUp = list.some((p) => norm(p.callsign) === f.flightIdent);
+      if (stillUp) {
+        missRef.current = 0;
+      } else if (++missRef.current >= 2) {
+        missRef.current = 0;
+        updateFlights({ trackFlight: false, flightIdent: "", autoTracked: false });
+        toast.show(`${f.flightIdent} left range — back to normal.`, "info");
+      }
+    },
+    [f.trackFlight, f.autoTracked, f.flightIdent, updateFlights, toast],
+  );
+
+  const loadAll = useCallback(async () => {
+    const id = ++reqRef.current;
+    nextRefreshRef.current = Date.now() + REFRESH_MS;
+
+    if (located) {
+      setWxLoading(true);
+      currentConditions(f.lat!, f.lon!).then((w) => {
+        if (id === reqRef.current) {
+          setWx(w);
+          setWxLoading(false);
+        }
+      });
+      activeAlerts(f.lat!, f.lon!).then((list) => {
+        if (id === reqRef.current) setAlert(list[0] ?? null);
+      });
+      setPlaneLoading(true);
+      nearbyPlanes(f.lat!, f.lon!, f.radiusMi, 8).then((list) => {
+        if (id === reqRef.current) {
+          setPlane(list[0] ?? null);
+          setPlaneLoading(false);
+          checkAutoTrack(list);
+        }
+      });
+    }
+
+    if (favTeam) {
+      setScoreLoading(true);
+      getTeamScore(favTeam.league, favTeam.abbr).then((line) => {
+        if (id === reqRef.current) {
+          setScore(line);
+          setScoreLoading(false);
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, checkAutoTrack]);
 
   useEffect(() => {
-    if (lastSsid) setSsid(lastSsid);
-  }, [lastSsid]);
+    loadAll();
+    const iv = setInterval(loadAll, REFRESH_MS);
+    return () => clearInterval(iv);
+  }, [loadAll]);
 
-  useEffect(() => setBright(settings.brightness), [settings.brightness]);
+  // 1-second ticker drives the live countdowns.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  const connecting = bleStatus === "scanning" || bleStatus === "connecting";
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadAll();
+    setTimeout(() => setRefreshing(false), 700);
+  }, [loadAll]);
+
   const connected = bleStatus === "connected";
+  const connecting = bleStatus === "scanning" || bleStatus === "connecting";
 
-  const onPressStatus = async () => {
-    if (connecting) return;
-    if (connected) {
-      await disconnect();
-      toast.show("Disconnected from matrix.", "info");
+  const onConnect = async () => {
+    if (connecting || connected) {
+      router.push("/device");
       return;
     }
     try {
@@ -113,536 +207,428 @@ export default function DeviceScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.show(`Connected to ${name}.`, "success");
     } catch (e: any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       toast.show(e?.message ?? "Could not connect.", "error");
     }
   };
 
-  const onSendWifi = async () => {
-    if (!ssid.trim()) {
-      toast.show("Enter a Wi-Fi network name.", "info");
-      return;
-    }
+  const onFlash = async () => {
     if (!connected) {
       toast.show("Connect to the matrix first.", "info");
       return;
     }
-    setSending(true);
     try {
-      await sendWifi(ssid.trim(), pass);
-      toast.show("Wi-Fi credentials sent to matrix.", "success");
+      await flashTest();
+      toast.show("Sent flash test to matrix.", "success");
     } catch (e: any) {
-      toast.show(e?.message ?? "Failed to send Wi-Fi.", "error");
-    } finally {
-      setSending(false);
+      toast.show(e?.message ?? "Failed.", "error");
     }
   };
 
-  const statusMeta = getStatusMeta(bleStatus);
-  const bars = rssiBars(rssi);
+  const isTracked =
+    plane != null && f.trackFlight && f.flightIdent === norm(plane.callsign);
+
+  const onPlaneTap = () => {
+    if (!located) {
+      router.push("/flights");
+      return;
+    }
+    if (!plane) {
+      router.push("/flights");
+      return;
+    }
+    if (isTracked) {
+      updateFlights({ trackFlight: false, flightIdent: "", autoTracked: false });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show(`Stopped tracking ${plane.callsign}.`, "info");
+    } else {
+      missRef.current = 0;
+      updateFlights({ trackFlight: true, flightIdent: norm(plane.callsign), autoTracked: true });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show(`Pinned ${plane.callsign} to the wall.`, "success");
+    }
+  };
+
+  const favMeta = favTeam ? findTeam(favTeam.league, favTeam.abbr) : undefined;
+  const secsToRefresh = Math.max(0, Math.ceil((nextRefreshRef.current - now) / 1000));
+  const gameCountdown = score?.state === "pre" ? until(score.startTime, now) : null;
 
   return (
-    <KeyboardAwareScrollView
+    <ScrollView
       style={styles.screen}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-      bottomOffset={20}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.lg }]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
+      }
     >
-      <Hero image={HERO} title="Aura" subtitle="LED Matrix Control" height={210} />
-
-      <View style={styles.body}>
-        {/* Connection */}
-        <SectionLabel>Connection</SectionLabel>
-        <Pressable onPress={onPressStatus} disabled={connecting}>
-          <Card style={styles.statusCard}>
-            <View style={[styles.statusDot, { backgroundColor: statusMeta.color }]} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.statusTitle}>{statusMeta.title}</Text>
-              <Text style={styles.statusSub}>
-                {connected
-                  ? deviceName ?? "Aura Matrix"
-                  : connecting
-                    ? "Searching over Bluetooth…"
-                    : "Tap to connect over Bluetooth"}
-              </Text>
-            </View>
-            {connected ? (
-              <View style={styles.signal}>
-                {[1, 2, 3, 4].map((b) => (
-                  <View
-                    key={b}
-                    style={[
-                      styles.signalBar,
-                      { height: 6 + b * 4 },
-                      b <= bars
-                        ? { backgroundColor: colors.success }
-                        : { backgroundColor: colors.surfaceTertiary },
-                    ]}
-                  />
-                ))}
-              </View>
-            ) : (
-              <Ionicons
-                name={connecting ? "sync" : "bluetooth"}
-                size={22}
-                color={colors.brand}
-              />
-            )}
-          </Card>
-        </Pressable>
-
-        {!bleSupported && (
-          <Card style={styles.hintCard}>
-            <Ionicons name="information-circle" size={18} color={colors.info} />
-            <Text style={styles.hintText}>
-              Bluetooth runs only in a real device build — not in Expo Go or web
-              preview. The rest of the app works so you can configure everything.
-            </Text>
-          </Card>
-        )}
-
-        {connected && (
-          <Pressable
-            onPress={async () => {
-              try {
-                await flashTest();
-                toast.show("Sent flash test to matrix.", "success");
-              } catch (e: any) {
-                toast.show(e?.message ?? "Failed.", "error");
-              }
-            }}
-            style={({ pressed }) => [styles.flashBtn, pressed && { opacity: 0.8 }]}
-          >
-            <Ionicons name="flash" size={16} color={colors.brand} />
-            <Text style={styles.flashText}>Flash test pattern</Text>
-          </Pressable>
-        )}
-
-        {/* Display */}
-        <SectionLabel>Display</SectionLabel>
-        <Card>
-          <View style={styles.radiusHeader}>
-            <View style={styles.rowLeft}>
-              <Ionicons name="sunny" size={18} color={colors.brand} />
-              <Text style={styles.brightLabel}>Brightness</Text>
-            </View>
-            <Text style={styles.brightValue}>{bright}%</Text>
-          </View>
-          <Slider
-            style={{ width: "100%", height: 40 }}
-            minimumValue={5}
-            maximumValue={100}
-            step={1}
-            value={bright}
-            minimumTrackTintColor={colors.brand}
-            maximumTrackTintColor={colors.surfaceTertiary}
-            thumbTintColor="#ffffff"
-            onValueChange={(v) => {
-              setBright(Math.round(v));
-              Haptics.selectionAsync();
-            }}
-            onSlidingComplete={(v) => updateBrightness(Math.round(v))}
-          />
-          <Text style={styles.brightHint}>Dim the matrix at night or crank it for daylight.</Text>
-        </Card>
-
-        <Card style={{ marginTop: spacing.md }}>
-          <ToggleRow
-            label="Night Dimming"
-            icon="moon"
-            value={settings.nightMode.enabled}
-            onValueChange={(v) => updateNightMode({ enabled: v })}
-          />
-          {settings.nightMode.enabled && (
-            <>
-              <View style={styles.nightDivider} />
-              <View style={styles.nightRow}>
-                <HourStepper
-                  label="From"
-                  hour={settings.nightMode.startHour}
-                  onChange={(h) => updateNightMode({ startHour: h })}
-                />
-                <HourStepper
-                  label="To"
-                  hour={settings.nightMode.endHour}
-                  onChange={(h) => updateNightMode({ endHour: h })}
-                />
-              </View>
-              <View style={[styles.radiusHeader, { marginTop: spacing.md }]}>
-                <Text style={styles.brightLabel}>Dim to</Text>
-                <Text style={styles.brightValue}>{settings.nightMode.dimLevel}%</Text>
-              </View>
-              <Slider
-                style={{ width: "100%", height: 40 }}
-                minimumValue={0}
-                maximumValue={80}
-                step={5}
-                value={settings.nightMode.dimLevel}
-                minimumTrackTintColor={colors.brand}
-                maximumTrackTintColor={colors.surfaceTertiary}
-                thumbTintColor="#ffffff"
-                onValueChange={() => Haptics.selectionAsync()}
-                onSlidingComplete={(v) => updateNightMode({ dimLevel: Math.round(v) })}
-              />
-              <Text style={styles.brightHint}>
-                Between these hours the matrix dims to this level automatically.
-              </Text>
-
-              <View style={styles.nightDivider} />
-              <ToggleRow
-                label="Separate weekend schedule"
-                icon="calendar"
-                value={settings.nightMode.weekend.enabled}
-                onValueChange={(v) => updateWeekend({ enabled: v })}
-              />
-              {settings.nightMode.weekend.enabled && (
-                <>
-                  <Text style={[styles.brightHint, { marginBottom: spacing.sm }]}>
-                    Used on Saturdays &amp; Sundays.
-                  </Text>
-                  <View style={styles.nightRow}>
-                    <HourStepper
-                      label="From"
-                      hour={settings.nightMode.weekend.startHour}
-                      onChange={(h) => updateWeekend({ startHour: h })}
-                    />
-                    <HourStepper
-                      label="To"
-                      hour={settings.nightMode.weekend.endHour}
-                      onChange={(h) => updateWeekend({ endHour: h })}
-                    />
-                  </View>
-                  <View style={[styles.radiusHeader, { marginTop: spacing.md }]}>
-                    <Text style={styles.brightLabel}>Dim to</Text>
-                    <Text style={styles.brightValue}>
-                      {settings.nightMode.weekend.dimLevel}%
-                    </Text>
-                  </View>
-                  <Slider
-                    style={{ width: "100%", height: 40 }}
-                    minimumValue={0}
-                    maximumValue={80}
-                    step={5}
-                    value={settings.nightMode.weekend.dimLevel}
-                    minimumTrackTintColor={colors.brand}
-                    maximumTrackTintColor={colors.surfaceTertiary}
-                    thumbTintColor="#ffffff"
-                    onValueChange={() => Haptics.selectionAsync()}
-                    onSlidingComplete={(v) => updateWeekend({ dimLevel: Math.round(v) })}
-                  />
-                </>
-              )}
-            </>
-          )}
-        </Card>
-
-        <Card style={{ marginTop: spacing.md }}>
-          <ToggleRow
-            label="Holiday Themes"
-            icon="color-palette"
-            value={settings.holidayThemes}
-            onValueChange={(v) => updateHolidayThemes(v)}
-          />
-          {settings.holidayThemes &&
-            (() => {
-              const h = currentHoliday();
-              return (
-                <View style={styles.holidayRow}>
-                  {h ? (
-                    <>
-                      <Text style={styles.holidayEmoji}>{h.emoji}</Text>
-                      <Text style={styles.holidayText}>Today: {h.name}</Text>
-                      <View style={styles.swatches}>
-                        <View style={[styles.swatch, { backgroundColor: h.colors[0] }]} />
-                        <View style={[styles.swatch, { backgroundColor: h.colors[1] }]} />
-                      </View>
-                    </>
-                  ) : (
-                    <Text style={styles.holidayText}>
-                      No holiday today — the wall uses its normal amber accent.
-                    </Text>
-                  )}
-                </View>
-              );
-            })()}
-          <Text style={styles.brightHint}>
-            The matrix shifts its accent colors on holidays (red/green in December, etc.).
-          </Text>
-        </Card>
-
-        {/* Wi-Fi */}
-        <SectionLabel>Wi-Fi Setup</SectionLabel>
-        <Card>
-          <Text style={styles.fieldLabel}>Network name (SSID)</Text>
-          <TextInput
-            value={ssid}
-            onChangeText={setSsid}
-            placeholder="MyHomeWiFi"
-            placeholderTextColor={colors.onSurfaceSecondary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-          />
-
-          <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Password</Text>
-          <View style={styles.passRow}>
-            <TextInput
-              value={pass}
-              onChangeText={setPass}
-              placeholder="••••••••"
-              placeholderTextColor={colors.onSurfaceSecondary}
-              secureTextEntry={!showPass}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={[styles.input, { flex: 1, marginBottom: 0 }]}
-            />
-            <Pressable onPress={() => setShowPass((v) => !v)} style={styles.eye}>
-              <Ionicons
-                name={showPass ? "eye-off" : "eye"}
-                size={20}
-                color={colors.onSurfaceSecondary}
-              />
-            </Pressable>
-          </View>
-
-          {wifiStatus !== "idle" && (
-            <View style={[styles.wifiBanner, wifiBannerStyle(wifiStatus)]}>
-              <Ionicons
-                name={wifiBannerIcon(wifiStatus)}
-                size={16}
-                color={wifiBannerColor(wifiStatus)}
-              />
-              <Text style={[styles.wifiBannerText, { color: wifiBannerColor(wifiStatus) }]}>
-                {wifiStatusLabel(wifiStatus, wifiIp)}
-              </Text>
-            </View>
-          )}
-
-          <View style={{ marginTop: spacing.lg }}>
-            <PrimaryButton
-              label={wifiStatus === "failed" ? "Resend Wi-Fi" : "Send to Matrix"}
-              icon="wifi"
-              onPress={onSendWifi}
-              loading={sending}
-            />
-          </View>
-        </Card>
-
-        <Text style={styles.footer}>
-          Aura provisions your matrix over Bluetooth. Once it joins Wi-Fi, the
-          display pulls live flights, scores and weather on its own.
-        </Text>
+      {/* Branded header */}
+      <View style={styles.header}>
+        <Image source={CHEVRON} style={styles.logo} contentFit="contain" />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.brandName}>AURA</Text>
+          <Text style={styles.brandSub}>Live Summary</Text>
+        </View>
+        <View style={styles.livePill}>
+          <View style={styles.livePulse} />
+          <Text style={styles.liveText}>{secsToRefresh}s</Text>
+        </View>
       </View>
-    </KeyboardAwareScrollView>
+
+      {/* Connection status */}
+      <Pressable
+        onPress={onConnect}
+        style={({ pressed }) => [styles.statusPill, pressed && { opacity: 0.85 }]}
+      >
+        <View
+          style={[
+            styles.statusDot,
+            {
+              backgroundColor: connected
+                ? colors.success
+                : connecting
+                  ? colors.warning
+                  : colors.onSurfaceSecondary,
+            },
+          ]}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.statusTitle}>
+            {connected ? "Matrix Connected" : connecting ? "Connecting…" : "Matrix Offline"}
+          </Text>
+          <Text style={styles.statusSub}>
+            {connected
+              ? deviceName ?? "Aura Matrix"
+              : connecting
+                ? "Searching over Bluetooth…"
+                : "Tap to connect over Bluetooth"}
+          </Text>
+        </View>
+        <Ionicons
+          name={connected ? "bluetooth" : "bluetooth-outline"}
+          size={20}
+          color={connected ? colors.brand : colors.onSurfaceSecondary}
+        />
+      </Pressable>
+
+      <Text style={styles.sectionLabel}>On The Wall Now</Text>
+
+      {/* Overhead flight — tap to pin/unpin as tracked flight */}
+      <GlanceCard
+        icon="airplane"
+        accent={isTracked ? colors.brand : colors.info}
+        label="Overhead"
+        loading={planeLoading}
+        active={isTracked}
+        onPress={onPlaneTap}
+      >
+        {!located ? (
+          <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
+        ) : plane ? (
+          <>
+            <View style={styles.planeLine}>
+              {plane.airlineIata ? (
+                <Image
+                  source={{ uri: airlineLogoUrl(plane.airlineIata) }}
+                  style={styles.planeLogo}
+                  contentFit="contain"
+                  transition={200}
+                />
+              ) : null}
+              <Text style={styles.glanceValue} numberOfLines={1}>
+                {plane.callsign}
+                {plane.airlineName ? ` · ${plane.airlineName}` : ""}
+              </Text>
+              {isTracked && (
+                <View style={styles.trackTag}>
+                  <Text style={styles.trackTagText}>TRACKING</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.glanceMeta}>
+              {plane.from && plane.to ? `${plane.from} → ${plane.to}  ·  ` : ""}
+              {plane.altFt ? `${plane.altFt.toLocaleString()} ft  ·  ` : ""}
+              {plane.distanceMi} mi{plane.headingDeg >= 0 ? ` ${compass(plane.headingDeg)}` : ""}
+            </Text>
+            <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
+              {isTracked ? "Pinned to the wall · tap to stop" : "Tap to pin this flight to the wall"}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.glanceHint}>
+            {planeLoading
+              ? "Scanning the sky…"
+              : `No aircraft in range · rescanning in ${secsToRefresh}s`}
+          </Text>
+        )}
+      </GlanceCard>
+
+      {/* Favorite team */}
+      <GlanceCard
+        icon="trophy"
+        accent={colors.brand}
+        label={favTeam ? `${favTeam.league} · ${favMeta?.name ?? favTeam.abbr}` : "Sports"}
+        loading={scoreLoading}
+        onPress={() => router.push("/sports")}
+      >
+        {!favTeam ? (
+          <Text style={styles.glanceHint}>Pick a team on the Sports tab</Text>
+        ) : score ? (
+          <>
+            <View style={styles.scoreLine}>
+              {favMeta && (
+                <View style={[styles.teamBadge, { backgroundColor: favMeta.color }]}>
+                  <Text style={[styles.teamBadgeText, { color: readableOn(favMeta.color) }]}>
+                    {favTeam.abbr}
+                  </Text>
+                  <Image
+                    source={{ uri: teamLogoUrl(favTeam.league, favTeam.abbr) }}
+                    style={[StyleSheet.absoluteFill, { padding: 4 }]}
+                    contentFit="contain"
+                    transition={200}
+                    cachePolicy="memory-disk"
+                  />
+                </View>
+              )}
+              <Text
+                style={[styles.glanceValue, score.state === "in" && { color: colors.brand }]}
+                numberOfLines={1}
+              >
+                {score.state === "pre"
+                  ? `${score.atHome ? "vs" : "@"} ${score.oppAbbr}`
+                  : `${favTeam.abbr} ${score.teamScore ?? 0}–${score.oppScore ?? 0} ${score.oppAbbr}`}
+              </Text>
+            </View>
+            <Text
+              style={[
+                styles.glanceMeta,
+                score.state === "in" && { color: colors.brand, fontFamily: fonts.textMedium },
+              ]}
+            >
+              {score.state === "in"
+                ? `🔴 LIVE · ${score.detail}`
+                : score.state === "post"
+                  ? score.detail
+                  : gameCountdown
+                    ? `Starts in ${gameCountdown} · ${score.detail}`
+                    : score.detail}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.glanceHint}>
+            {scoreLoading ? "Loading score…" : "No recent game · needs phone app"}
+          </Text>
+        )}
+      </GlanceCard>
+
+      {/* Weather / temperature */}
+      <GlanceCard
+        icon={(wx?.icon as keyof typeof Ionicons.glyphMap) ?? "partly-sunny"}
+        accent={colors.warning}
+        label="Weather"
+        loading={wxLoading}
+        onPress={() => router.push("/weather")}
+      >
+        {!located ? (
+          <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
+        ) : wx ? (
+          <>
+            <Text style={styles.glanceValue}>
+              {wx.tempF}°F · {wx.label}
+            </Text>
+            <Text style={styles.glanceMeta}>
+              {wx.isRaining
+                ? "🌧️ Raining now"
+                : wx.rainChance != null && wx.rainChance >= 30
+                  ? `☔ ${wx.rainChance}% chance of rain today`
+                  : "No rain expected"}
+              {f.city ? `  ·  ${f.city}` : ""}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.glanceHint}>{wxLoading ? "Checking conditions…" : "Unavailable"}</Text>
+        )}
+      </GlanceCard>
+
+      {/* Weather alert (only when active) */}
+      {alert && (
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/weather");
+          }}
+          style={({ pressed }) => [
+            styles.alertCard,
+            { borderLeftColor: severityColorHex(alert.severity) },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <Ionicons name="warning" size={18} color={severityColorHex(alert.severity)} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.alertEvent} numberOfLines={1}>
+              {alert.event}
+            </Text>
+            <Text style={styles.alertArea} numberOfLines={1}>
+              {alert.area || alert.severity}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.surfaceTertiary} />
+        </Pressable>
+      )}
+
+      <Text style={styles.sectionLabel}>Quick Controls</Text>
+      <View style={styles.quickRow}>
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/device");
+          }}
+          style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="options" size={22} color={colors.brand} />
+          <Text style={styles.quickText}>Settings</Text>
+        </Pressable>
+        <Pressable
+          onPress={onFlash}
+          style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="flash" size={22} color={connected ? colors.brand : colors.surfaceTertiary} />
+          <Text style={[styles.quickText, !connected && { color: colors.onSurfaceSecondary }]}>
+            Flash Test
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/weather");
+          }}
+          style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="thunderstorm" size={22} color={colors.brand} />
+          <Text style={styles.quickText}>Alerts</Text>
+        </Pressable>
+      </View>
+
+      <Text style={styles.footer}>
+        A live glance at everything on your matrix. Pull down to refresh. Flights and
+        scores stream on the phone build; weather works everywhere.
+      </Text>
+    </ScrollView>
   );
-}
-
-function getStatusMeta(s: string) {
-  switch (s) {
-    case "connected":
-      return { title: "Connected", color: colors.success };
-    case "scanning":
-      return { title: "Scanning…", color: colors.warning };
-    case "connecting":
-      return { title: "Connecting…", color: colors.warning };
-    default:
-      return { title: "Disconnected", color: colors.onSurfaceSecondary };
-  }
-}
-
-function wifiStatusLabel(s: WifiStatus, ip: string | null): string {
-  switch (s) {
-    case "sending":
-      return "Sending credentials…";
-    case "waiting":
-      return "Sent · waiting for matrix to join…";
-    case "joined":
-      return ip ? `Matrix joined Wi-Fi · ${ip}` : "Matrix joined Wi-Fi";
-    case "failed":
-      return "Matrix couldn't join — check password and resend.";
-    default:
-      return "";
-  }
-}
-function wifiBannerColor(s: WifiStatus): string {
-  if (s === "joined") return colors.success;
-  if (s === "failed") return colors.error;
-  return colors.info;
-}
-function wifiBannerIcon(s: WifiStatus): keyof typeof Ionicons.glyphMap {
-  if (s === "joined") return "checkmark-circle";
-  if (s === "failed") return "alert-circle";
-  return "time";
-}
-function wifiBannerStyle(s: WifiStatus) {
-  return { borderColor: wifiBannerColor(s) };
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
-  content: { paddingBottom: 150 },
-  body: { paddingHorizontal: spacing.lg },
-  statusCard: {
+  content: { paddingHorizontal: spacing.lg, paddingBottom: 150 },
+  header: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.xl },
+  logo: { width: 52, height: 52 },
+  brandName: { fontFamily: fonts.displayBold, fontSize: 30, color: colors.onSurface, letterSpacing: 2 },
+  brandSub: { fontFamily: fonts.text, fontSize: fontSize.base, color: colors.onSurfaceSecondary, marginTop: -2 },
+  livePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  livePulse: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  liveText: {
+    fontFamily: fonts.mono,
+    fontSize: fontSize.xs,
+    color: colors.onSurfaceSecondary,
+    letterSpacing: 0.5,
+  },
+  statusPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
   },
   statusDot: { width: 12, height: 12, borderRadius: 6 },
-  statusTitle: {
-    fontFamily: fonts.display,
-    fontSize: fontSize.xl,
-    color: colors.onSurface,
-  },
-  statusSub: {
-    fontFamily: fonts.text,
+  statusTitle: { fontFamily: fonts.display, fontSize: fontSize.xl, color: colors.onSurface },
+  statusSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
+  sectionLabel: {
+    fontFamily: fonts.displayMedium,
     fontSize: fontSize.sm,
     color: colors.onSurfaceSecondary,
-    marginTop: 1,
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+    marginTop: spacing.xl,
   },
-  signal: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 24 },
-  signalBar: { width: 4, borderRadius: 2 },
-  hintCard: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-    alignItems: "flex-start",
-  },
-  hintText: {
-    flex: 1,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    lineHeight: 18,
-  },
-  flashBtn: {
+  glance: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    alignSelf: "flex-start",
-    marginTop: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.sm,
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.surfaceSecondary,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
   },
-  flashText: {
+  glanceActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  glanceIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  glanceLabel: {
     fontFamily: fonts.textMedium,
-    fontSize: fontSize.sm,
-    color: colors.brand,
-  },
-  rowLeft: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  radiusHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.xs,
-  },
-  brightLabel: {
-    fontFamily: fonts.text,
-    fontSize: fontSize.lg,
-    color: colors.onSurface,
-  },
-  brightValue: {
-    fontFamily: fonts.displayBold,
-    fontSize: fontSize.xl,
-    color: colors.brand,
-  },
-  brightHint: {
-    fontFamily: fonts.text,
     fontSize: fontSize.xs,
     color: colors.onSurfaceSecondary,
-    marginTop: spacing.xs,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 2,
   },
-  holidayRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  holidayEmoji: { fontSize: 20 },
-  holidayText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurface },
-  swatches: { flexDirection: "row", gap: 6 },
-  swatch: { width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: colors.border },
-  nightDivider: {
-    height: 1,
-    backgroundColor: colors.divider,
-    marginVertical: spacing.md,
-  },
-  nightRow: { flexDirection: "row", gap: spacing.md },
-  stepper: { flex: 1 },
-  stepperLabel: {
-    fontFamily: fonts.textMedium,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    marginBottom: spacing.xs,
-  },
-  stepperControls: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surfaceTertiary,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.xs,
-    height: 44,
-  },
-  stepBtn: {
-    width: 36,
-    height: 36,
+  glanceValue: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface, flexShrink: 1 },
+  glanceMeta: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 2 },
+  glanceHint: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary },
+  tapHint: { fontFamily: fonts.textMedium, fontSize: fontSize.xs, color: colors.onSurfaceTertiary, marginTop: 4 },
+  planeLine: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  planeLogo: { width: 22, height: 22 },
+  trackTag: { backgroundColor: colors.brand, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 1 },
+  trackTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.onBrandPrimary, letterSpacing: 0.5 },
+  scoreLine: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  teamBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
-  stepperValue: {
-    fontFamily: fonts.display,
-    fontSize: fontSize.lg,
-    color: colors.onSurface,
-  },
-  fieldLabel: {
-    fontFamily: fonts.textMedium,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    marginBottom: spacing.xs,
-  },
-  input: {
-    backgroundColor: colors.surfaceTertiary,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    color: colors.onSurface,
-    fontFamily: fonts.text,
-    fontSize: fontSize.lg,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  passRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  eye: {
-    width: 48,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceTertiary,
-  },
-  wifiBanner: {
+  teamBadgeText: { fontFamily: fonts.displayBold, fontSize: 10 },
+  alertCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderLeftWidth: 4,
     padding: spacing.md,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    backgroundColor: colors.surfaceTertiary,
+    marginBottom: spacing.sm,
   },
-  wifiBannerText: {
+  alertEvent: { fontFamily: fonts.displayMedium, fontSize: fontSize.lg, color: colors.onSurface },
+  alertArea: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
+  quickRow: { flexDirection: "row", gap: spacing.sm },
+  quickBtn: {
     flex: 1,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.lg,
   },
+  quickText: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurface },
   footer: {
     fontFamily: fonts.text,
     fontSize: fontSize.sm,

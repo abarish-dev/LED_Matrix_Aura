@@ -108,3 +108,10 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Current conditions service**: `services/weather.ts` → `currentConditions(lat,lon)` via Open-Meteo (keyless + CORS, works in web preview). Returns tempF, WMO code→label/icon, isRaining, today's rainChance.
 - Weather glance verified live in web preview (Open-Meteo). Flights/scores glances are native-only (adsb.lol/ESPN CORS), consistent with existing tabs.
 
+## Updates (2026-06 — round 9)
+- [x] **Set As Home**: app now lands on the Summary tab — `app/(tabs)/index.tsx` is Summary; former Device controls moved to `app/(tabs)/device.tsx`. Tab order Summary · Device · Flights · Sports · Weather (`_layout.tsx`). Summary router links point to `/device`.
+- [x] **Live Countdown**: 1-second ticker on Summary. Header "Ns" pill counts down to the next 30s auto-refresh; favorite team pre-game shows "Starts in 3h 12m"; no-plane state shows "rescanning in Ns".
+- [x] **Tap To Track**: tapping the Overhead card pins that flight (`flights.trackFlight/flightIdent/autoTracked` via `updateFlights`, live-pushed to firmware). Shows a "TRACKING" tag; auto-reverts when the pinned callsign leaves range (miss-counter, only counts when other planes are visible so web's empty ADS-B won't false-trigger). New `flights.autoTracked` field in store.
+- [x] **Favorite Star**: gold star on Sports rotation rows sets `sports.favorite` (new store field + `setFavoriteTeam`); that team leads the Summary Sports glance and shows a "SUMMARY" tag. Rivalry flag moved to a distinct flame icon. Removing a team clears its favorite.
+- [x] **New logo (Sunburst)**: amber glowing sun + airplane + trophy mashup replaces the chevron. Applied to `icon.png`, `adaptive-icon.png` (bg `#14171d`), `favicon.png`; transparent glowing version drives `splash-image.png` + the Summary header. Generated via `tools/gen_logo.py` (gpt-image-1) + `tools/apply_logo.py`.
+

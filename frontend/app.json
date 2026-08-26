@@ -19,7 +19,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#14171d"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.bluetoothledsync.hltjsu",

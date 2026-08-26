@@ -42,8 +42,9 @@ export type Settings = {
     trackFlight: boolean;
     flightIdent: string;
     landingAlert: boolean;
+    autoTracked: boolean; // pinned via Summary tap; auto-clears when out of range
   };
-  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[] };
+  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[]; favorite: string | null };
   weather: {
     enabled: boolean;
     severity: Severity;
@@ -80,8 +81,9 @@ export const DEFAULT_SETTINGS: Settings = {
     trackFlight: false,
     flightIdent: "",
     landingAlert: true,
+    autoTracked: false,
   },
-  sports: { enabled: true, teams: [], ufc: false, rivals: [] },
+  sports: { enabled: true, teams: [], ufc: false, rivals: [], favorite: null },
   weather: {
     enabled: true,
     severity: "severe",
@@ -127,6 +129,7 @@ type MatrixContextValue = {
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
   toggleRival: (key: string) => void;
+  setFavoriteTeam: (key: string | null) => void;
   updateBrightness: (value: number) => void;
   updateHolidayThemes: (value: boolean) => void;
   updateNightMode: (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => void;
@@ -358,7 +361,9 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         const rivals = exists
           ? prev.sports.rivals.filter((r) => r !== key)
           : prev.sports.rivals;
-        const next = { ...prev, sports: { ...prev.sports, teams, rivals } };
+        const favorite =
+          exists && prev.sports.favorite === key ? null : prev.sports.favorite;
+        const next = { ...prev, sports: { ...prev.sports, teams, rivals, favorite } };
         persist(next);
         livePush("sports", {
           enabled: next.sports.enabled,
@@ -408,6 +413,17 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
       });
     },
     [persist, livePush],
+  );
+
+  const setFavoriteTeam = useCallback(
+    (key: string | null) => {
+      setSettings((prev) => {
+        const next = { ...prev, sports: { ...prev.sports, favorite: key } };
+        persist(next);
+        return next;
+      });
+    },
+    [persist],
   );
 
   const updateBrightness = useCallback(
@@ -549,6 +565,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     toggleTeam,
     reorderTeams,
     toggleRival,
+    setFavoriteTeam,
     updateBrightness,
     updateHolidayThemes,
     updateNightMode,
