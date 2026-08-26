@@ -57,7 +57,7 @@ function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
 }
 
 export default function SportsScreen() {
-  const { settings, updateSports, toggleTeam, reorderTeams, toggleRival, setFavoriteTeam } = useMatrix();
+  const { settings, updateSports, toggleTeam, reorderTeams, toggleRival, toggleFavorite } = useMatrix();
   const s = settings.sports;
   const [seg, setSeg] = useState<Segment>("NFL");
   const [scores, setScores] = useState<Record<string, ScoreLine | null>>({});
@@ -135,9 +135,11 @@ export default function SportsScreen() {
     // Rivalry game: the live opponent is another team you follow in this league.
     const rivalryGame = !!line && isFollowed(item.league, line.oppAbbr);
     const highlight = isRival || rivalryGame;
-    // Favorite = the team that leads the Summary glance (defaults to the first).
-    const favActive = s.favorite ? s.favorite === key : index === 0;
-    const favExplicit = s.favorite === key;
+    // Favorites (max 2): [0] leads the Summary glance, [1] shows as a mini row.
+    const favIndex = s.favorites.indexOf(key);
+    const implicitPrimary = s.favorites.length === 0 && index === 0;
+    const favActive = favIndex >= 0 || implicitPrimary;
+    const favLabel = favIndex === 1 ? "2ND" : favIndex === 0 || implicitPrimary ? "SUMMARY" : null;
 
     return (
       <View
@@ -152,10 +154,10 @@ export default function SportsScreen() {
         <View style={{ flex: 1 }}>
           <View style={styles.rotNameRow}>
             <Text style={styles.rotName} numberOfLines={1}>{t?.name ?? item.abbr}</Text>
-            {favActive && (
+            {favLabel && (
               <View style={styles.favTag}>
-                <Ionicons name="star" size={8} color={colors.onBrandPrimary} />
-                <Text style={styles.favTagText}>SUMMARY</Text>
+                <Ionicons name="star" size={8} color={colors.brand} />
+                <Text style={styles.favTagText}>{favLabel}</Text>
               </View>
             )}
             {rivalryGame && (
@@ -177,7 +179,7 @@ export default function SportsScreen() {
           hitSlop={8}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setFavoriteTeam(favExplicit ? null : key);
+            toggleFavorite(key);
           }}
           style={styles.rowBtn}
         >
@@ -308,7 +310,7 @@ export default function SportsScreen() {
         <Text style={styles.footer}>
           {seg === "UFC"
             ? "The matrix pulls the next UFC card live from ESPN."
-            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ leads the Summary glance · 🔥 flags a rivalry · rows tint green when winning, red when losing.`}
+            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ star up to 2 for the Summary (1st leads, 2nd shows a mini row) · 🔥 flags a rivalry · rows tint green when winning, red when losing.`}
         </Text>
       </View>
     </ScrollView>

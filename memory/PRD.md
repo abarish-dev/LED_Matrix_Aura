@@ -130,3 +130,7 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Quiet Landing Chime**: new `flights.landingChime` toggle (Flights tab). Summary plays a soft chime (expo-audio, `assets/sounds/alert.wav`) once when a pinned flight first transitions to "landing soon" (state === 'landing'), gated by the toggle + a transition ref. Native-only playback.
 - [x] **Compact Mode**: toggle button in the Summary "On The Wall Now" row shrinks all glance cards to tight one-line rows (hides secondary meta/hint lines, smaller padding). Persists to AsyncStorage `aura_summary_compact_v1`. Verified on web incl. persistence.
 
+## Updates (2026-06 — round 13)
+- [x] **Second Team Glance**: refactored `sports.favorite` → `sports.favorites: string[]` (max 2, with legacy migration in hydrate). Sports-tab star now toggles membership: favorites[0] = "SUMMARY" (primary glance), favorites[1] = "2ND" (mini row). `setFavoriteTeam` → `toggleFavorite`. Summary renders a slim second-team mini score row (badge + score + streak chip + status) beneath the Sports card, tappable → Sports. Verified on web (row + tags render; scores native-only).
+- [x] **Auto Compact**: when total shown items > 3 (i.e. a 2nd team's mini row is present alongside 3 cards), Summary auto-switches to compact and shows an "Auto-compact · 4+ cards" hint with the manual toggle disabled. `effCompact = compact || autoCompact`. Verified on web.
+

@@ -237,7 +237,7 @@ export default function FlightsScreen() {
                 style={styles.input}
               />
               <Text style={styles.locText}>
-                Great for following a family member's trip — the matrix pins this
+                Great for following a family member&apos;s trip — the matrix pins this
                 flight and shows its altitude, heading and distance.
               </Text>
               <View style={styles.trackDivider} />

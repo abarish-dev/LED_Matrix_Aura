@@ -151,16 +151,17 @@ export default function SummaryScreen() {
   const f = settings.flights;
   const located = f.lat != null && f.lon != null;
 
-  const favKey = settings.sports.favorite;
-  const favTeam =
-    (favKey ? settings.sports.teams.find((t) => `${t.league}:${t.abbr}` === favKey) : null) ??
-    settings.sports.teams[0] ??
-    null;
+  const teamByKey = (key?: string) =>
+    key ? settings.sports.teams.find((t) => `${t.league}:${t.abbr}` === key) ?? null : null;
+  const favTeam = teamByKey(settings.sports.favorites[0]) ?? settings.sports.teams[0] ?? null;
+  const secondTeam = teamByKey(settings.sports.favorites[1]);
 
   const [plane, setPlane] = useState<Plane | null>(null);
   const [planeLoading, setPlaneLoading] = useState(false);
   const [score, setScore] = useState<ScoreLine | null>(null);
   const [scoreLoading, setScoreLoading] = useState(false);
+  const [score2, setScore2] = useState<ScoreLine | null>(null);
+  const [streak2, setStreak2] = useState<string | null>(null);
   const [wx, setWx] = useState<CurrentWx | null>(null);
   const [wxLoading, setWxLoading] = useState(false);
   const [alert, setAlert] = useState<Alert | null>(null);
@@ -300,8 +301,24 @@ export default function SummaryScreen() {
         }
       });
     }
+
+    if (secondTeam) {
+      getTeamScore(secondTeam.league, secondTeam.abbr).then((line) => {
+        if (id === reqRef.current) setScore2(line);
+        if (line?.teamId) {
+          getTeamStreak(secondTeam.league, line.teamId).then((s) => {
+            if (id === reqRef.current) setStreak2(s);
+          });
+        } else if (id === reqRef.current) {
+          setStreak2(null);
+        }
+      });
+    } else if (id === reqRef.current) {
+      setScore2(null);
+      setStreak2(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, checkAutoTrack, checkLanding]);
+  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, secondTeam?.league, secondTeam?.abbr, checkAutoTrack, checkLanding]);
 
   useEffect(() => {
     loadAll();
@@ -388,6 +405,9 @@ export default function SummaryScreen() {
   const secsToRefresh = Math.max(0, Math.ceil((nextRefreshRef.current - now) / 1000));
   const gameCountdown = score?.state === "pre" ? until(score.startTime, now) : null;
   const visibleOrder = order.filter((k) => !hidden.includes(k));
+  const extraCards = secondTeam && visibleOrder.includes("sports") ? 1 : 0;
+  const autoCompact = visibleOrder.length + extraCards > 3;
+  const effCompact = compact || autoCompact;
 
   // ---- Glance renderers -----------------------------------------------------
   const renderOverhead = (drag: () => void, dragging: boolean) => (
@@ -401,7 +421,7 @@ export default function SummaryScreen() {
       onLongPress={drag}
       onHide={() => hideCard("overhead")}
       onPress={onPlaneTap}
-      compact={compact}
+      compact={effCompact}
     >
       {!located ? (
         <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
@@ -426,7 +446,7 @@ export default function SummaryScreen() {
               </View>
             )}
           </View>
-          {!compact && (
+          {!effCompact && (
             <>
               <Text style={styles.glanceMeta}>
                 {plane.from && plane.to ? `${plane.from} → ${plane.to}  ·  ` : ""}
@@ -447,7 +467,11 @@ export default function SummaryScreen() {
     </GlanceCard>
   );
 
-  const renderSports = (drag: () => void, dragging: boolean) => (
+  const renderSports = (drag: () => void, dragging: boolean) => {
+    const secondMeta = secondTeam ? findTeam(secondTeam.league, secondTeam.abbr) : undefined;
+    const s2live = score2?.state === "in";
+    return (
+    <>
     <GlanceCard
       icon="trophy"
       accent={colors.brand}
@@ -457,7 +481,7 @@ export default function SummaryScreen() {
       onLongPress={drag}
       onHide={() => hideCard("sports")}
       onPress={() => router.push("/sports")}
-      compact={compact}
+      compact={effCompact}
     >
       {!favTeam ? (
         <Text style={styles.glanceHint}>Pick a team on the Sports tab</Text>
@@ -509,7 +533,7 @@ export default function SummaryScreen() {
               </View>
             )}
           </View>
-          {!compact && (
+          {!effCompact && (
             <Text
               style={[
                 styles.glanceMeta,
@@ -532,7 +556,60 @@ export default function SummaryScreen() {
         </Text>
       )}
     </GlanceCard>
-  );
+    {secondTeam && (
+      <Pressable
+        onPress={() => {
+          Haptics.selectionAsync();
+          router.push("/sports");
+        }}
+        style={({ pressed }) => [styles.miniRow, pressed && { opacity: 0.85 }]}
+      >
+        {secondMeta && (
+          <View style={[styles.miniBadge, { backgroundColor: secondMeta.color }]}>
+            <Text style={[styles.miniBadgeText, { color: readableOn(secondMeta.color) }]}>
+              {secondTeam.abbr}
+            </Text>
+            <Image
+              source={{ uri: teamLogoUrl(secondTeam.league, secondTeam.abbr) }}
+              style={[StyleSheet.absoluteFill, { padding: 3 }]}
+              contentFit="contain"
+              transition={200}
+              cachePolicy="memory-disk"
+            />
+          </View>
+        )}
+        <Text style={[styles.miniValue, s2live && { color: colors.brand }]} numberOfLines={1}>
+          {score2
+            ? score2.state === "pre"
+              ? `${score2.atHome ? "vs" : "@"} ${score2.oppAbbr}`
+              : `${secondTeam.abbr} ${score2.teamScore ?? 0}–${score2.oppScore ?? 0} ${score2.oppAbbr}`
+            : `${secondTeam.league} · ${secondMeta?.name ?? secondTeam.abbr}`}
+        </Text>
+        {streak2 && (
+          <View
+            style={[
+              styles.streakChip,
+              { backgroundColor: (streak2.startsWith("W") ? colors.success : colors.error) + "22" },
+            ]}
+          >
+            <Text
+              style={[
+                styles.streakChipText,
+                { color: streak2.startsWith("W") ? colors.success : colors.error },
+              ]}
+            >
+              {streak2}
+            </Text>
+          </View>
+        )}
+        <Text style={styles.miniStatus} numberOfLines={1}>
+          {score2 ? (s2live ? "🔴 LIVE" : score2.detail) : "needs phone app"}
+        </Text>
+      </Pressable>
+    )}
+    </>
+    );
+  };
 
   const renderWeather = (drag: () => void, dragging: boolean) => (
     <GlanceCard
@@ -544,7 +621,7 @@ export default function SummaryScreen() {
       onLongPress={drag}
       onHide={() => hideCard("weather")}
       onPress={() => router.push("/weather")}
-      compact={compact}
+      compact={effCompact}
     >
       {!located ? (
         <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
@@ -553,7 +630,7 @@ export default function SummaryScreen() {
           <Text style={styles.glanceValue}>
             {wx.tempF}°F · {wx.label}
           </Text>
-          {!compact && (
+          {!effCompact && (
             <Text style={styles.glanceMeta}>
               {wx.isRaining
                 ? "🌧️ Raining now"
@@ -654,12 +731,19 @@ export default function SummaryScreen() {
       <View style={styles.sectionRow}>
         <Text style={styles.sectionLabel}>On The Wall Now</Text>
         <View style={styles.sectionActions}>
-          <Text style={styles.reorderHint}>Hold &amp; drag to reorder</Text>
-          <Pressable onPress={toggleCompact} hitSlop={8} style={styles.compactBtn}>
+          <Text style={styles.reorderHint}>
+            {autoCompact ? "Auto-compact · 4+ cards" : "Hold & drag to reorder"}
+          </Text>
+          <Pressable
+            onPress={toggleCompact}
+            disabled={autoCompact}
+            hitSlop={8}
+            style={[styles.compactBtn, autoCompact && { opacity: 0.5 }]}
+          >
             <Ionicons
-              name={compact ? "expand-outline" : "contract-outline"}
+              name={effCompact ? "expand-outline" : "contract-outline"}
               size={16}
-              color={compact ? colors.brand : colors.onSurfaceSecondary}
+              color={effCompact ? colors.brand : colors.onSurfaceSecondary}
             />
           </Pressable>
         </View>
@@ -759,7 +843,7 @@ export default function SummaryScreen() {
         keyExtractor={(k) => k}
         renderItem={renderItem}
         shouldUpdateActiveItem
-        extraData={{ plane, score, wx, isTracked, landing, streak, secsToRefresh, connected, hidden, compact }}
+        extraData={{ plane, score, score2, streak, streak2, wx, isTracked, landing, secsToRefresh, connected, hidden, effCompact, secondTeam }}
         onReorder={({ from, to }: ReorderableListReorderEvent) => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setOrder((prev) => {
@@ -904,6 +988,31 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   teamBadgeText: { fontFamily: fonts.displayBold, fontSize: 10 },
+  miniRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xl,
+    marginTop: -spacing.xs,
+  },
+  miniBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  miniBadgeText: { fontFamily: fonts.displayBold, fontSize: 8 },
+  miniValue: { flex: 1, fontFamily: fonts.displayMedium, fontSize: fontSize.base, color: colors.onSurface },
+  miniStatus: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   recordChip: {
     backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.sm,

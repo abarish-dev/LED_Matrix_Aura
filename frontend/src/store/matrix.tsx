@@ -45,7 +45,7 @@ export type Settings = {
     landingChime: boolean; // soft chime when a pinned flight is landing soon
     autoTracked: boolean; // pinned via Summary tap; auto-clears when out of range
   };
-  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[]; favorite: string | null; showStreak: boolean };
+  sports: { enabled: boolean; teams: SavedTeam[]; ufc: boolean; rivals: string[]; favorites: string[]; showStreak: boolean };
   weather: {
     enabled: boolean;
     severity: Severity;
@@ -85,7 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
     landingChime: true,
     autoTracked: false,
   },
-  sports: { enabled: true, teams: [], ufc: false, rivals: [], favorite: null, showStreak: false },
+  sports: { enabled: true, teams: [], ufc: false, rivals: [], favorites: [], showStreak: false },
   weather: {
     enabled: true,
     severity: "severe",
@@ -131,7 +131,7 @@ type MatrixContextValue = {
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
   toggleRival: (key: string) => void;
-  setFavoriteTeam: (key: string | null) => void;
+  toggleFavorite: (key: string) => void;
   updateBrightness: (value: number) => void;
   updateHolidayThemes: (value: boolean) => void;
   updateNightMode: (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => void;
@@ -232,9 +232,15 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const saved = await storage.getItem<any>(SETTINGS_KEY, null);
       if (saved) {
+        const sports = { ...DEFAULT_SETTINGS.sports, ...(saved.sports ?? {}) };
+        // Migrate legacy single `favorite` -> `favorites[]`.
+        if (!Array.isArray(sports.favorites)) sports.favorites = [];
+        if (typeof (saved.sports?.favorite) === "string" && sports.favorites.length === 0) {
+          sports.favorites = [saved.sports.favorite];
+        }
         setSettings({
           flights: { ...DEFAULT_SETTINGS.flights, ...(saved.flights ?? {}) },
-          sports: { ...DEFAULT_SETTINGS.sports, ...(saved.sports ?? {}) },
+          sports,
           weather: { ...DEFAULT_SETTINGS.weather, ...(saved.weather ?? {}) },
           brightness:
             typeof saved.brightness === "number"
@@ -365,9 +371,9 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         const rivals = exists
           ? prev.sports.rivals.filter((r) => r !== key)
           : prev.sports.rivals;
-        const favorite =
-          exists && prev.sports.favorite === key ? null : prev.sports.favorite;
-        const next = { ...prev, sports: { ...prev.sports, teams, rivals, favorite } };
+        const favorites =
+          exists ? prev.sports.favorites.filter((k) => k !== key) : prev.sports.favorites;
+        const next = { ...prev, sports: { ...prev.sports, teams, rivals, favorites } };
         persist(next);
         livePush("sports", {
           enabled: next.sports.enabled,
@@ -419,10 +425,18 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     [persist, livePush],
   );
 
-  const setFavoriteTeam = useCallback(
-    (key: string | null) => {
+  // Toggle a team into the Summary favorites (max 2). favorites[0] leads the
+  // main Sports glance; favorites[1] shows as a second mini score row.
+  const toggleFavorite = useCallback(
+    (key: string) => {
       setSettings((prev) => {
-        const next = { ...prev, sports: { ...prev.sports, favorite: key } };
+        const cur = prev.sports.favorites;
+        let favorites: string[];
+        if (cur.includes(key)) favorites = cur.filter((k) => k !== key);
+        else if (cur.length === 0) favorites = [key];
+        else if (cur.length === 1) favorites = [cur[0], key];
+        else favorites = [cur[0], key]; // replace the second slot
+        const next = { ...prev, sports: { ...prev.sports, favorites } };
         persist(next);
         return next;
       });
@@ -569,7 +583,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     toggleTeam,
     reorderTeams,
     toggleRival,
-    setFavoriteTeam,
+    toggleFavorite,
     updateBrightness,
     updateHolidayThemes,
     updateNightMode,
