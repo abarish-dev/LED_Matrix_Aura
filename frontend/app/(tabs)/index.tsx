@@ -627,9 +627,18 @@ export default function SummaryScreen() {
         <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
       ) : wx ? (
         <>
-          <Text style={styles.glanceValue}>
-            {wx.tempF}°F · {wx.label}
-          </Text>
+          <View style={styles.scoreLine}>
+            <Text style={styles.glanceValue}>
+              {wx.tempF}°F · {wx.label}
+            </Text>
+            {wx.hiF != null && wx.loF != null && (
+              <View style={styles.hiLoChip}>
+                <Text style={styles.hiLoText}>
+                  H{wx.hiF}° L{wx.loF}°
+                </Text>
+              </View>
+            )}
+          </View>
           {!effCompact && (
             <Text style={styles.glanceMeta}>
               {wx.isRaining
@@ -1020,6 +1029,13 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   recordChipText: { fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.onSurfaceTertiary },
+  hiLoChip: {
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  hiLoText: { fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   streakChip: { borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 1 },
   streakChipText: { fontFamily: fonts.textMedium, fontSize: 10, letterSpacing: 0.3 },
   trailing: { flexDirection: "row", alignItems: "center", gap: spacing.sm },

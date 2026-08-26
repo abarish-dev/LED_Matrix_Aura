@@ -134,3 +134,7 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Second Team Glance**: refactored `sports.favorite` → `sports.favorites: string[]` (max 2, with legacy migration in hydrate). Sports-tab star now toggles membership: favorites[0] = "SUMMARY" (primary glance), favorites[1] = "2ND" (mini row). `setFavoriteTeam` → `toggleFavorite`. Summary renders a slim second-team mini score row (badge + score + streak chip + status) beneath the Sports card, tappable → Sports. Verified on web (row + tags render; scores native-only).
 - [x] **Auto Compact**: when total shown items > 3 (i.e. a 2nd team's mini row is present alongside 3 cards), Summary auto-switches to compact and shows an "Auto-compact · 4+ cards" hint with the manual toggle disabled. `effCompact = compact || autoCompact`. Verified on web.
 
+## Updates (2026-06 — round 14)
+- [x] **Weather Hi/Lo**: `currentConditions` now requests Open-Meteo `temperature_2m_max/min`; `CurrentWx.hiF/loF`. Summary Weather glance shows an "H84° L63°" chip on the value row (always visible, incl. compact). Verified live on web.
+- [x] **Streak Preview**: Sports tab shows a "Wall Preview" — a 2:1 black matrix-style mock of the LED score card (mono font, away/home + scores, green status, W/L streak top-right when enabled) for your primary starred team. New `WallPreview` component fetches `getTeamScore` + `getTeamStreak`. Verified on web (layout renders; live scores/streak fill in on device).
+

@@ -13,10 +13,55 @@ import {
   readableOn,
   type League,
 } from "@/src/data/teams";
-import { getTeamScore, getNextUfc, type ScoreLine, type UfcEvent } from "@/src/services/espn";
+import { getTeamScore, getTeamStreak, getNextUfc, type ScoreLine, type UfcEvent } from "@/src/services/espn";
 
 const HERO =
   "https://images.pexels.com/photos/15779126/pexels-photo-15779126.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
+
+// A small mock of the physical LED-matrix score card (128x64, 2:1) so you can
+// preview how a team's score — and its W/L streak — looks before it hits the wall.
+function WallPreview({ league, abbr, showStreak }: { league: League; abbr: string; showStreak: boolean }) {
+  const [score, setScore] = useState<ScoreLine | null>(null);
+  const [streak, setStreak] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    getTeamScore(league, abbr).then((s) => {
+      if (!live) return;
+      setScore(s);
+      if (s?.teamId && showStreak) getTeamStreak(league, s.teamId).then((k) => live && setStreak(k));
+      else setStreak(null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [league, abbr, showStreak]);
+
+  const real = !!score;
+  const awayAbbr = real ? (score!.atHome ? score!.oppAbbr : abbr) : abbr;
+  const awayScore = real ? (score!.atHome ? score!.oppScore ?? 0 : score!.teamScore ?? 0) : 0;
+  const homeAbbr = real ? (score!.atHome ? abbr : score!.oppAbbr) : "OPP";
+  const homeScore = real ? (score!.atHome ? score!.teamScore ?? 0 : score!.oppScore ?? 0) : 0;
+  const status = real ? score!.detail : "No live game";
+  const streakVal = showStreak ? streak : null;
+
+  return (
+    <View style={styles.wallCard}>
+      {streakVal && (
+        <Text
+          style={[
+            styles.wallStreak,
+            { color: streakVal.startsWith("W") ? colors.success : colors.error },
+          ]}
+        >
+          {streakVal}
+        </Text>
+      )}
+      <Text style={styles.wallLine}>{`${awayAbbr} ${awayScore}`}</Text>
+      <Text style={styles.wallLine}>{`${homeAbbr} ${homeScore}`}</Text>
+      <Text style={styles.wallStatus}>{status}</Text>
+    </View>
+  );
+}
 
 type Segment = League | "UFC";
 const SEGMENTS: Segment[] = ["NFL", "NBA", "MLB", "NHL", "UFC"];
@@ -59,6 +104,10 @@ function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
 export default function SportsScreen() {
   const { settings, updateSports, toggleTeam, reorderTeams, toggleRival, toggleFavorite } = useMatrix();
   const s = settings.sports;
+  const primaryKey = s.favorites[0] ?? (s.teams[0] ? `${s.teams[0].league}:${s.teams[0].abbr}` : null);
+  const primaryTeam = primaryKey
+    ? s.teams.find((t) => `${t.league}:${t.abbr}` === primaryKey) ?? null
+    : null;
   const [seg, setSeg] = useState<Segment>("NFL");
   const [scores, setScores] = useState<Record<string, ScoreLine | null>>({});
   const [ufc, setUfc] = useState<UfcEvent | null>(null);
@@ -225,6 +274,21 @@ export default function SportsScreen() {
             value={s.showStreak}
             onValueChange={(v) => updateSports({ showStreak: v })}
           />
+          {primaryTeam && (
+            <>
+              <View style={styles.wallDivider} />
+              <Text style={styles.wallLabel}>Wall Preview</Text>
+              <WallPreview
+                league={primaryTeam.league}
+                abbr={primaryTeam.abbr}
+                showStreak={s.showStreak}
+              />
+              <Text style={styles.wallHint}>
+                How your top team&apos;s card looks on the matrix
+                {s.showStreak ? " — streak shows top-right." : "."}
+              </Text>
+            </>
+          )}
         </Card>
 
         <SectionLabel>League</SectionLabel>
@@ -396,6 +460,35 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   favTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.brand, letterSpacing: 0.5 },
+  wallDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  wallLabel: {
+    fontFamily: fonts.displayMedium,
+    fontSize: fontSize.xs,
+    color: colors.onSurfaceSecondary,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: spacing.sm,
+  },
+  wallCard: {
+    aspectRatio: 2,
+    backgroundColor: "#000000",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 1,
+    position: "relative",
+  },
+  wallLine: { fontFamily: fonts.mono, fontSize: 20, color: "#ffffff", letterSpacing: 1 },
+  wallStatus: { fontFamily: fonts.mono, fontSize: 12, color: "#10b981", marginTop: 3 },
+  wallStreak: { position: "absolute", top: 6, right: 8, fontFamily: fonts.mono, fontSize: 13 },
+  wallHint: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    marginTop: spacing.sm,
+  },
   rotLeague: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   rotScore: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceTertiary },
   rowBtn: { padding: 4 },

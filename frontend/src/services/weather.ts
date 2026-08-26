@@ -94,6 +94,8 @@ export type CurrentWx = {
   icon: string; // Ionicons glyph name
   isRaining: boolean; // precipitating right now
   rainChance: number | null; // today's max precip probability (%)
+  hiF: number | null; // today's high (°F)
+  loF: number | null; // today's low (°F)
 };
 
 // WMO weather-code → friendly label + icon (Ionicons) + rain flag.
@@ -119,7 +121,7 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
       `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}` +
       `&longitude=${lon.toFixed(4)}` +
       `&current=temperature_2m,precipitation,weather_code` +
-      `&daily=precipitation_probability_max` +
+      `&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min` +
       `&temperature_unit=fahrenheit&timezone=auto&forecast_days=1`;
     const res = await fetch(url, { signal: ctrl.signal });
     clearTimeout(t);
@@ -133,6 +135,10 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
     const chanceArr = data?.daily?.precipitation_probability_max;
     const rainChance =
       Array.isArray(chanceArr) && typeof chanceArr[0] === "number" ? chanceArr[0] : null;
+    const hiArr = data?.daily?.temperature_2m_max;
+    const loArr = data?.daily?.temperature_2m_min;
+    const hiF = Array.isArray(hiArr) && typeof hiArr[0] === "number" ? Math.round(hiArr[0]) : null;
+    const loF = Array.isArray(loArr) && typeof loArr[0] === "number" ? Math.round(loArr[0]) : null;
     return {
       tempF: Math.round(cur.temperature_2m),
       code,
@@ -140,6 +146,8 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
       icon: d.icon,
       isRaining: d.rain || precipNow > 0,
       rainChance,
+      hiF,
+      loF,
     };
   } catch {
     return null;
