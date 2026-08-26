@@ -19,6 +19,7 @@ export type ScoreLine = {
   atHome: boolean;
   startTime: string | null; // ISO kickoff/first-pitch time
   record: string | null; // overall W-L record, e.g. "5-2"
+  teamId: string | null; // ESPN team id (for streak lookup)
 };
 
 type CacheEntry = { at: number; data: any };
@@ -92,9 +93,23 @@ export async function getTeamScore(
       atHome: mine.homeAway === "home",
       startTime: ev.date ?? null,
       record,
+      teamId: mine.team?.id != null ? String(mine.team.id) : null,
     };
   }
   return null;
+}
+
+/** Current win/loss streak for a team, e.g. "W3" / "L2", or null. */
+export async function getTeamStreak(league: League, teamId: string): Promise<string | null> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${PATHS[league]}/teams/${teamId}`;
+  const data = await fetchJson(url);
+  const items = data?.team?.record?.items;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const stats = items[0]?.stats;
+  if (!Array.isArray(stats)) return null;
+  const v = stats.find((s: any) => s?.name === "streak")?.value;
+  if (typeof v !== "number" || v === 0) return null;
+  return v > 0 ? `W${Math.round(v)}` : `L${Math.round(Math.abs(v))}`;
 }
 
 export type UfcEvent = {

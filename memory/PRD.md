@@ -120,3 +120,8 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Landing Alert Glance**: when the pinned flight is descending (`vertRateFpm <= -300`), a "Descending"/"Landing soon" card appears atop Summary (state = 'landing' if alt < 3000ft). New `vertRateFpm` field on `adsb.ts` Plane (from `baro_rate`/`geom_rate`). Native-only (needs live ADS-B).
 - [x] **Team Record**: favorite team's overall W-L record shown as a chip on the Summary Sports glance. New `record` on `espn.ts` ScoreLine (competitor `records[].summary`). Native-only (ESPN CORS-blocked on web).
 
+## Updates (2026-06 — round 11)
+- [x] **Approach ETA**: landing-alert card now shows "lands in ~N min" (N = altFt ÷ |vertRateFpm|, clamped ≤90) as the pinned flight descends; falls back to "approaching". `LandingInfo.etaMin`.
+- [x] **Streak Badge**: W/L streak chip (e.g. "W3"/"L2", green/red) next to the record on the Summary Sports glance. New `espn.ts` `getTeamStreak(league, teamId)` reads `team.record.items[0].stats[streak]`; `ScoreLine.teamId` added. Native-only (ESPN CORS on web).
+- [x] **Collapse Cards**: each Summary glance has an eye-off button to hide it; hidden cards move to a "Hidden Cards" footer section with a tap-to-restore chip. Persists to AsyncStorage `aura_summary_hidden_v1`. Reorder logic preserves hidden cards' slots. Verified on web: hide→restore→persist all work.
+

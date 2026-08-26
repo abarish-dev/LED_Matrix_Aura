@@ -16,7 +16,7 @@ import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { storage } from "@/src/utils/storage";
 import { nearbyPlanes, compass, airlineLogoUrl, type Plane } from "@/src/services/adsb";
-import { getTeamScore, type ScoreLine } from "@/src/services/espn";
+import { getTeamScore, getTeamStreak, type ScoreLine } from "@/src/services/espn";
 import {
   activeAlerts,
   currentConditions,
@@ -29,13 +29,25 @@ import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
 const CHEVRON = require("@/assets/images/splash-image.png");
 const REFRESH_MS = 30000;
 const ORDER_KEY = "aura_summary_order_v1";
+const HIDDEN_KEY = "aura_summary_hidden_v1";
 const DEFAULT_ORDER = ["overhead", "sports", "weather"];
+const CARD_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  overhead: "airplane",
+  sports: "trophy",
+  weather: "partly-sunny",
+};
+const CARD_LABEL: Record<string, string> = {
+  overhead: "Overhead",
+  sports: "Sports",
+  weather: "Weather",
+};
 
 type LandingInfo = {
   callsign: string;
   altFt: number;
   distanceMi: number;
   state: "descending" | "landing";
+  etaMin: number | null;
 };
 
 const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
@@ -61,6 +73,7 @@ function GlanceCard({
   label,
   onPress,
   onLongPress,
+  onHide,
   loading,
   active,
   dragging,
@@ -71,6 +84,7 @@ function GlanceCard({
   label: string;
   onPress: () => void;
   onLongPress?: () => void;
+  onHide?: () => void;
   loading?: boolean;
   active?: boolean;
   dragging?: boolean;
@@ -101,11 +115,25 @@ function GlanceCard({
         <Text style={styles.glanceLabel}>{label}</Text>
         {children}
       </View>
-      {loading ? (
-        <ActivityIndicator size="small" color={colors.onSurfaceSecondary} />
-      ) : (
-        <Ionicons name="chevron-forward" size={18} color={colors.surfaceTertiary} />
-      )}
+      <View style={styles.trailing}>
+        {onHide && (
+          <Pressable
+            hitSlop={10}
+            onPress={() => {
+              Haptics.selectionAsync();
+              onHide();
+            }}
+            style={styles.hideBtn}
+          >
+            <Ionicons name="eye-off-outline" size={18} color={colors.onSurfaceSecondary} />
+          </Pressable>
+        )}
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.onSurfaceSecondary} />
+        ) : (
+          <Ionicons name="chevron-forward" size={18} color={colors.surfaceTertiary} />
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -132,22 +160,44 @@ export default function SummaryScreen() {
   const [wxLoading, setWxLoading] = useState(false);
   const [alert, setAlert] = useState<Alert | null>(null);
   const [landing, setLanding] = useState<LandingInfo | null>(null);
+  const [streak, setStreak] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [order, setOrder] = useState<string[]>(DEFAULT_ORDER);
+  const [hidden, setHidden] = useState<string[]>([]);
 
   const reqRef = useRef(0);
   const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
   const missRef = useRef(0);
 
-  // Load persisted card order.
+  // Load persisted card order + hidden set.
   useEffect(() => {
     (async () => {
       const raw = await storage.getItem<string>(ORDER_KEY, "");
       const saved = raw ? raw.split(",").filter((k) => DEFAULT_ORDER.includes(k)) : [];
       const merged = [...saved, ...DEFAULT_ORDER.filter((k) => !saved.includes(k))];
       setOrder(merged);
+      const rawH = await storage.getItem<string>(HIDDEN_KEY, "");
+      setHidden(rawH ? rawH.split(",").filter((k) => DEFAULT_ORDER.includes(k)) : []);
     })();
+  }, []);
+
+  const hideCard = useCallback((key: string) => {
+    setHidden((prev) => {
+      if (prev.includes(key)) return prev;
+      const next = [...prev, key];
+      storage.setItem(HIDDEN_KEY, next.join(","));
+      return next;
+    });
+  }, []);
+
+  const unhideCard = useCallback((key: string) => {
+    Haptics.selectionAsync();
+    setHidden((prev) => {
+      const next = prev.filter((k) => k !== key);
+      storage.setItem(HIDDEN_KEY, next.join(","));
+      return next;
+    });
   }, []);
 
   const checkAutoTrack = useCallback(
@@ -175,11 +225,14 @@ export default function SummaryScreen() {
       }
       const pinned = list.find((p) => norm(p.callsign) === f.flightIdent);
       if (pinned && pinned.vertRateFpm <= -300 && pinned.altFt > 0) {
+        const rate = Math.abs(pinned.vertRateFpm);
+        const mins = rate > 0 ? Math.round(pinned.altFt / rate) : null;
         setLanding({
           callsign: pinned.callsign,
           altFt: pinned.altFt,
           distanceMi: pinned.distanceMi,
           state: pinned.altFt < 3000 ? "landing" : "descending",
+          etaMin: mins != null && mins > 0 && mins <= 90 ? mins : null,
         });
       } else {
         setLanding(null);
@@ -220,6 +273,13 @@ export default function SummaryScreen() {
         if (id === reqRef.current) {
           setScore(line);
           setScoreLoading(false);
+        }
+        if (line?.teamId) {
+          getTeamStreak(favTeam.league, line.teamId).then((s) => {
+            if (id === reqRef.current) setStreak(s);
+          });
+        } else if (id === reqRef.current) {
+          setStreak(null);
         }
       });
     }
@@ -295,6 +355,7 @@ export default function SummaryScreen() {
   const favMeta = favTeam ? findTeam(favTeam.league, favTeam.abbr) : undefined;
   const secsToRefresh = Math.max(0, Math.ceil((nextRefreshRef.current - now) / 1000));
   const gameCountdown = score?.state === "pre" ? until(score.startTime, now) : null;
+  const visibleOrder = order.filter((k) => !hidden.includes(k));
 
   // ---- Glance renderers -----------------------------------------------------
   const renderOverhead = (drag: () => void, dragging: boolean) => (
@@ -306,6 +367,7 @@ export default function SummaryScreen() {
       active={isTracked}
       dragging={dragging}
       onLongPress={drag}
+      onHide={() => hideCard("overhead")}
       onPress={onPlaneTap}
     >
       {!located ? (
@@ -356,6 +418,7 @@ export default function SummaryScreen() {
       loading={scoreLoading}
       dragging={dragging}
       onLongPress={drag}
+      onHide={() => hideCard("sports")}
       onPress={() => router.push("/sports")}
     >
       {!favTeam ? (
@@ -390,6 +453,23 @@ export default function SummaryScreen() {
                 <Text style={styles.recordChipText}>{score.record}</Text>
               </View>
             )}
+            {streak && (
+              <View
+                style={[
+                  styles.streakChip,
+                  { backgroundColor: (streak.startsWith("W") ? colors.success : colors.error) + "22" },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.streakChipText,
+                    { color: streak.startsWith("W") ? colors.success : colors.error },
+                  ]}
+                >
+                  {streak}
+                </Text>
+              </View>
+            )}
           </View>
           <Text
             style={[
@@ -422,6 +502,7 @@ export default function SummaryScreen() {
       loading={wxLoading}
       dragging={dragging}
       onLongPress={drag}
+      onHide={() => hideCard("weather")}
       onPress={() => router.push("/weather")}
     >
       {!located ? (
@@ -519,7 +600,8 @@ export default function SummaryScreen() {
               {landing.callsign} · {landing.state === "landing" ? "Landing soon" : "Descending"}
             </Text>
             <Text style={styles.landingSub}>
-              {landing.altFt.toLocaleString()} ft · {landing.distanceMi} mi away · approaching
+              {landing.altFt.toLocaleString()} ft · {landing.distanceMi} mi away
+              {landing.etaMin != null ? ` · lands in ~${landing.etaMin} min` : " · approaching"}
             </Text>
           </View>
           <Ionicons name="trending-down" size={18} color={colors.brand} />
@@ -535,6 +617,9 @@ export default function SummaryScreen() {
 
   const Footer = (
     <View>
+      {visibleOrder.length === 0 && (
+        <Text style={styles.emptyNote}>All cards hidden — restore them below.</Text>
+      )}
       {alert && (
         <Pressable
           onPress={() => {
@@ -593,6 +678,21 @@ export default function SummaryScreen() {
         </Pressable>
       </View>
 
+      {hidden.length > 0 && (
+        <>
+          <Text style={styles.sectionLabel}>Hidden Cards</Text>
+          <View style={styles.hiddenWrap}>
+            {hidden.map((k) => (
+              <Pressable key={k} onPress={() => unhideCard(k)} style={styles.hiddenChip}>
+                <Ionicons name={CARD_ICON[k]} size={16} color={colors.onSurfaceSecondary} />
+                <Text style={styles.hiddenChipText}>{CARD_LABEL[k]}</Text>
+                <Ionicons name="eye-outline" size={16} color={colors.brand} />
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
+
       <Text style={styles.footer}>
         A live glance at everything on your matrix. Pull down to refresh. Flights and
         scores stream on the phone build; weather works everywhere.
@@ -603,15 +703,17 @@ export default function SummaryScreen() {
   return (
     <View style={styles.screen}>
       <ReorderableList
-        data={order}
+        data={visibleOrder}
         keyExtractor={(k) => k}
         renderItem={renderItem}
         shouldUpdateActiveItem
-        extraData={{ plane, score, wx, isTracked, landing, secsToRefresh, connected }}
+        extraData={{ plane, score, wx, isTracked, landing, streak, secsToRefresh, connected, hidden }}
         onReorder={({ from, to }: ReorderableListReorderEvent) => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setOrder((v) => {
-            const next = reorderItems(v, from, to);
+          setOrder((prev) => {
+            const vis = prev.filter((k) => !hidden.includes(k));
+            const queue = reorderItems(vis, from, to);
+            const next = prev.map((k) => (hidden.includes(k) ? k : (queue.shift() as string)));
             storage.setItem(ORDER_KEY, next.join(","));
             return next;
           });
@@ -745,6 +847,30 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   recordChipText: { fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.onSurfaceTertiary },
+  streakChip: { borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 1 },
+  streakChipText: { fontFamily: fonts.textMedium, fontSize: 10, letterSpacing: 0.3 },
+  trailing: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  hideBtn: { padding: 2 },
+  emptyNote: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    textAlign: "center",
+    paddingVertical: spacing.lg,
+  },
+  hiddenWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  hiddenChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  hiddenChipText: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurface },
   alertCard: {
     flexDirection: "row",
     alignItems: "center",
