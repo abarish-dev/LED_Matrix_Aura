@@ -40,6 +40,8 @@ static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
 static int               gEtaMin = -1;      // rough arrival ETA for tracked flight
 static int               gTempF = -999;     // current local temperature (°F)
+static int               gHiF = -999;        // today's high (°F)
+static int               gLoF = -999;        // today's low (°F)
 
 // Holiday accent color (RGB565) for the current date, or 0 for none/disabled.
 static uint16_t holidayAccent() {
@@ -159,8 +161,12 @@ static void refreshData() {
     gWeather = Data::activeAlert(gSettings.flights.lat, gSettings.flights.lon,
                                  gSettings.weather.severity);
 
-  if (gSettings.weather.showClock)
+  if (gSettings.weather.showClock) {
     gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon);
+    if (gSettings.weather.showHiLo)
+      Data::dailyHiLo(gSettings.flights.lat, gSettings.flights.lon, gHiF, gLoF);
+    else { gHiF = -999; gLoF = -999; }
+  }
 }
 
 static void drawCurrentCard() {
@@ -187,7 +193,9 @@ static void drawCurrentCard() {
       char b[8]; snprintf(b, sizeof(b), "%d:%02d", hr, tmv.tm_min);
       ts = b;
     }
-    Display::clock(ts, gTempF, accent);
+    Display::clock(ts, gTempF, accent,
+                   gSettings.weather.showHiLo ? gHiF : -999,
+                   gSettings.weather.showHiLo ? gLoF : -999);
     return;
   }
   if (t == 0) {

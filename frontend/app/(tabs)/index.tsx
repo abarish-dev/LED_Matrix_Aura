@@ -641,6 +641,9 @@ export default function SummaryScreen() {
           </View>
           {!effCompact && (
             <Text style={styles.glanceMeta}>
+              {wx.feelsF != null && Math.abs(wx.feelsF - wx.tempF) >= 3
+                ? `Feels ${wx.feelsF}°  ·  `
+                : ""}
               {wx.isRaining
                 ? "🌧️ Raining now"
                 : wx.rainChance != null && wx.rainChance >= 30

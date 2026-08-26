@@ -138,3 +138,7 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 - [x] **Weather Hi/Lo**: `currentConditions` now requests Open-Meteo `temperature_2m_max/min`; `CurrentWx.hiF/loF`. Summary Weather glance shows an "H84° L63°" chip on the value row (always visible, incl. compact). Verified live on web.
 - [x] **Streak Preview**: Sports tab shows a "Wall Preview" — a 2:1 black matrix-style mock of the LED score card (mono font, away/home + scores, green status, W/L streak top-right when enabled) for your primary starred team. New `WallPreview` component fetches `getTeamScore` + `getTeamStreak`. Verified on web (layout renders; live scores/streak fill in on device).
 
+## Updates (2026-06 — round 15)
+- [x] **Feels-Like Temp**: `currentConditions` requests Open-Meteo `apparent_temperature`; `CurrentWx.feelsF`. Summary Weather meta shows "Feels N°" when it differs from actual by ≥3°. Verified live on web.
+- [x] **Weather Hi/Lo On Wall**: new `weather.showHiLo` toggle (Weather tab, nested under Time & Temperature) sent in BLE full-sync + live `weather` push. Firmware: `WeatherCfg.showHiLo`, `Data::dailyHiLo(lat,lon,&hi,&lo)` (Open-Meteo), globals `gHiF/gLoF` fetched when showClock+showHiLo, and `Display::clock(...,hiF,loF)` draws "H84 L63" under the temp. BLE `applyWeather` reads `showHiLo`. Device-only rendering.
+

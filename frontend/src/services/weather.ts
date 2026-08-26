@@ -96,6 +96,7 @@ export type CurrentWx = {
   rainChance: number | null; // today's max precip probability (%)
   hiF: number | null; // today's high (°F)
   loF: number | null; // today's low (°F)
+  feelsF: number | null; // apparent ("feels like") temperature (°F)
 };
 
 // WMO weather-code → friendly label + icon (Ionicons) + rain flag.
@@ -120,7 +121,7 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}` +
       `&longitude=${lon.toFixed(4)}` +
-      `&current=temperature_2m,precipitation,weather_code` +
+      `&current=temperature_2m,precipitation,weather_code,apparent_temperature` +
       `&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min` +
       `&temperature_unit=fahrenheit&timezone=auto&forecast_days=1`;
     const res = await fetch(url, { signal: ctrl.signal });
@@ -139,6 +140,8 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
     const loArr = data?.daily?.temperature_2m_min;
     const hiF = Array.isArray(hiArr) && typeof hiArr[0] === "number" ? Math.round(hiArr[0]) : null;
     const loF = Array.isArray(loArr) && typeof loArr[0] === "number" ? Math.round(loArr[0]) : null;
+    const feelsF =
+      typeof cur.apparent_temperature === "number" ? Math.round(cur.apparent_temperature) : null;
     return {
       tempF: Math.round(cur.temperature_2m),
       code,
@@ -148,6 +151,7 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
       rainChance,
       hiF,
       loF,
+      feelsF,
     };
   } catch {
     return null;

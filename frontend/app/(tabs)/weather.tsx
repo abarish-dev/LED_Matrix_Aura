@@ -275,6 +275,20 @@ export default function WeatherScreen() {
             Show a clock and the current local temperature on the matrix between
             other cards. The matrix keeps time over Wi-Fi.
           </Text>
+          {w.showClock && (
+            <>
+              <View style={styles.hiLoDivider} />
+              <ToggleRow
+                label="Today's high / low"
+                icon="thermometer"
+                value={w.showHiLo}
+                onValueChange={(v) => updateWeather({ showHiLo: v })}
+              />
+              <Text style={styles.clockHint}>
+                Add today&apos;s high and low under the temperature on the matrix.
+              </Text>
+            </>
+          )}
         </Card>
 
         <Card style={{ marginTop: spacing.md }}>
@@ -305,7 +319,7 @@ export default function WeatherScreen() {
                   </View>
                   <Text style={styles.clockHint}>
                     During these hours only extreme alerts chime — lower-severity
-                    ones stay silent so they don't wake you.
+                    ones stay silent so they don&apos;t wake you.
                   </Text>
                 </>
               )}
@@ -315,7 +329,7 @@ export default function WeatherScreen() {
 
         <SectionLabel>Second Location</SectionLabel>
         <Card>
-          <Text style={styles.fieldLabel}>A family member's ZIP</Text>
+          <Text style={styles.fieldLabel}>A family member&apos;s ZIP</Text>
           <TextInput
             value={zip2}
             onChangeText={onZip2}
@@ -546,6 +560,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
+  hiLoDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
   nightRow: { flexDirection: "row", gap: spacing.md, marginTop: spacing.sm },
   stepper: { flex: 1 },
   stepperLabel: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginBottom: spacing.xs },

@@ -165,7 +165,8 @@ inline void message(const char* line1, const char* line2) {
 }
 
 // Clock + temperature card. Pass tempF = -999 if unavailable.
-inline void clock(const String& timeStr, int tempF, uint16_t accent = 0) {
+inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
+                  int hiF = -999, int loF = -999) {
   clear();
   if (accent) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, accent);
   dma->setTextSize(2);
@@ -174,10 +175,16 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0) {
   dma->setCursor((MATRIX_W - (int)w) / 2, 14);
   dma->setTextColor(rgb(245, 158, 11));
   dma->print(timeStr);
+  bool hasHiLo = (hiF > -999 && loF > -999);
   if (tempF > -999) {
     char buf[12];
     snprintf(buf, sizeof(buf), "%d\xF7""F", tempF); // ÷ used as degree glyph fallback
-    centerText(buf, 42, rgb(120, 170, 255), 1);
+    centerText(buf, hasHiLo ? 38 : 42, rgb(120, 170, 255), 1);
+  }
+  if (hasHiLo) {
+    char hb[20];
+    snprintf(hb, sizeof(hb), "H%d L%d", hiF, loF);
+    centerText(hb, 52, rgb(160, 160, 160), 1);
   }
   flip();
 }

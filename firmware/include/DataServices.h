@@ -236,4 +236,21 @@ inline int currentTempF(double lat, double lon) {
   return -999;
 }
 
+// ---- Weather: today's high/low (°F) from open-meteo (keyless) --------------
+inline void dailyHiLo(double lat, double lon, int& hi, int& lo) {
+  hi = -999; lo = -999;
+  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(lat, 4) +
+               "&longitude=" + String(lon, 4) +
+               "&daily=temperature_2m_max,temperature_2m_min" +
+               "&temperature_unit=fahrenheit&timezone=auto&forecast_days=1";
+  String body = httpGet(url);
+  if (body.isEmpty()) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  if (doc["daily"]["temperature_2m_max"][0].is<float>())
+    hi = (int)round((float)doc["daily"]["temperature_2m_max"][0]);
+  if (doc["daily"]["temperature_2m_min"][0].is<float>())
+    lo = (int)round((float)doc["daily"]["temperature_2m_min"][0]);
+}
+
 } // namespace Data

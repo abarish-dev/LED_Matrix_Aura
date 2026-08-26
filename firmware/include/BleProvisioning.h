@@ -56,6 +56,7 @@ static void applyWeather(JsonObjectConst o) {
   if (o["enabled"].is<bool>())        gSettings.weather.enabled  = o["enabled"];
   if (o["severity"].is<const char*>())gSettings.weather.severity = String((const char*)o["severity"]);
   if (o["showClock"].is<bool>())      gSettings.weather.showClock = o["showClock"];
+  if (o["showHiLo"].is<bool>())       gSettings.weather.showHiLo = o["showHiLo"];
 }
 
 static void applyNight(JsonObjectConst o) {

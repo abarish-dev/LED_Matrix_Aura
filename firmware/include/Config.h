@@ -46,6 +46,7 @@ struct WeatherCfg {
   bool   enabled   = true;
   String severity  = "severe"; // minor | moderate | severe | extreme
   bool   showClock = false;    // show a time + temperature card
+  bool   showHiLo  = false;    // add today's high/low to the clock card
 };
 
 struct NightWindow {
