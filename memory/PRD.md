@@ -157,3 +157,6 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 ## Updates (2026-06 — round 19)
 - [x] **Bottom cutoff fix (all tabs)**: content was hidden behind the tab bar + floating Sync FAB on taller phones (fixed `paddingBottom: 150`). Added `useSafeAreaInsets` and set each scroll container's `contentContainerStyle` paddingBottom to `insets.bottom + 190` on Flights, Sports, Weather, Device, and the Summary list. Verified (iteration_20) on all 5 tabs — last content clears the tab bar. Reported case (Flights → "Track a specific flight" section) fully reachable.
 
+## Updates (2026-06 — round 20)
+- [x] **Tab bar unreachable on tall phones**: `app/(tabs)/_layout.tsx` tabBarStyle had hard-coded `height:64`/`paddingBottom:8` with no bottom safe-area, so the bar was pushed under the home indicator/gesture area on taller devices (reported on build "v3" — Sports screen showed no tab bar). Fix: `useSafeAreaInsets` → `height: 64 + insets.bottom`, `paddingBottom: insets.bottom + 8`. Verified (iteration_21) — all 5 tabs visible/tappable, no regression. (Web insets.bottom=0 so height unchanged there; real fix is on-device.)
+

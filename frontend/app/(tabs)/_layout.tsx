@@ -2,10 +2,12 @@ import React from "react";
 import { View } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, fonts } from "@/src/theme";
 import SyncFab from "@/src/components/SyncFab";
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <Tabs
@@ -17,9 +19,9 @@ export default function TabsLayout() {
             backgroundColor: colors.surfaceSecondary,
             borderTopColor: colors.border,
             borderTopWidth: 1,
-            height: 64,
+            height: 64 + insets.bottom,
             paddingTop: 6,
-            paddingBottom: 8,
+            paddingBottom: insets.bottom + 8,
           },
           tabBarLabelStyle: {
             fontFamily: fonts.textMedium,
