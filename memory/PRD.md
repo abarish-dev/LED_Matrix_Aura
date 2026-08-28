@@ -160,3 +160,8 @@ Wi-Fi fetch (adsb.lol/ESPN/NWS) + HUB75 DMA card rotation. BLE contract in
 ## Updates (2026-06 — round 20)
 - [x] **Tab bar unreachable on tall phones**: `app/(tabs)/_layout.tsx` tabBarStyle had hard-coded `height:64`/`paddingBottom:8` with no bottom safe-area, so the bar was pushed under the home indicator/gesture area on taller devices (reported on build "v3" — Sports screen showed no tab bar). Fix: `useSafeAreaInsets` → `height: 64 + insets.bottom`, `paddingBottom: insets.bottom + 8`. Verified (iteration_21) — all 5 tabs visible/tappable, no regression. (Web insets.bottom=0 so height unchanged there; real fix is on-device.)
 
+## Updates (2026-06 — round 22)
+- [x] **Editable weather location**: the Weather tab now has its own "Your Location · Home ZIP code" editor (`weather.tsx`, uses shared `updateFlights` + `geocodeZip`) so the primary weather area can be changed right on the Weather screen instead of only on the Flights tab. Same single home location is still shared with the Flights radar (hint text clarifies this). Verified on web: ZIP 10001 → "New York (Manhattan) County, NY", county line + live alerts updated. Summary Weather empty-hint updated to "Set your ZIP on the Weather tab" (card taps to /weather).
+- [x] **Summary refactor**: extracted self-contained pieces out of the 1,127-line `app/(tabs)/index.tsx` into `src/components/summary/` — `helpers.ts` (pure fns `norm/wxGlyph/wxAccent/until`, `LandingInfo` type, card constants) and `GlanceCard.tsx` (presentational `GlanceCard` + `ReorderGlance` with their own styles). Data-driven card renderers kept inline (tightly coupled to screen state). No behavior change; lint clean; Summary verified rendering on web.
+
+

@@ -4,8 +4,6 @@ import { Image } from "expo-image";
 import { useAudioPlayer } from "expo-audio";
 import ReorderableList, {
   reorderItems,
-  useReorderableDrag,
-  useIsActive,
   type ReorderableListReorderEvent,
 } from "react-native-reorderable-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,143 +24,23 @@ import {
   type CurrentWx,
 } from "@/src/services/weather";
 import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
+import { GlanceCard, ReorderGlance } from "@/src/components/summary/GlanceCard";
+import {
+  REFRESH_MS,
+  ORDER_KEY,
+  HIDDEN_KEY,
+  COMPACT_KEY,
+  DEFAULT_ORDER,
+  CARD_ICON,
+  CARD_LABEL,
+  norm,
+  wxGlyph,
+  wxAccent,
+  until,
+  type LandingInfo,
+} from "@/src/components/summary/helpers";
 
 const CHEVRON = require("@/assets/images/splash-image.png");
-const REFRESH_MS = 30000;
-const ORDER_KEY = "aura_summary_order_v1";
-const HIDDEN_KEY = "aura_summary_hidden_v1";
-const COMPACT_KEY = "aura_summary_compact_v1";
-const DEFAULT_ORDER = ["overhead", "sports", "weather"];
-const CARD_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  overhead: "airplane",
-  sports: "trophy",
-  weather: "partly-sunny",
-};
-const CARD_LABEL: Record<string, string> = {
-  overhead: "Overhead",
-  sports: "Sports",
-  weather: "Weather",
-};
-
-type LandingInfo = {
-  callsign: string;
-  altFt: number;
-  distanceMi: number;
-  state: "descending" | "landing";
-  etaMin: number | null;
-};
-
-const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
-
-// Ionicons glyph that matches live weather conditions (day/night aware).
-function wxGlyph(code: number, isDay: boolean): keyof typeof Ionicons.glyphMap {
-  if (code === 0) return isDay ? "sunny" : "moon";
-  if (code === 1 || code === 2) return isDay ? "partly-sunny" : "cloudy-night";
-  if (code === 3) return "cloudy";
-  if (code === 45 || code === 48) return "cloud";
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "snow";
-  if (code >= 95) return "thunderstorm";
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "rainy";
-  return "partly-sunny";
-}
-
-// Accent color tuned to the condition.
-function wxAccent(code: number): string {
-  if (code === 0 || code === 1 || code === 2) return colors.warning; // sun
-  if (code >= 95) return "#8b5cf6"; // storm
-  if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return colors.info; // rain
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return "#93c5fd"; // snow
-  return colors.onSurfaceSecondary; // clouds / fog
-}
-
-/** "3h 12m" / "2d 4h" / "12m" until an ISO timestamp, or null if past. */
-function until(iso: string | null, now: number): string | null {
-  if (!iso) return null;
-  const diff = new Date(iso).getTime() - now;
-  if (diff <= 0) return null;
-  const mins = Math.floor(diff / 60000);
-  const d = Math.floor(mins / 1440);
-  const h = Math.floor((mins % 1440) / 60);
-  const m = mins % 60;
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m`;
-  return "under 1m";
-}
-
-function GlanceCard({
-  icon,
-  accent,
-  label,
-  onPress,
-  onLongPress,
-  onHide,
-  loading,
-  active,
-  dragging,
-  compact,
-  children,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  accent: string;
-  label: string;
-  onPress: () => void;
-  onLongPress?: () => void;
-  onHide?: () => void;
-  loading?: boolean;
-  active?: boolean;
-  dragging?: boolean;
-  compact?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Pressable
-      onPress={() => {
-        Haptics.selectionAsync();
-        onPress();
-      }}
-      onLongPress={onLongPress}
-      delayLongPress={220}
-      style={({ pressed }) => [
-        styles.glance,
-        compact && styles.glanceCompact,
-        active && styles.glanceActive,
-        dragging && styles.glanceDragging,
-        pressed && !dragging && { opacity: 0.85 },
-      ]}
-    >
-      {onLongPress && (
-        <Ionicons name="reorder-two" size={18} color={colors.surfaceTertiary} style={styles.grip} />
-      )}
-      <View style={[styles.glanceIcon, { backgroundColor: accent + "22" }]}>
-        <Ionicons name={icon} size={20} color={accent} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.glanceLabel}>{label}</Text>
-        {children}
-      </View>
-      <View style={styles.trailing}>
-        {onHide && (
-          <Pressable
-            hitSlop={10}
-            onPress={() => {
-              Haptics.selectionAsync();
-              onHide();
-            }}
-            style={styles.hideBtn}
-          >
-            <Ionicons name="eye-off-outline" size={18} color={colors.onSurfaceSecondary} />
-          </Pressable>
-        )}
-        {loading ? (
-          <ActivityIndicator size="small" color={colors.onSurfaceSecondary} />
-        ) : (
-          <Ionicons name="chevron-forward" size={18} color={colors.surfaceTertiary} />
-        )}
-      </View>
-    </Pressable>
-  );
-}
 
 export default function SummaryScreen() {
   const router = useRouter();
@@ -645,7 +523,7 @@ export default function SummaryScreen() {
       compact={effCompact}
     >
       {!located ? (
-        <Text style={styles.glanceHint}>Set your ZIP on the Flights tab</Text>
+        <Text style={styles.glanceHint}>Set your ZIP on the Weather tab</Text>
       ) : wx ? (
         <>
           <View style={styles.scoreLine}>
@@ -875,6 +753,7 @@ export default function SummaryScreen() {
         data={visibleOrder}
         keyExtractor={(k) => k}
         renderItem={renderItem}
+        style={styles.screen}
         shouldUpdateActiveItem
         extraData={{ plane, score, score2, streak, streak2, wx, isTracked, landing, secsToRefresh, connected, hidden, effCompact, secondTeam }}
         onReorder={({ from, to }: ReorderableListReorderEvent) => {
@@ -900,16 +779,6 @@ export default function SummaryScreen() {
       />
     </View>
   );
-}
-
-function ReorderGlance({
-  render,
-}: {
-  render: (drag: () => void, dragging: boolean) => React.ReactNode;
-}) {
-  const drag = useReorderableDrag();
-  const isActive = useIsActive();
-  return <>{render(drag, isActive)}</>;
 }
 
 const styles = StyleSheet.create({
@@ -982,30 +851,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   reorderHint: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.surfaceTertiary },
-  glance: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  glanceActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
-  glanceCompact: { padding: spacing.md },
-  glanceDragging: { borderColor: colors.borderStrong, backgroundColor: colors.surfaceTertiary },
-  grip: { marginRight: -spacing.sm },
-  glanceIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
-  glanceLabel: {
-    fontFamily: fonts.textMedium,
-    fontSize: fontSize.xs,
-    color: colors.onSurfaceSecondary,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    marginBottom: 2,
-  },
   glanceValue: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface, flexShrink: 1 },
   glanceMeta: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 2 },
   glanceHint: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary },
@@ -1065,8 +910,8 @@ const styles = StyleSheet.create({
   hiLoText: { fontFamily: fonts.mono, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   streakChip: { borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 1 },
   streakChipText: { fontFamily: fonts.textMedium, fontSize: 10, letterSpacing: 0.3 },
-  trailing: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  hideBtn: { padding: 2 },
+
+
   emptyNote: {
     fontFamily: fonts.text,
     fontSize: fontSize.sm,

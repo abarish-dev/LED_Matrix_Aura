@@ -364,10 +364,21 @@ export default function SportsScreen() {
         )}
 
         <SectionLabel>Rotation Order</SectionLabel>
+        <View style={styles.legend}>
+          <View style={styles.legendItem}>
+            <Ionicons name="star" size={14} color={colors.brand} />
+            <Text style={styles.legendText}>Show on Summary (up to 2 — 1st leads, 2nd is a mini row)</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <Ionicons name="flame" size={14} color="#f97316" />
+            <Text style={styles.legendText}>Flag a rivalry — highlights the game on the matrix</Text>
+          </View>
+        </View>
         {s.teams.length === 0 ? (
           <Text style={styles.rotEmpty}>
             Pick teams above — they appear here in the order they cycle on the
-            matrix. Reorder with the arrows and tap ★ to flag a rivalry.
+            matrix. Reorder with the arrows, tap ★ to show a team on the Summary,
+            and 🔥 to flag a rivalry.
           </Text>
         ) : (
           s.teams.map((item, i) => renderRotationRow(item, i))
@@ -463,6 +474,17 @@ const styles = StyleSheet.create({
   },
   favTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.brand, letterSpacing: 0.5 },
   wallDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  legend: {
+    gap: spacing.xs,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  legendText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary },
   wallLabel: {
     fontFamily: fonts.displayMedium,
     fontSize: fontSize.xs,

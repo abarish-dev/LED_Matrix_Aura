@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only verification of the new star/flame legend on the Sports tab (Aura 2, 390x844 mobile viewport). The legend card renders directly under the 'Rotation Order' section label with two rows — a gold star icon plus 'Show on Summary (up to 2 — 1st leads, 2nd is a mini row)' and an orange flame icon plus 'Flag a rivalry — highlights the game on the matrix'. Legend is visible in both empty state (no teams followed) and non-empty state (2 teams followed). Empty-state helper text was updated as claimed ('Pick teams above — they appear here in the order they cycle on the matrix. Reorder with the arrows, tap ★ to show a team on the Summary, and 🔥 to flag a rivalry.'). No regressions detected: Sports tab loads, NFL/NBA/MLB/NHL/UFC league pills work, tapping a team card in the grid adds the team to the rotation, the ★ button on a row toggles the SUMMARY/2ND tag (confirmed by tapping the star on the Panthers row and observing the SUMMARY tag appear), the 🔥 button toggles rivalry (row border switched to brand color after tap), and the bottom tab bar (Summary/Device/Flights/Sports/Weather) stays visible when scrolling to the bottom. No React Native red-screen errors and no new console errors introduced by the change. Existing ESPN UFC CORS error in the web preview is a known native-only limitation (per task note), not a bug.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sports.tsx is 523 lines — still under the 700-line guideline but growing; consider splitting WallPreview, TeamBadge, and renderRotationRow into their own files if more features land here.",
+    "The legend uses hard-coded orange #f97316 for the flame color; consider promoting this to the theme (e.g., colors.warning/flame) so the star and flame accents are centrally managed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sports legend card lives in /app/frontend/app/(tabs)/sports.tsx just after the 'Rotation Order' SectionLabel (styles.legend/legendItem/legendText). To exercise the row buttons in Playwright, add teams by clicking team names in the grid (e.g., 'Bills', 'Panthers'), then find the rotation row via textContent match on 'Bills'/'Panthers' + 'NFL' and click by coordinate offsets (star ≈ right - 165px, flame ≈ right - 128px, at row vertical center). ESPN UFC endpoint hits CORS in the web preview — expected on native only.",
+  "rca_of_issue": "N/A — this iteration adds a documentation/legend affordance, not a bug fix. All acceptance criteria from the review request were verified in the web preview."
+}

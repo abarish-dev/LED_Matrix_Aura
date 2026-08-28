@@ -67,12 +67,31 @@ const SEVERITIES: {
 ];
 
 export default function WeatherScreen() {
-  const { settings, updateWeather, updateQuietHours, updateSecondLocation, bleStatus, weatherTest } = useMatrix();
+  const { settings, updateWeather, updateQuietHours, updateSecondLocation, updateFlights, bleStatus, weatherTest } = useMatrix();
   const insets = useSafeAreaInsets();
   const w = settings.weather;
   const f = settings.flights;
   const located = f.lat != null && f.lon != null;
   const toast = useToast();
+
+  const [zip1, setZip1] = useState(f.zip);
+  const [looking1, setLooking1] = useState(false);
+  useEffect(() => setZip1(f.zip), [f.zip]);
+
+  const onZip1 = async (val: string) => {
+    const clean = val.replace(/[^0-9]/g, "").slice(0, 5);
+    setZip1(clean);
+    updateFlights({ zip: clean });
+    if (clean.length === 5) {
+      setLooking1(true);
+      const res = await geocodeZip(clean);
+      setLooking1(false);
+      if (res) updateFlights({ lat: res.lat, lon: res.lon, city: res.city, state: res.state });
+      else toast.show("Couldn't find that ZIP code.", "error");
+    } else if (clean.length === 0) {
+      updateFlights({ lat: null, lon: null, city: "", state: "" });
+    }
+  };
 
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
@@ -253,16 +272,39 @@ export default function WeatherScreen() {
           onValueChange={(v) => updateWeather({ enabled: v })}
         />
 
-        <Card style={styles.locCard}>
-          <Ionicons
-            name={located ? "location" : "location-outline"}
-            size={18}
-            color={located ? colors.success : colors.warning}
-          />
+        <SectionLabel>Your Location</SectionLabel>
+        <Card>
+          <Text style={styles.fieldLabel}>Home ZIP code</Text>
+          <View style={styles.zipRow}>
+            <TextInput
+              value={zip1}
+              onChangeText={onZip1}
+              placeholder="e.g. 28677"
+              placeholderTextColor={colors.onSurfaceSecondary}
+              keyboardType="number-pad"
+              maxLength={5}
+              style={[styles.input, { flex: 1 }]}
+            />
+            {looking1 ? (
+              <ActivityIndicator size="small" color={colors.brand} style={styles.zipIcon} />
+            ) : (
+              <Ionicons
+                name={located ? "location" : "location-outline"}
+                size={22}
+                color={located ? colors.success : colors.warning}
+                style={styles.zipIcon}
+              />
+            )}
+          </View>
           <Text style={styles.locText}>
-            {located
-              ? `Alerts for ${f.city || "your area"}, ${f.state}`
-              : "Set your ZIP on the Flights tab to enable alerts."}
+            {looking1
+              ? "Looking up location…"
+              : located
+                ? `Alerts & temperature for ${f.city || "your area"}, ${f.state}`
+                : "Enter a US ZIP to set your weather location."}
+          </Text>
+          <Text style={styles.sharedHint}>
+            This is your home location, also used by the Flights radar.
           </Text>
         </Card>
 
@@ -567,6 +609,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     marginTop: spacing.md,
+  },
+  zipRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  zipIcon: { width: 28, textAlign: "center" },
+  sharedHint: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.xs,
+    color: colors.onSurfaceTertiary,
+    marginTop: spacing.xs,
   },
   locText: {
     flex: 1,

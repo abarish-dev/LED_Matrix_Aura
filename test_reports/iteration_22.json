@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only bug verification for Aura 2 Summary tab scroll fix. Loaded app in mobile viewport (390x844) via Expo web preview, wheel-scrolled the Summary landing screen, and confirmed the ReorderableList now scrolls: the AURA header + status pill scroll up out of view, and the Quick Controls row (Settings / Flash Test / Alerts) plus the footer text ('A live glance at everything on your matrix...') become visible after scrolling. Also verified the bottom tab bar (Summary/Device/Flights/Sports/Weather) stays visible & tappable and cross-tab navigation works without crash. No red screen / no runtime errors; only pre-existing benign warnings ('shadow*' style deprecation, 'pointerEvents' deprecation, React 19 ref deprecation) — none related to this fix. Drag-to-reorder was attempted via synthetic mouse gesture on web but react-native-reorderable-list relies on react-native-gesture-handler + reanimated worklets that do NOT reliably respond to Playwright synthetic pointer events on web; drag-reorder must be validated on a physical device or Expo Go build. The applied fix (adding style={styles.screen} with flex:1 to the ReorderableList) is the standard/correct pattern for RN virtualized lists and does not conflict with the existing contentContainerStyle.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "USER/DEVICE VALIDATION NEEDED: drag-to-reorder of glance cards (Overhead/Sports/Weather) cannot be reliably validated via Playwright synthetic gestures on web preview (gesture-handler + reanimated worklets). Please verify on a real device or Expo Go build that long-press + drag on a glance card still reorders and persists to storage (ORDER_KEY 'aura_summary_order_v1'). The fix (adding style={styles.screen}) does not touch the onReorder handler, so functional regression is unlikely, but device confirmation is recommended.",
+    "OPTIONAL REFACTOR (not blocking): /app/frontend/app/(tabs)/index.tsx is 1128 lines — well above the 700-line guideline. Consider extracting renderOverhead / renderSports / renderWeather and the Header/Footer JSX into their own components under src/components/summary/ for readability & testability."
+  ],
+  "critical_code_review_comments": [
+    "index.tsx (1128 lines) exceeds 700-line file-size guideline. Consider splitting glance renderers, Header, and Footer into dedicated components.",
+    "ReorderableList now correctly uses both style={styles.screen} (flex:1, needed so the list fills its parent and can scroll) AND contentContainerStyle (padding). This is the standard virtualized-list pattern — fix looks correct."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% for the requested scroll/nav flows"},
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Summary scroll bug fix verified on web preview at 390x844: wheel-scroll causes AURA header to scroll up and reveals Quick Controls + footer. Tab bar stays visible, cross-tab nav works, no crash. Drag-reorder validation is not feasible via Playwright on web because react-native-reorderable-list depends on RNGH + Reanimated worklets that need real touch events; only device/Expo Go can confirm drag still works. Native-only APIs (BLE, ADS-B, ESPN) surface expected 'needs phone app' hints on web — these are not bugs.",
+  "rca_of_issue": "Original RCA (from main agent) confirmed by inspection: ReorderableList was only given contentContainerStyle, which sizes the internal content container but does not force the list wrapper to fill its parent. Without flex:1 on the list's own style, some parents (safe-area / tabs layout) can size the list to its intrinsic content or to a zero-height flex slot on-device, so overflow never becomes scrollable. Fix (style={styles.screen} => {flex:1}) makes the list expand to fill the wrapping View and enables the internal scroller to overflow and scroll — verified visually (header scrolls up, Quick Controls & footer reachable)."
+}
