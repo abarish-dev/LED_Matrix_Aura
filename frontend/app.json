@@ -67,6 +67,24 @@
         {
           "locationWhenInUsePermission": "Auto-fill your local flights & weather"
         }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Overhead",
+              "label": "Aura · Overhead Flight",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "description": "The nearest flight overhead — callsign, airline & altitude",
+              "previewImage": "./assets/images/icon.png",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
       ]
     ],
     "experiments": {
