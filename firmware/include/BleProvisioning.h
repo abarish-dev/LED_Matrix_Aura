@@ -63,6 +63,7 @@ static void applyWeather(JsonObjectConst o) {
 
 static void applyNight(JsonObjectConst o) {
   if (o["enabled"].is<bool>())   gSettings.night.enabled   = o["enabled"];
+  if (o["useSunset"].is<bool>()) gSettings.night.useSunset = o["useSunset"];
   if (o["startHour"].is<int>())  gSettings.night.startHour = o["startHour"];
   if (o["endHour"].is<int>())    gSettings.night.endHour   = o["endHour"];
   if (o["dimLevel"].is<int>())   gSettings.night.dimLevel  = o["dimLevel"];

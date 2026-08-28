@@ -59,6 +59,7 @@ struct NightWindow {
 
 struct NightCfg {
   bool       enabled   = false;
+  bool       useSunset = false;  // dim from local sunset to sunrise
   int        startHour = 22;  // 0-23
   int        endHour   = 7;   // 0-23
   int        dimLevel  = 20;  // 0-100 (%)

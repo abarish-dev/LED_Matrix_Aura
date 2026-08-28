@@ -29,6 +29,19 @@ export type LandingInfo = {
 
 export const norm = (s: string) => s.replace(/\s+/g, "").toUpperCase();
 
+/** A team hex color that stays visible on the dark card; falls back to brand. */
+export function accentFor(hex?: string): string {
+  if (!hex) return colors.brand;
+  const h = hex.replace("#", "");
+  if (h.length < 6) return colors.brand;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return colors.brand;
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return lum < 0.18 ? colors.brand : hex; // near-black teams -> brand accent
+}
+
 // Ionicons glyph that matches live weather conditions (day/night aware).
 export function wxGlyph(code: number, isDay: boolean): keyof typeof Ionicons.glyphMap {
   if (code === 0) return isDay ? "sunny" : "moon";

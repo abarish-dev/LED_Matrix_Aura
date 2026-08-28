@@ -34,6 +34,7 @@ import {
   CARD_ICON,
   CARD_LABEL,
   norm,
+  accentFor,
   wxGlyph,
   wxAccent,
   until,
@@ -373,7 +374,7 @@ export default function SummaryScreen() {
     <>
     <GlanceCard
       icon="trophy"
-      accent={colors.brand}
+      accent={accentFor(favMeta?.color)}
       label={favTeam ? `${favTeam.league} · ${favMeta?.name ?? favTeam.abbr}` : "Sports"}
       loading={scoreLoading}
       dragging={dragging}

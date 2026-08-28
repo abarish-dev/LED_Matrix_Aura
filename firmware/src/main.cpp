@@ -94,16 +94,29 @@ static void applyBrightnessForNow() {
   if (gSettings.night.enabled) {
     struct tm t;
     if (getLocalTime(&t, 50)) {
-      int sh = gSettings.night.startHour;
-      int eh = gSettings.night.endHour;
-      int dl = gSettings.night.dimLevel;
-      bool weekend = (t.tm_wday == 0 || t.tm_wday == 6); // Sun / Sat
-      if (weekend && gSettings.night.weekend.enabled) {
-        sh = gSettings.night.weekend.startHour;
-        eh = gSettings.night.weekend.endHour;
-        dl = gSettings.night.weekend.dimLevel;
+      if (gSettings.night.useSunset) {
+        // Dim from local sunset to sunrise; sun times cached per day.
+        static int cachedYday = -1, srMin = -1, ssMin = -1;
+        if (t.tm_yday != cachedYday || srMin < 0 || ssMin < 0) {
+          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, srMin, ssMin);
+          if (srMin >= 0 && ssMin >= 0) cachedYday = t.tm_yday;
+        }
+        if (srMin >= 0 && ssMin >= 0) {
+          int nowMin = t.tm_hour * 60 + t.tm_min;
+          if (nowMin >= ssMin || nowMin < srMin) b = gSettings.night.dimLevel;
+        }
+      } else {
+        int sh = gSettings.night.startHour;
+        int eh = gSettings.night.endHour;
+        int dl = gSettings.night.dimLevel;
+        bool weekend = (t.tm_wday == 0 || t.tm_wday == 6); // Sun / Sat
+        if (weekend && gSettings.night.weekend.enabled) {
+          sh = gSettings.night.weekend.startHour;
+          eh = gSettings.night.weekend.endHour;
+          dl = gSettings.night.weekend.dimLevel;
+        }
+        if (inNightWindow(t.tm_hour, sh, eh)) b = dl;
       }
-      if (inNightWindow(t.tm_hour, sh, eh)) b = dl;
     }
   }
   Display::setBrightness(b);

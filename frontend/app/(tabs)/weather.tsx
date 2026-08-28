@@ -9,6 +9,8 @@ import { useMatrix, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
 import { geocodeZip } from "@/src/services/geocode";
+import { LocateButton } from "@/src/components/LocateButton";
+import { RadarCard } from "@/src/components/RadarCard";
 import {
   activeAlerts,
   severityColorHex,
@@ -306,7 +308,15 @@ export default function WeatherScreen() {
           <Text style={styles.sharedHint}>
             This is your home location, also used by the Flights radar.
           </Text>
+          <LocateButton
+            onLocated={(d) => {
+              setZip1(d.zip);
+              updateFlights({ zip: d.zip, lat: d.lat, lon: d.lon, city: d.city, state: d.state });
+            }}
+          />
         </Card>
+
+        {located && <RadarCard lat={f.lat!} lon={f.lon!} />}
 
         <Card style={{ marginTop: spacing.md }}>
           <ToggleRow

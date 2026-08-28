@@ -11,6 +11,7 @@ import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, ToggleRow } from "@/src/components/ui";
 import { geocodeZip } from "@/src/services/geocode";
+import { LocateButton } from "@/src/components/LocateButton";
 import { nearbyPlanes, airlineLogoUrl, compass, type Plane } from "@/src/services/adsb";
 
 const HERO =
@@ -188,6 +189,12 @@ export default function FlightsScreen() {
                 ? `${f.city}, ${f.state}  ·  ${f.lat?.toFixed(3)}, ${f.lon?.toFixed(3)}`
                 : "Enter a US ZIP to center the radar."}
           </Text>
+          <LocateButton
+            onLocated={(d) => {
+              setZip(d.zip);
+              updateFlights({ zip: d.zip, lat: d.lat, lon: d.lon, city: d.city, state: d.state });
+            }}
+          />
         </Card>
 
         <SectionLabel>Search Radius</SectionLabel>

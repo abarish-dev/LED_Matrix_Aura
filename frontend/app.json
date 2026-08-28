@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.emergent.auratwo.hltjsu",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Connect to your LED matrix to sync settings",
-        "NSBluetoothPeripheralUsageDescription": "Connect to your LED matrix to sync settings"
+        "NSBluetoothPeripheralUsageDescription": "Connect to your LED matrix to sync settings",
+        "NSLocationWhenInUseUsageDescription": "Auto-fill your local flights & weather"
       }
     },
     "android": {
@@ -60,7 +61,13 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Auto-fill your local flights & weather"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

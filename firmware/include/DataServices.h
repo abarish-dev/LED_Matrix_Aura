@@ -264,4 +264,28 @@ inline void dailyHiLo(double lat, double lon, int& hi, int& lo) {
     lo = (int)round((float)doc["daily"]["temperature_2m_min"][0]);
 }
 
+// ---- Sun times: today's sunrise/sunset as minutes-of-day (open-meteo) ------
+// Returns -1 for each on failure. ISO looks like "2026-06-28T06:12".
+inline void sunTimes(double lat, double lon, int& sunriseMin, int& sunsetMin) {
+  sunriseMin = -1; sunsetMin = -1;
+  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(lat, 4) +
+               "&longitude=" + String(lon, 4) +
+               "&daily=sunrise,sunset&timezone=auto&forecast_days=1";
+  String body = httpGet(url);
+  if (body.isEmpty()) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  const char* sr = doc["daily"]["sunrise"][0];
+  const char* ss = doc["daily"]["sunset"][0];
+  auto parseMin = [](const char* iso) -> int {
+    if (!iso || strlen(iso) < 16) return -1;
+    int hh = (iso[11] - '0') * 10 + (iso[12] - '0');
+    int mm = (iso[14] - '0') * 10 + (iso[15] - '0');
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return -1;
+    return hh * 60 + mm;
+  };
+  sunriseMin = parseMin(sr);
+  sunsetMin  = parseMin(ss);
+}
+
 } // namespace Data

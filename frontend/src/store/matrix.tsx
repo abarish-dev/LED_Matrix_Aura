@@ -61,6 +61,7 @@ export type Settings = {
   holidayThemes: boolean; // shift accent colors on holidays
   nightMode: {
     enabled: boolean;
+    useSunset: boolean; // dim from local sunset to sunrise instead of fixed hours
     startHour: number; // 0-23
     endHour: number; // 0-23
     dimLevel: number; // 0-100
@@ -104,6 +105,7 @@ export const DEFAULT_SETTINGS: Settings = {
   holidayThemes: true,
   nightMode: {
     enabled: false,
+    useSunset: false,
     startHour: 22,
     endHour: 7,
     dimLevel: 20,
@@ -190,6 +192,7 @@ export function buildFullPayload(s: Settings) {
     holidayThemes: s.holidayThemes,
     nightMode: {
       enabled: s.nightMode.enabled,
+      useSunset: s.nightMode.useSunset,
       startHour: s.nightMode.startHour,
       endHour: s.nightMode.endHour,
       dimLevel: s.nightMode.dimLevel,
@@ -207,6 +210,7 @@ export function buildFullPayload(s: Settings) {
 function buildNightPayload(n: Settings["nightMode"]) {
   return {
     enabled: n.enabled,
+    useSunset: n.useSunset,
     startHour: n.startHour,
     endHour: n.endHour,
     dimLevel: n.dimLevel,
