@@ -171,4 +171,8 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - [x] **Sunset Dimming**: `nightMode.useSunset` added to store (Settings/DEFAULT/full+night BLE payloads). Device tab: under Night Dimming, a "Sunset to sunrise" toggle; when on, hides From/To steppers + weekend schedule, keeps Dim-to slider, shows a sunset hint. Firmware: `NightCfg.useSunset`, `Data::sunTimes(lat,lon,&srMin,&ssMin)` (Open-Meteo daily sunrise/sunset, cached per day), `applyBrightnessForNow` dims from local sunset→sunrise when enabled; `applyNight` BLE parse reads `useSunset`. Device-only rendering.
 - [x] **Team Colors on Summary**: `accentFor(hex)` (helpers.ts, luminance guard → falls back to brand for near-black teams) drives the Summary Sports glance card's icon accent to the starred team's color.
 
+## Updates (2026-06 — round 24)
+- [x] **Radar Animation**: `radar.ts` `latestRadar()` now returns the last ~7 RainViewer past frames; `RadarCard` loops them (~550ms/frame) on both the Weather-tab card and the fullscreen view, with a frame-time badge. Center-tile frames prefetched via `Image.prefetch` for smooth playback.
+- [x] **Tap Radar Fullscreen (pinch-zoom)**: tapping the radar card ("Expand") opens a full-screen modal with a 3×3 z7 tile mosaic (base + animated radar), **pinch-to-zoom (1–6×) + drag-to-pan + double-tap reset** via react-native-gesture-handler + reanimated, plus a Reset-view button and play/pause. Discovered RainViewer radar tiles only resolve to zoom 7 (z8+ returns a "Zoom Level Not Supported" placeholder at both 256 & 512 sizes), so zoom is done by scaling the z7 mosaic rather than requesting deeper tiles. Base map is keyless ESRI Dark Gray. Verified on web: full storm detail, marker, animation, gestures.
+
 
