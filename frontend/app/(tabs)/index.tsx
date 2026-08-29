@@ -25,7 +25,6 @@ import {
 } from "@/src/services/weather";
 import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
 import { GlanceCard, ReorderGlance } from "@/src/components/summary/GlanceCard";
-import { refreshOverheadWidget } from "@/src/widgets/update";
 import {
   REFRESH_MS,
   ORDER_KEY,
@@ -182,7 +181,6 @@ export default function SummaryScreen() {
           setPlaneLoading(false);
           checkAutoTrack(list);
           checkLanding(list);
-          refreshOverheadWidget(list[0] ?? null, true);
         }
       });
     }

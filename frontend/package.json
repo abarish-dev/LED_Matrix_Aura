@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "main": "index.js",
+  "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
     "preinstall": "./scripts/cmd-guard.js --preinstall",
@@ -41,7 +41,6 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
-    "react-native-android-widget": "0.22.1",
     "react-native-ble-plx": "3.5.1",
     "react-native-dotenv": "3.4.11",
     "react-native-draggable-flatlist": "4.0.3",
