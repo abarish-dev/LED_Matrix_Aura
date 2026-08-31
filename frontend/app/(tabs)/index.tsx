@@ -1,11 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useAudioPlayer } from "expo-audio";
-import ReorderableList, {
-  reorderItems,
-  type ReorderableListReorderEvent,
-} from "react-native-reorderable-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,7 +20,7 @@ import {
   type CurrentWx,
 } from "@/src/services/weather";
 import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
-import { GlanceCard, ReorderGlance } from "@/src/components/summary/GlanceCard";
+import { GlanceCard } from "@/src/components/summary/GlanceCard";
 import {
   REFRESH_MS,
   ORDER_KEY,
@@ -42,6 +38,8 @@ import {
 } from "@/src/components/summary/helpers";
 
 const CHEVRON = require("@/assets/images/splash-image.png");
+
+type CardMove = { onMoveUp?: () => void; onMoveDown?: () => void };
 
 export default function SummaryScreen() {
   const router = useRouter();
@@ -310,15 +308,15 @@ export default function SummaryScreen() {
   const effCompact = compact || autoCompact;
 
   // ---- Glance renderers -----------------------------------------------------
-  const renderOverhead = (drag: () => void, dragging: boolean) => (
+  const renderOverhead = (move: CardMove) => (
     <GlanceCard
       icon="airplane"
       accent={isTracked ? colors.brand : colors.info}
       label="Overhead"
       loading={planeLoading}
       active={isTracked}
-      dragging={dragging}
-      onLongPress={drag}
+      onMoveUp={move.onMoveUp}
+      onMoveDown={move.onMoveDown}
       onHide={() => hideCard("overhead")}
       onPress={onPlaneTap}
       compact={effCompact}
@@ -367,7 +365,7 @@ export default function SummaryScreen() {
     </GlanceCard>
   );
 
-  const renderSports = (drag: () => void, dragging: boolean) => {
+  const renderSports = (move: CardMove) => {
     const secondMeta = secondTeam ? findTeam(secondTeam.league, secondTeam.abbr) : undefined;
     const s2live = score2?.state === "in";
     return (
@@ -377,8 +375,8 @@ export default function SummaryScreen() {
       accent={accentFor(favMeta?.color)}
       label={favTeam ? `${favTeam.league} · ${favMeta?.name ?? favTeam.abbr}` : "Sports"}
       loading={scoreLoading}
-      dragging={dragging}
-      onLongPress={drag}
+      onMoveUp={move.onMoveUp}
+      onMoveDown={move.onMoveDown}
       onHide={() => hideCard("sports")}
       onPress={() => router.push("/sports")}
       compact={effCompact}
@@ -511,14 +509,14 @@ export default function SummaryScreen() {
     );
   };
 
-  const renderWeather = (drag: () => void, dragging: boolean) => (
+  const renderWeather = (move: CardMove) => (
     <GlanceCard
       icon={wx ? wxGlyph(wx.code, wx.isDay) : "partly-sunny"}
       accent={wx ? wxAccent(wx.code) : colors.warning}
       label="Weather"
       loading={wxLoading}
-      dragging={dragging}
-      onLongPress={drag}
+      onMoveUp={move.onMoveUp}
+      onMoveDown={move.onMoveDown}
       onHide={() => hideCard("weather")}
       onPress={() => router.push("/weather")}
       compact={effCompact}
@@ -559,10 +557,30 @@ export default function SummaryScreen() {
     </GlanceCard>
   );
 
-  const renderItem = ({ item }: { item: string }) => {
-    const r =
-      item === "overhead" ? renderOverhead : item === "sports" ? renderSports : renderWeather;
-    return <ReorderGlance render={r} />;
+  const moveCard = (key: string, dir: -1 | 1) => {
+    setOrder((prev) => {
+      const vis = prev.filter((k) => !hidden.includes(k));
+      const i = vis.indexOf(key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= vis.length) return prev;
+      const swapped = [...vis];
+      [swapped[i], swapped[j]] = [swapped[j], swapped[i]];
+      const queue = [...swapped];
+      const next = prev.map((k) => (hidden.includes(k) ? k : (queue.shift() as string)));
+      storage.setItem(ORDER_KEY, next.join(","));
+      return next;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const renderCard = (key: string, i: number) => {
+    const move: CardMove = {
+      onMoveUp: i > 0 ? () => moveCard(key, -1) : undefined,
+      onMoveDown: i < visibleOrder.length - 1 ? () => moveCard(key, 1) : undefined,
+    };
+    const node =
+      key === "overhead" ? renderOverhead(move) : key === "sports" ? renderSports(move) : renderWeather(move);
+    return <View key={key}>{node}</View>;
   };
 
   const Header = (
@@ -644,7 +662,7 @@ export default function SummaryScreen() {
         <Text style={styles.sectionLabel}>On The Wall Now</Text>
         <View style={styles.sectionActions}>
           <Text style={styles.reorderHint}>
-            {autoCompact ? "Auto-compact · 4+ cards" : "Hold & drag to reorder"}
+            {autoCompact ? "Auto-compact · 4+ cards" : "Use arrows to reorder"}
           </Text>
           <Pressable
             onPress={toggleCompact}
@@ -750,25 +768,8 @@ export default function SummaryScreen() {
 
   return (
     <View style={styles.screen}>
-      <ReorderableList
-        data={visibleOrder}
-        keyExtractor={(k) => k}
-        renderItem={renderItem}
+      <ScrollView
         style={styles.screen}
-        shouldUpdateActiveItem
-        extraData={{ plane, score, score2, streak, streak2, wx, isTracked, landing, secsToRefresh, connected, hidden, effCompact, secondTeam }}
-        onReorder={({ from, to }: ReorderableListReorderEvent) => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setOrder((prev) => {
-            const vis = prev.filter((k) => !hidden.includes(k));
-            const queue = reorderItems(vis, from, to);
-            const next = prev.map((k) => (hidden.includes(k) ? k : (queue.shift() as string)));
-            storage.setItem(ORDER_KEY, next.join(","));
-            return next;
-          });
-        }}
-        ListHeaderComponent={Header}
-        ListFooterComponent={Footer}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.content,
@@ -777,7 +778,11 @@ export default function SummaryScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
         }
-      />
+      >
+        {Header}
+        {visibleOrder.map((key, i) => renderCard(key, i))}
+        {Footer}
+      </ScrollView>
     </View>
   );
 }

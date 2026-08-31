@@ -2,10 +2,6 @@ import React from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import ReorderableList, {
-  useReorderableDrag,
-  useIsActive,
-} from "react-native-reorderable-list";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 
 export function GlanceCard({
@@ -13,11 +9,11 @@ export function GlanceCard({
   accent,
   label,
   onPress,
-  onLongPress,
+  onMoveUp,
+  onMoveDown,
   onHide,
   loading,
   active,
-  dragging,
   compact,
   children,
 }: {
@@ -25,32 +21,53 @@ export function GlanceCard({
   accent: string;
   label: string;
   onPress: () => void;
-  onLongPress?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
   onHide?: () => void;
   loading?: boolean;
   active?: boolean;
-  dragging?: boolean;
   compact?: boolean;
   children: React.ReactNode;
 }) {
+  const reorderable = onMoveUp !== undefined || onMoveDown !== undefined;
   return (
     <Pressable
       onPress={() => {
         Haptics.selectionAsync();
         onPress();
       }}
-      onLongPress={onLongPress}
-      delayLongPress={220}
       style={({ pressed }) => [
         styles.glance,
         compact && styles.glanceCompact,
         active && styles.glanceActive,
-        dragging && styles.glanceDragging,
-        pressed && !dragging && { opacity: 0.85 },
+        pressed && { opacity: 0.85 },
       ]}
     >
-      {onLongPress && (
-        <Ionicons name="reorder-two" size={18} color={colors.surfaceTertiary} style={styles.grip} />
+      {reorderable && (
+        <View style={styles.reorder}>
+          <Pressable
+            hitSlop={8}
+            disabled={!onMoveUp}
+            onPress={() => {
+              Haptics.selectionAsync();
+              onMoveUp?.();
+            }}
+            style={styles.reorderBtn}
+          >
+            <Ionicons name="chevron-up" size={16} color={onMoveUp ? colors.onSurfaceSecondary : colors.surfaceTertiary} />
+          </Pressable>
+          <Pressable
+            hitSlop={8}
+            disabled={!onMoveDown}
+            onPress={() => {
+              Haptics.selectionAsync();
+              onMoveDown?.();
+            }}
+            style={styles.reorderBtn}
+          >
+            <Ionicons name="chevron-down" size={16} color={onMoveDown ? colors.onSurfaceSecondary : colors.surfaceTertiary} />
+          </Pressable>
+        </View>
       )}
       <View style={[styles.glanceIcon, { backgroundColor: accent + "22" }]}>
         <Ionicons name={icon} size={20} color={accent} />
@@ -82,17 +99,6 @@ export function GlanceCard({
   );
 }
 
-/** Wraps a glance renderer with the reorderable drag/active hooks. */
-export function ReorderGlance({
-  render,
-}: {
-  render: (drag: () => void, dragging: boolean) => React.ReactNode;
-}) {
-  const drag = useReorderableDrag();
-  const isActive = useIsActive();
-  return <>{render(drag, isActive)}</>;
-}
-
 const styles = StyleSheet.create({
   glance: {
     flexDirection: "row",
@@ -107,8 +113,8 @@ const styles = StyleSheet.create({
   },
   glanceActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
   glanceCompact: { padding: spacing.md },
-  glanceDragging: { borderColor: colors.borderStrong, backgroundColor: colors.surfaceTertiary },
-  grip: { marginRight: -spacing.sm },
+  reorder: { justifyContent: "center", marginRight: -spacing.xs, marginLeft: -spacing.xs },
+  reorderBtn: { width: 24, height: 22, alignItems: "center", justifyContent: "center" },
   glanceIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
   glanceLabel: {
     fontFamily: fonts.textMedium,

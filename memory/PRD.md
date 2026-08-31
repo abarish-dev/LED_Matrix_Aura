@@ -181,4 +181,7 @@ Four new features (verified via testing_agent iteration_24, all pass):
 ## Updates (2026-06 — round 26)
 - [x] **Removed the Android Overhead widget** (per user: Android's ~30-min widget refresh cap made it too stale to be interesting). Reverted everything from round 25: deleted `src/widgets/*`, `widget-task-handler.tsx`, `index.js`; `package.json` main → `expo-router/entry`; removed the `react-native-android-widget` plugin from app.json and uninstalled the package; removed the `refreshOverheadWidget` import + call from Summary `loadAll`. Verified app boots + tabs work, no leftover references.
 
+## Updates (2026-06 — round 27)
+- [x] **Fixed: Summary tab doesn't scroll on the native APK** (worked in web preview, failed on device). Root cause: `react-native-reorderable-list` 0.18.1 has a known scroll/gesture conflict under the New Architecture (Fabric), especially combined with `RefreshControl`. Replaced the `ReorderableList` with a plain `ScrollView` (Header + mapped cards + Footer + RefreshControl) — reliable native scrolling. Drag-to-reorder replaced with **up/down arrow buttons** on each glance card (`GlanceCard` now takes `onMoveUp`/`onMoveDown` instead of `onLongPress`/`dragging`); `moveCard(key,dir)` swaps within the visible order preserving hidden slots and persists to `aura_summary_order_v1`. Uninstalled `react-native-reorderable-list`. Hint text → "Use arrows to reorder". Verified on web: scrolls to footer, arrows reorder + persist across reload, lint clean.
+
 
