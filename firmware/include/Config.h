@@ -48,6 +48,7 @@ struct WeatherCfg {
   bool   showClock = false;    // show a time + temperature card
   bool   showHiLo  = false;    // add today's high/low to the clock card
   bool   showFeels = false;    // add the "feels like" temp to the clock card
+  bool   showWxIcon = false;   // draw a sun/cloud/rain/storm symbol on the clock card
 };
 
 struct NightWindow {
