@@ -7,9 +7,9 @@
 // ---- Panel geometry --------------------------------------------------------
 // A 128x64 wall is usually two 64x64 HUB75 modules chained left-to-right.
 // If you use a single native 128x64 module, set PANEL_RES_X 128 / CHAIN 1.
-#define PANEL_RES_X   64      // width of ONE module
+#define PANEL_RES_X   128     // width of ONE module (single native 128x64)
 #define PANEL_RES_Y   64      // height of ONE module
-#define PANEL_CHAIN   2       // number of chained modules  -> total 128x64
+#define PANEL_CHAIN   1       // number of chained modules  -> total 128x64
 
 #define MATRIX_W      (PANEL_RES_X * PANEL_CHAIN)   // 128
 #define MATRIX_H      (PANEL_RES_Y)                 // 64

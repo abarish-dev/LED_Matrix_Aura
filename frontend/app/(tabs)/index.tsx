@@ -767,23 +767,21 @@ export default function SummaryScreen() {
   );
 
   return (
-    <View style={styles.screen}>
-      <ScrollView
-        style={styles.screen}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + 190 },
-        ]}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
-        }
-      >
-        {Header}
-        {visibleOrder.map((key, i) => renderCard(key, i))}
-        {Footer}
-      </ScrollView>
-    </View>
+    <ScrollView
+      style={styles.screen}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + 190 },
+      ]}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
+      }
+    >
+      {Header}
+      {visibleOrder.map((key, i) => renderCard(key, i))}
+      {Footer}
+    </ScrollView>
   );
 }
 
