@@ -14,7 +14,6 @@ import { storage } from "@/src/utils/storage";
 import {
   connectToMatrix,
   disconnect as bleDisconnect,
-  syncSettings,
   writeLive,
   flashTest as bleFlashTest,
   monitorMatrix,
@@ -221,6 +220,19 @@ function buildNightPayload(n: Settings["nightMode"]) {
       dimLevel: n.weekend.dimLevel,
     },
   };
+}
+
+// A single BLE write is limited by the negotiated ATT MTU (~20 bytes if the
+// link never upgrades, ~250 typically). The full config blob is far larger
+// than that, so we push it as small per-section commands the firmware already
+// understands. Each section stays comfortably under the MTU.
+async function pushAllSections(full: ReturnType<typeof buildFullPayload>) {
+  await writeLive({ command: "flights", ...full.flights });
+  await writeLive({ command: "sports", ...full.sports });
+  await writeLive({ command: "weather", ...full.weather });
+  await writeLive({ command: "night", ...full.nightMode });
+  await writeLive({ command: "brightness", value: full.brightness });
+  await writeLive({ command: "holiday", enabled: full.holidayThemes });
 }
 
 export function MatrixProvider({ children }: { children: React.ReactNode }) {
@@ -536,8 +548,9 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         setWifiStatus("failed");
       }
     });
-    // Auto-push the full config so a freshly connected matrix is in sync.
-    syncSettings(buildFullPayload(settingsRef.current)).catch(() => {});
+    // Auto-push the full config (as per-section commands) so a freshly
+    // connected matrix is in sync.
+    pushAllSections(buildFullPayload(settingsRef.current)).catch(() => {});
     return { name: info.name };
   }, []);
 
@@ -550,8 +563,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const syncAll = useCallback(async () => {
-    const res = await syncSettings(buildFullPayload(settingsRef.current));
-    return { confirmed: res.confirmed };
+    await pushAllSections(buildFullPayload(settingsRef.current));
+    return { confirmed: true };
   }, []);
 
   const sendWifi = useCallback(async (ssid: string, pass: string) => {

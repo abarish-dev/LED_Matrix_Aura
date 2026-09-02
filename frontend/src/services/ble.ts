@@ -161,6 +161,8 @@ export async function connectToMatrix(
         try {
           const d = await device.connect();
           await d.discoverAllServicesAndCharacteristics();
+          // Bump the ATT MTU so multi-hundred-byte config writes don't fail.
+          try { await d.requestMTU(512); } catch { /* iOS auto-negotiates */ }
           connectedDevice = d;
 
           d.onDisconnected(() => {
@@ -327,6 +329,7 @@ export async function connectToKnownDevice(
   onStatus("connecting");
   const d = await bleManager.connectToDevice(deviceId);
   await d.discoverAllServicesAndCharacteristics();
+  try { await d.requestMTU(512); } catch { /* iOS auto-negotiates */ }
   connectedDevice = d;
   d.onDisconnected(() => {
     connectedDevice = null;
