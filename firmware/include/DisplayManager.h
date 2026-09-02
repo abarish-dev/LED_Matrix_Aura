@@ -157,6 +157,25 @@ inline void weather(const String& headline, uint16_t severityColor) {
   flip();
 }
 
+// A scrolling ("marquee") weather-alert card for long headlines. Pass an
+// increasing scrollX each frame; short headlines are centered instead.
+inline void weatherScroll(const String& headline, uint16_t severityColor, int scrollX) {
+  clear();
+  dma->fillRect(0, 0, MATRIX_W, 12, severityColor);
+  centerText("WEATHER ALERT", 2, rgb(0, 0, 0), 1);
+  dma->setTextColor(rgb(255, 255, 255));
+  dma->setTextSize(1);
+  const int y = 30;
+  const int textW = (int)headline.length() * 6;
+  if (textW <= MATRIX_W - 4) {
+    centerText(headline.c_str(), y, rgb(255, 255, 255), 1);
+  } else {
+    dma->setCursor(MATRIX_W - scrollX, y);   // slides in from the right, exits left
+    dma->print(headline);
+  }
+  flip();
+}
+
 inline void message(const char* line1, const char* line2) {
   clear();
   centerText(line1, 20, rgb(245, 158, 11), 1);

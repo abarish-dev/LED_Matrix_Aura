@@ -299,6 +299,22 @@ void loop() {
 
   uint32_t now = millis();
 
+  // Active weather alert takes over the screen and scrolls continuously.
+  if (gSettings.weather.enabled && gWeather.ok) {
+    static int scrollX = 0;
+    static uint32_t lastScroll = 0;
+    if (now - lastScroll >= 40) {
+      lastScroll = now;
+      Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), scrollX);
+      int textW = (int)gWeather.headline.length() * 6;
+      scrollX += 2;                                   // scroll speed (px/frame)
+      if (scrollX > textW + MATRIX_W) scrollX = 0;    // loop the marquee
+    }
+    if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
+    delay(20);
+    return;   // skip the normal card rotation while an alert is up
+  }
+
   if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
 
   if (now - lastCard >= CARD_MS) {
