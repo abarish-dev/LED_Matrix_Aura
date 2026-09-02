@@ -227,11 +227,12 @@ function buildNightPayload(n: Settings["nightMode"]) {
 // than that, so we push it as small per-section commands the firmware already
 // understands. Each section stays comfortably under the MTU.
 async function pushAllSections(full: ReturnType<typeof buildFullPayload>) {
-  await writeLive({ command: "flights", ...full.flights });
-  await writeLive({ command: "sports", ...full.sports });
-  await writeLive({ command: "weather", ...full.weather });
-  await writeLive({ command: "night", ...full.nightMode });
-  await writeLive({ command: "brightness", value: full.brightness });
+  const gap = () => new Promise((r) => setTimeout(r, 40));
+  await writeLive({ command: "flights", ...full.flights }); await gap();
+  await writeLive({ command: "sports", ...full.sports }); await gap();
+  await writeLive({ command: "weather", ...full.weather }); await gap();
+  await writeLive({ command: "night", ...full.nightMode }); await gap();
+  await writeLive({ command: "brightness", value: full.brightness }); await gap();
   await writeLive({ command: "holiday", enabled: full.holidayThemes });
 }
 

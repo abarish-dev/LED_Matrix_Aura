@@ -139,6 +139,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
 inline void begin() {
   NimBLEDevice::init(AURA_DEVICE_NAME);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEDevice::setMTU(512);   // allow larger single writes (config payloads)
 
   NimBLEServer* server = NimBLEDevice::createServer();
   NimBLEService* svc   = server->createService(AURA_SERVICE_UUID);
