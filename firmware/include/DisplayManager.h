@@ -25,6 +25,10 @@ inline void begin() {
   HUB75_I2S_CFG cfg(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN, pins);
   cfg.clkphase = false;
   cfg.double_buff = true;
+  // Many P2.5 128x64 panels use FM6126A driver ICs, which need a special
+  // init or a block of LEDs stays stuck lit. If your panel goes blank/worse
+  // after flashing, delete this one line to fall back to the generic driver.
+  cfg.driver = HUB75_I2S_CFG::FM6126A;
   dma = new MatrixPanel_I2S_DMA(cfg);
   dma->begin();
   dma->setBrightness8(120);
