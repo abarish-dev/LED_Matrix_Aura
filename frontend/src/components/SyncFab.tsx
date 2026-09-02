@@ -33,12 +33,9 @@ export default function SyncFab() {
     setBusy(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      const res = await syncAll();
+      await syncAll();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.show(
-        res.confirmed ? "Matrix synced & confirmed." : "Settings sent to matrix.",
-        "success",
-      );
+      toast.show("Synced ✓  Flights, sports & weather sent to the matrix.", "success");
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       toast.show(e?.message ?? "Sync failed.", "error");
