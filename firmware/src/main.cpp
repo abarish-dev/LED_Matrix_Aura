@@ -27,6 +27,7 @@ volatile bool  gWeatherTest      = false;
 
 // ---- Timing ----------------------------------------------------------------
 static const uint32_t CARD_MS  = 8000;    // seconds per card
+static const uint32_t ALERT_MS = 30000;   // weather-alert card dwell (scrolls)
 static const uint32_t FETCH_MS = 30000;   // refresh live data every 30s
 
 static uint32_t lastCard = 0, lastFetch = 0;
@@ -192,22 +193,14 @@ static void refreshData() {
   }
 }
 
-static void drawCurrentCard() {
-  // Weather alerts always take priority when active.
-  if (gSettings.weather.enabled && gWeather.ok) {
-    Display::weather(gWeather.headline, severityColor(gWeather.severity));
+// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert.
+static void drawCard(uint8_t t) {
+  uint16_t accent = holidayAccent();
+  if (t == 3) {
+    // Initial alert frame; the marquee scroll is animated from loop().
+    Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), 0);
     return;
   }
-
-  // Build the list of enabled cards and pick one by index.
-  uint8_t types[3]; uint8_t n = 0;
-  if (gSettings.flights.enabled && gFlight.ok) types[n++] = 0;
-  if (gSettings.sports.enabled  && gScore.ok)  types[n++] = 1;
-  if (gSettings.weather.showClock)             types[n++] = 2;
-  if (n == 0) { Display::message("AURA", "waiting for data"); return; }
-
-  uint8_t t = types[cardIndex % n];
-  uint16_t accent = holidayAccent();
   if (t == 2) {
     struct tm tmv;
     String ts = "--:--";
@@ -244,6 +237,16 @@ static void drawCurrentCard() {
       if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
     }
   }
+}
+
+// Build the current rotation of enabled cards (alert leads when active).
+static uint8_t buildSeq(uint8_t* seq) {
+  uint8_t n = 0;
+  if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
+  if (gSettings.flights.enabled && gFlight.ok)   seq[n++] = 0;
+  if (gSettings.sports.enabled  && gScore.ok)    seq[n++] = 1;
+  if (gSettings.weather.showClock)               seq[n++] = 2;
+  return n;
 }
 
 void setup() {
@@ -299,29 +302,40 @@ void loop() {
 
   uint32_t now = millis();
 
-  // Active weather alert takes over the screen and scrolls continuously.
-  if (gSettings.weather.enabled && gWeather.ok) {
-    static int scrollX = 0;
-    static uint32_t lastScroll = 0;
-    if (now - lastScroll >= 40) {
-      lastScroll = now;
-      Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), scrollX);
-      int textW = (int)gWeather.headline.length() * 6;
-      scrollX += 2;                                   // scroll speed (px/frame)
-      if (scrollX > textW + MATRIX_W) scrollX = 0;    // loop the marquee
-    }
-    if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
-    delay(20);
-    return;   // skip the normal card rotation while an alert is up
-  }
-
   if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
 
-  if (now - lastCard >= CARD_MS) {
+  static int alertScrollX = 0;
+  static uint32_t lastScroll = 0;
+
+  uint8_t seq[4];
+  uint8_t n = buildSeq(seq);
+
+  if (n == 0) {
+    if (now - lastCard >= CARD_MS) { lastCard = now; Display::message("AURA", "waiting for data"); }
+    delay(20);
+    return;
+  }
+
+  uint8_t cur = seq[cardIndex % n];
+  uint32_t dwell = (cur == 3) ? ALERT_MS : CARD_MS;
+
+  // Advance to the next card once its dwell time elapses.
+  if (now - lastCard >= dwell) {
     lastCard = now;
     cardIndex++;
-    applyBrightnessForNow();   // re-evaluate the night schedule each card
-    drawCurrentCard();
+    cur = seq[cardIndex % n];
+    alertScrollX = 0;              // fresh marquee each time the alert comes up
+    applyBrightnessForNow();       // re-evaluate the night schedule each card
+    drawCard(cur);
+  }
+
+  // While the alert card is showing, keep scrolling the headline.
+  if (cur == 3 && now - lastScroll >= 40) {
+    lastScroll = now;
+    Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), alertScrollX);
+    int textW = (int)gWeather.headline.length() * 6;
+    alertScrollX += 2;                                  // scroll speed (px/frame)
+    if (alertScrollX > textW + MATRIX_W) alertScrollX = 0;
   }
 
   delay(20);
