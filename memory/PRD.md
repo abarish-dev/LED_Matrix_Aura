@@ -237,3 +237,6 @@ Four new features (verified via testing_agent iteration_24, all pass):
 
 ## Updates (2026-06 — round 39)
 - [x] **Total DNS failure fix.** User log showed 100% `hostByName DNS Failed` (ok=0, 7s timeouts) on ALL hosts — router DNS (192.168.1.1) not answering / rate-limiting. Added `WiFi.config(localIP, gatewayIP, subnetMask, 8.8.8.8, 1.1.1.1)` right after WL_CONNECTED (keeps DHCP IP, pins public DNS) + `[NET]` log. If DNS still fails after this, the Wi-Fi LINK itself is starved (signal/coexistence) not DNS. Needs re-flash.
+
+## Updates (2026-06 — round 40)
+- [x] **DNS rate-limit fix (root cause of 100% DNS fail).** User confirmed no router/board change → cheap router was banning the chatty client (we did an EXTRA hostByName per request on top of HTTPClient's internal lookup). Added a per-host DNS cache in DataServices.h (`resolveCached` — resolve each host once, reuse) + `dnsForget` eviction on transport failure (CDNs like ESPN/Akamai rotate IPs). Combined with the pinned public DNS (round 39), this minimizes DNS query volume. Simplified the `[GET]` log (now shows cached dns per host). Needs re-flash.

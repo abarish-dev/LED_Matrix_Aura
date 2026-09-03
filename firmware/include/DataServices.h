@@ -42,9 +42,35 @@ static String airlineFromCallsign(const String& cs) {
   return cs; // fall back to raw callsign
 }
 
+// Tiny per-host DNS cache. Cheap routers rate-limit / ban a client that sends
+// too many DNS queries; resolving each host once and reusing the result keeps
+// our query volume minimal (public DNS is also pinned in wifiConnect()).
+struct DnsEntry { String host; IPAddress ip; };
+static DnsEntry gDnsCache[8];
+static int gDnsCacheN = 0;
+
+static bool resolveCached(const String& host, IPAddress& out) {
+  for (int i = 0; i < gDnsCacheN; i++)
+    if (gDnsCache[i].host == host) { out = gDnsCache[i].ip; return true; }
+  IPAddress ip;
+  if (!WiFi.hostByName(host.c_str(), ip)) return false;
+  if (gDnsCacheN < 8) { gDnsCache[gDnsCacheN] = { host, ip }; gDnsCacheN++; }
+  out = ip;
+  return true;
+}
+
+// Drop a host from the cache so it re-resolves (CDNs like Akamai/ESPN rotate
+// IPs; a cached one can go stale). Called after a transport failure.
+static void dnsForget(const String& host) {
+  for (int i = 0; i < gDnsCacheN; i++)
+    if (gDnsCache[i].host == host) {
+      gDnsCache[i] = gDnsCache[gDnsCacheN - 1];
+      gDnsCacheN--;
+      return;
+    }
+}
+
 static String httpGet(const String& url, const char* userAgent = nullptr) {
-  // Parse host once for the DNS diagnostic + pre-resolve (helps DNS reliability
-  // when the Wi-Fi radio is sharing airtime with an active BLE connection).
   int s = url.indexOf("://"); s = (s < 0) ? 0 : s + 3;
   int e = url.indexOf('/', s); if (e < 0) e = url.length();
   String host = url.substring(s, e);
@@ -64,15 +90,14 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
   }
 
   // Retry transient transport failures (BLE<->Wi-Fi coexistence causes sporadic
-  // DNS misses, TLS EOF/-29312, connect -1 and read-timeout -11). Up to 3 tries.
+  // TLS EOF/-29312, connect -1 and read-timeout -11). Up to 3 tries.
   for (int attempt = 1; attempt <= 3; attempt++) {
-    Serial.printf("[GET] try=%d intFree=%u  heap=%u  psram=%u  %s\n",
-                  attempt, heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                  ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
     IPAddress rip;
-    int ok = WiFi.hostByName(host.c_str(), rip);
-    Serial.printf("[DNS] %s -> ok=%d ip=%s  dnsServer=%s\n",
-                  host.c_str(), ok, rip.toString().c_str(), WiFi.dnsIP().toString().c_str());
+    bool ok = resolveCached(host, rip);
+    Serial.printf("[GET] try=%d intFree=%u  psram=%u  dns(%s)=%s  %s\n",
+                  attempt, heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                  ESP.getFreePsram(), host.c_str(),
+                  ok ? rip.toString().c_str() : "FAIL", url.c_str());
     if (!ok) { delay(500); continue; }   // DNS starved -> back off and retry
 
     WiFiClientSecure client; client.setInsecure();
@@ -90,7 +115,8 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
     http.end();
     if (code == 200) return body;
     if (code > 0) return "";     // server answered (e.g. 403/404) -> no point retrying
-    delay(400);                  // transport error -> retry
+    dnsForget(host);             // transport error -> drop possibly-stale IP
+    delay(400);                  // and retry
   }
   return "";
 }
