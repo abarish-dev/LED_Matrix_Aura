@@ -248,3 +248,6 @@ Four new features (verified via testing_agent iteration_24, all pass):
 
 ## Updates (2026-06 — round 42)
 - [x] **Deployment health check: PASS.** Fixed 2 blockers: (1) regenerated frontend/yarn.lock (was missing; deleted earlier) via `yarn install` and removed frontend/package-lock.json so the managed `yarn --frozen-lockfile` install is deterministic; (2) removed `.env`/`.env.*`/`*.env` rules from root /app/.gitignore so required env files reach the deploy context (frontend/.gitignore keeps only `.env*.local`). App bundles cleanly (1584 modules) and renders. All deployment checks green.
+
+## Updates (2026-06 — round 43)
+- [x] **Frontend regression: CLEAN PASS** (testing agent, iteration_25.json). Verified: scrolling on all 5 tabs (Summary ScrollView OK), reorder up/down arrows + persistence across reload, tab navigation stability, 7-tap Device Info reveal (Firmware 'connect to read' on web = expected), sports 'needs phone app' text removed, Open-Meteo weather works (ZIP 10001 → 83°F), AsyncStorage persistence. No bugs. Native-only (BLE, ESPN/adsb CORS) correctly not flagged. Optional non-blocking note: index.tsx (975 lines) / device.tsx (747 lines) could be split later.
