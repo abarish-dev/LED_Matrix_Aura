@@ -127,9 +127,9 @@ inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
   int nm = max(1, (int)(radiusMi / 1.15078));  // miles -> nautical miles
   String url = "https://api.adsb.lol/v2/lat/" + String(lat, 4) +
                "/lon/" + String(lon, 4) + "/dist/" + String(nm);
-  // adsb.lol 403s browser-looking UAs; it originally worked with none, so send
-  // no User-Agent header at all.
-  String body = httpGet(url, "");
+  // adsb.lol rate-limits/403s bots; their docs ask for a descriptive UA (and
+  // reject browser-looking ones). Identify ourselves clearly.
+  String body = httpGet(url, "AuraMatrix/1.0 (ESP32 LED matrix; +https://github.com)");
   if (body.isEmpty()) return out;
 
   JsonDocument doc;
@@ -165,8 +165,8 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
   String cs = callsign; cs.trim(); cs.toUpperCase();
   if (cs.isEmpty()) return out;
   String url = "https://api.adsb.lol/v2/callsign/" + cs;
-  // adsb.lol 403s browser-looking UAs; send no User-Agent header at all.
-  String body = httpGet(url, "");
+  // adsb.lol rate-limits/403s bots; their docs ask for a descriptive UA.
+  String body = httpGet(url, "AuraMatrix/1.0 (ESP32 LED matrix; +https://github.com)");
   if (body.isEmpty()) return out;
 
   JsonDocument doc;

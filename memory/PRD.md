@@ -240,3 +240,8 @@ Four new features (verified via testing_agent iteration_24, all pass):
 
 ## Updates (2026-06 — round 40)
 - [x] **DNS rate-limit fix (root cause of 100% DNS fail).** User confirmed no router/board change → cheap router was banning the chatty client (we did an EXTRA hostByName per request on top of HTTPClient's internal lookup). Added a per-host DNS cache in DataServices.h (`resolveCached` — resolve each host once, reuse) + `dnsForget` eviction on transport failure (CDNs like ESPN/Akamai rotate IPs). Combined with the pinned public DNS (round 39), this minimizes DNS query volume. Simplified the `[GET]` log (now shows cached dns per host). Needs re-flash.
+
+## Updates (2026-06 — round 41)
+- [x] **DNS fully fixed & confirmed** (public DNS pinned + per-host cache + eviction). Serial: `[NET] dns1=8.8.8.8`, all hosts resolve, ESPN self-healed (evict stale Akamai IP → 200 on try=2), weather 200.
+- [x] **adsb.lol 403 = their dynamic load-balancer rate-limit block** (confirmed via adsb.lol docs). Triggered by today's heavy reflash/test volume; their docs ask for a *descriptive* User-Agent (browser UA & empty UA both get flagged). Set flight calls to `"AuraMatrix/1.0 (ESP32 LED matrix; +https://github.com)"`. Firmware polls flights only 1×/30s in steady state, so normal use won't trip it. The current IP block may take minutes–~1h to clear on adsb's side. Needs re-flash.
+- STATUS: data pipeline essentially solved — weather + sports live; flights pending adsb rate-limit clearing.
