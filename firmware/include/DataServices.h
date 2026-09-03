@@ -59,7 +59,12 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
                   host.c_str(), ok, rip.toString().c_str(), WiFi.dnsIP().toString().c_str());
   }
   if (!http.begin(client, url)) { Serial.println("[GET] begin() failed"); return ""; }
-  if (userAgent) http.addHeader("User-Agent", userAgent);
+  // Send a browser-like User-Agent by default. ESPN's CDN (Akamai) returns
+  // HTTP 403 to requests with no/none-browser UA; weather.gov passes its own
+  // required UA explicitly. adsb.lol / open-meteo accept anything.
+  http.addHeader("User-Agent", userAgent ? userAgent :
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
   http.addHeader("Accept", "application/json");
   int code = http.GET();
   String body = (code == 200) ? http.getString() : "";
