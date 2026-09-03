@@ -45,13 +45,14 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   http.setTimeout(8000);
-  Serial.printf("[GET] heap=%u  %s\n", ESP.getFreeHeap(), url.c_str());
+  Serial.printf("[GET] heap=%u  psram=%u  %s\n", ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
   if (!http.begin(client, url)) { Serial.println("[GET] begin() failed"); return ""; }
   if (userAgent) http.addHeader("User-Agent", userAgent);
   http.addHeader("Accept", "application/json");
   int code = http.GET();
   String body = (code == 200) ? http.getString() : "";
-  Serial.printf("[GET] code=%d  len=%d  heapAfter=%u\n", code, (int)body.length(), ESP.getFreeHeap());
+  Serial.printf("[GET] code=%d (%s)  len=%d  heapAfter=%u\n",
+                code, http.errorToString(code).c_str(), (int)body.length(), ESP.getFreeHeap());
   http.end();
   return body;
 }
