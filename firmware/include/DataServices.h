@@ -10,6 +10,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <esp_heap_caps.h>
 #include "Config.h"
 
 namespace Data {
@@ -45,7 +46,9 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http;
   http.setTimeout(8000);
-  Serial.printf("[GET] heap=%u  psram=%u  %s\n", ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
+  Serial.printf("[GET] intFree=%u  heap=%u  psram=%u  %s\n",
+                heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
   {
     int s = url.indexOf("://"); s = (s < 0) ? 0 : s + 3;
     int e = url.indexOf('/', s); if (e < 0) e = url.length();

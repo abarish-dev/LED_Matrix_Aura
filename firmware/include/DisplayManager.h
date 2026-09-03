@@ -24,7 +24,15 @@ inline void begin() {
   };
   HUB75_I2S_CFG cfg(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN, pins);
   cfg.clkphase = false;
-  cfg.double_buff = true;   // smooth, flicker-free rendering (buffers live in PSRAM)
+  // --- Memory budget (critical) ------------------------------------------
+  // The HUB75 DMA framebuffer MUST live in the ESP32-S3's internal SRAM
+  // (its 2MB PSRAM is *Quad* and too slow to feed the panel). WiFi + BLE +
+  // an HTTPS/TLS handshake together need ~45KB of internal heap, so we keep
+  // the framebuffer small: single-buffered + 4-bit color depth. That frees
+  // ~90KB of internal RAM vs. double-buffered 8-bit, which is what let the
+  // matrix sit stuck on "waiting for data" (every fetch died with code=-1).
+  cfg.double_buff = false;      // single buffer -> frees one full framebuffer
+  cfg.setPixelColorDepthBits(4); // 4 bits/channel (4096 colors) -> half the buffer
   // Many P2.5 128x64 panels use FM6126A driver ICs, which need a special
   // init or a block of LEDs stays stuck lit. If your panel goes blank/worse
   // after flashing, delete this one line to fall back to the generic driver.

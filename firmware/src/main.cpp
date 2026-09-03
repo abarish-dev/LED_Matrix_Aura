@@ -256,7 +256,8 @@ void setup() {
   // PSRAM so internal RAM stays free. This lets Wi-Fi + BLE + HTTPS all run at
   // once, so Bluetooth can stay connected while the matrix fetches data.
   heap_caps_malloc_extmem_enable(4096);
-  Serial.printf("[MEM] internal heap=%u  psram free=%u\n",
+  Serial.printf("[MEM] internal free=%u  total heap=%u  psram free=%u\n",
+                heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                 ESP.getFreeHeap(), ESP.getFreePsram());
   Display::begin();
   Display::setBrightness(gSettings.brightness);

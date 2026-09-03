@@ -67,7 +67,12 @@
         {
           "locationWhenInUsePermission": "Auto-fill your local flights & weather"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-secure-store",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
