@@ -91,7 +91,8 @@ inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
   int nm = max(1, (int)(radiusMi / 1.15078));  // miles -> nautical miles
   String url = "https://api.adsb.lol/v2/lat/" + String(lat, 4) +
                "/lon/" + String(lon, 4) + "/dist/" + String(nm);
-  String body = httpGet(url);
+  // adsb.lol asks clients to identify themselves; a fake browser UA gets a 403.
+  String body = httpGet(url, "AuraMatrix/1.0 (LED matrix flight display)");
   if (body.isEmpty()) return out;
 
   JsonDocument doc;
@@ -127,7 +128,8 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
   String cs = callsign; cs.trim(); cs.toUpperCase();
   if (cs.isEmpty()) return out;
   String url = "https://api.adsb.lol/v2/callsign/" + cs;
-  String body = httpGet(url);
+  // adsb.lol asks clients to identify themselves; a fake browser UA gets a 403.
+  String body = httpGet(url, "AuraMatrix/1.0 (LED matrix flight display)");
   if (body.isEmpty()) return out;
 
   JsonDocument doc;

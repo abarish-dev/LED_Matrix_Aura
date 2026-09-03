@@ -214,3 +214,8 @@ Four new features (verified via testing_agent iteration_24, all pass):
 
 ## Updates (2026-06 — round 33)
 - [x] **Reverted `WiFi.setSleep(false)` — it CRASHED the board.** Boot log showed `wifi:Error! Should enable WiFi modem sleep when both WiFi and Bluetooth are enabled!!!!!!` → abort()+reboot loop the moment it joined Wi-Fi. ESP-IDF *requires* Wi-Fi modem sleep ENABLED under BLE+Wi-Fi coexistence. Removed the line; kept the BLE conn-param relaxation (ServerCallbacks) + httpGet retries as the safe coexistence mitigations. Boot now healthy: `internal free=310328`, BLE advertising, panel init done.
+
+## Updates (2026-06 — round 34)
+- [x] **Coexistence FIXED (confirmed on hardware):** after reverting setSleep(false) + keeping BLE conn-param relaxation + retries, the serial log shows all fetches landing on `try=1` with no `-1`/`-11`/DNS-fail — Wi-Fi is stable with BLE connected.
+- [x] **ESPN 403 FIXED (confirmed):** browser User-Agent → `site.api.espn.com` now returns `code=200` (len=49152). Weather also 200.
+- [x] **adsb.lol 403 FIXED:** the browser UA that fixed ESPN *broke* adsb.lol (it wants a custom identifying UA, not a fake browser). Per-endpoint UA now: adsb.lol flight calls (`nearestFlight`, `flightByCallsign`) pass `"AuraMatrix/1.0 (LED matrix flight display)"`; ESPN + open-meteo use the default browser UA; weather.gov its own. Needs one more re-flash to confirm flights=200.
