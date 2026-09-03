@@ -24,10 +24,7 @@ inline void begin() {
   };
   HUB75_I2S_CFG cfg(PANEL_RES_X, PANEL_RES_Y, PANEL_CHAIN, pins);
   cfg.clkphase = false;
-  // Single-buffered: the double buffer consumed ~half the RAM and starved the
-  // TLS/HTTPS stack (fetches failed with only ~36KB heap). Freeing it lets the
-  // matrix pull flights/scores/weather over HTTPS.
-  cfg.double_buff = false;
+  cfg.double_buff = true;   // smooth, flicker-free rendering (buffers live in PSRAM)
   // Many P2.5 128x64 panels use FM6126A driver ICs, which need a special
   // init or a block of LEDs stays stuck lit. If your panel goes blank/worse
   // after flashing, delete this one line to fall back to the generic driver.

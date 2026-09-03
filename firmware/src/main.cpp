@@ -12,6 +12,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <time.h>
+#include <esp_heap_caps.h>
 #include "Config.h"
 #include "DisplayManager.h"
 #include "BleProvisioning.h"
@@ -63,12 +64,6 @@ static uint16_t holidayAccent() {
   return 0;
 }
 
-// Set once Wi-Fi joins; used to release BLE after a short setup window so the
-// TLS/HTTPS stack has enough internal RAM to fetch data.
-static uint32_t gWifiJoinedAt = 0;
-static bool     gBleReleased  = false;
-static const uint32_t BLE_SETUP_WINDOW_MS = 90000;  // keep BLE ~90s after join
-
 static bool wifiConnect() {
   if (gSettings.wifiSsid.isEmpty()) return false;
   Display::message("WI-FI", gSettings.wifiSsid.c_str());
@@ -83,7 +78,6 @@ static bool wifiConnect() {
     #define TZ_INFO "EST5EDT,M3.2.0,M11.1.0"
     #endif
     configTzTime(TZ_INFO, "pool.ntp.org", "time.nist.gov");
-    gWifiJoinedAt = millis();
     return true;
   }
   return false;
@@ -258,6 +252,12 @@ static uint8_t buildSeq(uint8_t* seq) {
 
 void setup() {
   Serial.begin(115200);
+  // Route large heap allocations (e.g. the ~16KB mbedTLS/HTTPS buffers) into
+  // PSRAM so internal RAM stays free. This lets Wi-Fi + BLE + HTTPS all run at
+  // once, so Bluetooth can stay connected while the matrix fetches data.
+  heap_caps_malloc_extmem_enable(4096);
+  Serial.printf("[MEM] internal heap=%u  psram free=%u\n",
+                ESP.getFreeHeap(), ESP.getFreePsram());
   Display::begin();
   Display::setBrightness(gSettings.brightness);
   Display::boot();
@@ -308,19 +308,6 @@ void loop() {
   }
 
   uint32_t now = millis();
-
-  // Once Wi-Fi is up and the setup window has passed, release the BLE stack to
-  // free ~30-40KB of internal RAM so HTTPS fetches (TLS) have room to run.
-  if (!gBleReleased && gWifiJoinedAt && WiFi.status() == WL_CONNECTED &&
-      now - gWifiJoinedAt >= BLE_SETUP_WINDOW_MS) {
-    gBleReleased = true;
-    Serial.printf("[BLE] releasing to free RAM (heap before=%u)\n", ESP.getFreeHeap());
-    NimBLEDevice::deinit(true);
-    delay(50);
-    Serial.printf("[BLE] released (heap after=%u)\n", ESP.getFreeHeap());
-    refreshData();          // immediate fetch now that there's headroom
-    lastFetch = millis();
-  }
 
   if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
 
