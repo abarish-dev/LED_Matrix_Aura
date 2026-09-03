@@ -43,35 +43,46 @@ static String airlineFromCallsign(const String& cs) {
 }
 
 static String httpGet(const String& url, const char* userAgent = nullptr) {
-  WiFiClientSecure client; client.setInsecure();
-  HTTPClient http;
-  http.setTimeout(8000);
-  Serial.printf("[GET] intFree=%u  heap=%u  psram=%u  %s\n",
-                heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-                ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
-  {
-    int s = url.indexOf("://"); s = (s < 0) ? 0 : s + 3;
-    int e = url.indexOf('/', s); if (e < 0) e = url.length();
-    String host = url.substring(s, e);
+  // Parse host once for the DNS diagnostic + pre-resolve (helps DNS reliability
+  // when the Wi-Fi radio is sharing airtime with an active BLE connection).
+  int s = url.indexOf("://"); s = (s < 0) ? 0 : s + 3;
+  int e = url.indexOf('/', s); if (e < 0) e = url.length();
+  String host = url.substring(s, e);
+
+  const char* ua = userAgent ? userAgent :
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+  // Retry transient transport failures (BLE<->Wi-Fi coexistence causes sporadic
+  // DNS misses, TLS EOF/-29312, connect -1 and read-timeout -11). Up to 3 tries.
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    Serial.printf("[GET] try=%d intFree=%u  heap=%u  psram=%u  %s\n",
+                  attempt, heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                  ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
     IPAddress rip;
     int ok = WiFi.hostByName(host.c_str(), rip);
     Serial.printf("[DNS] %s -> ok=%d ip=%s  dnsServer=%s\n",
                   host.c_str(), ok, rip.toString().c_str(), WiFi.dnsIP().toString().c_str());
+    if (!ok) { delay(500); continue; }   // DNS starved -> back off and retry
+
+    WiFiClientSecure client; client.setInsecure();
+    HTTPClient http;
+    http.setConnectTimeout(12000);
+    http.setTimeout(12000);
+    if (!http.begin(client, url)) { Serial.println("[GET] begin() failed"); delay(400); continue; }
+    http.addHeader("User-Agent", ua);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Accept-Language", "en-US,en;q=0.9");
+    int code = http.GET();
+    String body = (code == 200) ? http.getString() : "";
+    Serial.printf("[GET] code=%d (%s)  len=%d  heapAfter=%u\n",
+                  code, http.errorToString(code).c_str(), (int)body.length(), ESP.getFreeHeap());
+    http.end();
+    if (code == 200) return body;
+    if (code > 0) return "";     // server answered (e.g. 403/404) -> no point retrying
+    delay(400);                  // transport error -> retry
   }
-  if (!http.begin(client, url)) { Serial.println("[GET] begin() failed"); return ""; }
-  // Send a browser-like User-Agent by default. ESPN's CDN (Akamai) returns
-  // HTTP 403 to requests with no/none-browser UA; weather.gov passes its own
-  // required UA explicitly. adsb.lol / open-meteo accept anything.
-  http.addHeader("User-Agent", userAgent ? userAgent :
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-  http.addHeader("Accept", "application/json");
-  int code = http.GET();
-  String body = (code == 200) ? http.getString() : "";
-  Serial.printf("[GET] code=%d (%s)  len=%d  heapAfter=%u\n",
-                code, http.errorToString(code).c_str(), (int)body.length(), ESP.getFreeHeap());
-  http.end();
-  return body;
+  return "";
 }
 
 // ---- Flights: nearest aircraft from adsb.lol -------------------------------

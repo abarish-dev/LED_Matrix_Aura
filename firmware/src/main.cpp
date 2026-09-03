@@ -72,6 +72,9 @@ static bool wifiConnect() {
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
   if (WiFi.status() == WL_CONNECTED) {
+    // Keep the Wi-Fi radio always-on (disable modem sleep). With BLE connected,
+    // the shared 2.4GHz radio otherwise starves Wi-Fi -> DNS/TLS failures.
+    WiFi.setSleep(false);
     // NTP for the Night Dimming schedule. Change TZ_INFO to your timezone
     // (POSIX TZ string). Default is US Eastern.
     #ifndef TZ_INFO

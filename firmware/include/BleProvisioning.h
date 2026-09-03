@@ -136,12 +136,23 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
   }
 };
 
+// Relax the BLE link the moment the phone connects: a long connection interval
+// + slave latency means the radio spends almost no time on BLE when idle,
+// leaving airtime for Wi-Fi/TLS. The link stays "connected" (standing by) so
+// the app can push config any time. Units: interval x1.25ms, timeout x10ms.
+class ServerCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer* s, ble_gap_conn_desc* desc) override {
+    s->updateConnParams(desc->conn_handle, 24, 60, 4, 600); // 30-75ms, latency 4, 6s timeout
+  }
+};
+
 inline void begin() {
   NimBLEDevice::init(AURA_DEVICE_NAME);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
   NimBLEDevice::setMTU(512);   // allow larger single writes (config payloads)
 
   NimBLEServer* server = NimBLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
   NimBLEService* svc   = server->createService(AURA_SERVICE_UUID);
 
   sChar = svc->createCharacteristic(

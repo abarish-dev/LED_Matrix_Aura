@@ -203,3 +203,11 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - [x] **Firmware memory fix CONFIRMED working on hardware.** Serial now shows `intFree=162432` (was ~36KB) and `psram=2079683`. Weather (api.weather.gov) and Flights (api.adsb.lol) both return `code=200`. BLE + Wi-Fi connect fine (BLE now started first in setup()).
 - [x] **USB serial fix**: added `-DARDUINO_USB_MODE=1` + `-DARDUINO_USB_CDC_ON_BOOT=1` to `platformio.ini` build_flags so `Serial.print()` shows over the MatrixPortal S3 native USB (was blank monitor). Added `[BLE]`/`[DISP]` boot markers.
 - [x] **ESPN sports 403 fix**: `site.api.espn.com` (Akamai) was returning HTTP 403 to the firmware's non-browser requests. `DataServices.h::httpGet()` now sends a browser-like `User-Agent` (Chrome desktop UA) by default; weather.gov still passes its own required UA explicitly; adsb.lol/open-meteo unaffected. Needs re-flash. Pending user confirmation that ESPN now returns 200.
+
+## Updates (2026-06 — round 32)
+- [x] **Diagnosed the real blocker: BLE↔Wi-Fi radio coexistence.** With ~175KB free heap, fetches still failed intermittently: DNS Failed (UDP!), SSL EOF -29312, connect -1, read timeout -11 — random across weather/adsb. Single shared 2.4GHz radio; active BLE connection starves Wi-Fi. (ESPN still 403 = separate server block.)
+- [x] **Coexistence fixes (firmware, needs re-flash):**
+  1. `main.cpp wifiConnect()`: `WiFi.setSleep(false)` — Wi-Fi radio always-on (no modem sleep) so BLE can't park it.
+  2. `BleProvisioning.h`: added `ServerCallbacks::onConnect` → `updateConnParams(handle, 24, 60, 4, 600)` (30–75ms interval, slave latency 4, 6s timeout) so the connected BLE link is low-duty-cycle and leaves airtime for Wi-Fi.
+  3. `DataServices.h httpGet()`: retry loop (3×) on transport errors (DNS miss / TLS EOF / -1 / -11) with re-resolve + 400–500ms backoff; connect+read timeouts bumped to 12s; added `Accept-Language` header.
+- [ ] **ESPN 403 still open** (site.api.espn.com Akamai bot block). Browser UA + Accept-Language added; if it persists on next flash, next step = proxy ESPN through the FastAPI backend (server-side fetch returns clean JSON to the ESP32).
