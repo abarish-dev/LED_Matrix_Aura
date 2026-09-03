@@ -72,6 +72,16 @@ static bool wifiConnect() {
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
   if (WiFi.status() == WL_CONNECTED) {
+    // Some routers' built-in DNS resolver is flaky or rate-limits a chatty
+    // client, which shows up as 100% "DNS Failed" (name lookups time out even
+    // though the link is up). Pin public DNS (Google + Cloudflare) while
+    // keeping the DHCP-assigned IP/gateway/subnet, so resolution stays reliable
+    // regardless of the router. Must be called AFTER DHCP has assigned an IP.
+    WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(),
+                IPAddress(8, 8, 8, 8), IPAddress(1, 1, 1, 1));
+    Serial.printf("[NET] ip=%s gw=%s dns1=%s dns2=%s\n",
+                  WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
+                  WiFi.dnsIP(0).toString().c_str(), WiFi.dnsIP(1).toString().c_str());
     // NOTE: do NOT disable Wi-Fi modem sleep here — ESP-IDF *requires* modem
     // sleep to stay enabled when Wi-Fi and BLE run together (disabling it
     // aborts with "Should enable WiFi modem sleep..."). Coexistence airtime is
