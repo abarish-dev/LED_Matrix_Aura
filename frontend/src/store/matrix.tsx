@@ -129,6 +129,9 @@ type MatrixContextValue = {
   wifiIp: string | null;
   lastSsid: string;
 
+  // Firmware version reported by the matrix over BLE (null until received).
+  firmwareVersion: string | null;
+
   // mutations
   updateFlights: (patch: Partial<Settings["flights"]>) => void;
   updateSports: (patch: Partial<Settings["sports"]>) => void;
@@ -248,6 +251,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   const [wifiStatus, setWifiStatus] = useState<WifiStatus>("idle");
   const [wifiIp, setWifiIp] = useState<string | null>(null);
   const [lastSsid, setLastSsid] = useState("");
+  const [firmwareVersion, setFirmwareVersion] = useState<string | null>(null);
 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -540,8 +544,10 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     );
     setDeviceName(info.name);
     setRssi(info.rssi);
-    // Listen for async status pushes (Wi-Fi join result).
+    setFirmwareVersion(null);
+    // Listen for async status pushes (Wi-Fi join result + firmware version).
     monitorMatrix((obj) => {
+      if (typeof obj?.fw === "string") setFirmwareVersion(obj.fw);
       if (obj?.wifiStatus === "connected") {
         setWifiStatus("joined");
         setWifiIp(obj.ip ?? null);
@@ -549,6 +555,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         setWifiStatus("failed");
       }
     });
+    // Ask the matrix which firmware it's running (it notifies {"fw":...} back).
+    writeLive({ command: "version" }).catch(() => {});
     // Auto-push the full config (as per-section commands) so a freshly
     // connected matrix is in sync.
     pushAllSections(buildFullPayload(settingsRef.current)).catch(() => {});
@@ -561,6 +569,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     setDeviceName(null);
     setRssi(null);
     setWifiStatus("idle");
+    setFirmwareVersion(null);
   }, []);
 
   const syncAll = useCallback(async () => {
@@ -605,6 +614,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     wifiStatus,
     wifiIp,
     lastSsid,
+    firmwareVersion,
     updateFlights,
     updateSports,
     updateWeather,

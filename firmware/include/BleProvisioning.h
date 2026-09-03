@@ -113,6 +113,14 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
         gFlashTest = true;
       } else if (command == "weather_test") {
         gWeatherTest = true;
+      } else if (command == "version") {
+        // App is asking which firmware is flashed -> notify it back.
+        JsonDocument v;
+        v["fw"] = AURA_FW_VERSION;
+        std::string vs;
+        serializeJson(v, vs);
+        c->setValue(vs);
+        c->notify();
       }
       return;
     }
@@ -159,7 +167,7 @@ inline void begin() {
       AURA_CHAR_UUID,
       NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
   sChar->setCallbacks(new CharCallbacks());
-  sChar->setValue("{\"ready\":true}");
+  sChar->setValue("{\"ready\":true,\"fw\":\"" AURA_FW_VERSION "\"}");
 
   svc->start();
 
@@ -174,6 +182,7 @@ inline void notifyWifi(bool ok, const String& ip) {
   if (!sChar) return;
   JsonDocument doc;
   doc["wifiStatus"] = ok ? "connected" : "failed";
+  doc["fw"] = AURA_FW_VERSION;
   if (ok) doc["ip"] = ip;
   std::string out;
   serializeJson(doc, out);

@@ -80,6 +80,7 @@ export default function DeviceScreen() {
     lastSsid,
     sendWifi,
     settings,
+    firmwareVersion,
     updateBrightness,
     updateNightMode,
     updateWeekend,
@@ -93,6 +94,8 @@ export default function DeviceScreen() {
   const [showPass, setShowPass] = useState(false);
   const [sending, setSending] = useState(false);
   const [bright, setBright] = useState(settings.brightness);
+  const [aboutTaps, setAboutTaps] = useState(0);
+  const [showAbout, setShowAbout] = useState(false);
 
   useEffect(() => {
     if (lastSsid) setSsid(lastSsid);
@@ -447,10 +450,52 @@ export default function DeviceScreen() {
           </View>
         </Card>
 
-        <Text style={styles.footer}>
-          Aura provisions your matrix over Bluetooth. Once it joins Wi-Fi, the
-          display pulls live flights, scores and weather on its own.
-        </Text>
+        <Pressable
+          onPress={() => {
+            const n = aboutTaps + 1;
+            setAboutTaps(n);
+            if (n >= 7 && !showAbout) {
+              setShowAbout(true);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+          }}
+        >
+          <Text style={styles.footer}>
+            Aura provisions your matrix over Bluetooth. Once it joins Wi-Fi, the
+            display pulls live flights, scores and weather on its own.
+          </Text>
+        </Pressable>
+
+        {showAbout && (
+          <Card style={styles.aboutCard}>
+            <View style={styles.aboutHeader}>
+              <Ionicons name="hardware-chip" size={16} color={colors.brand} />
+              <Text style={styles.aboutTitle}>Device Info</Text>
+            </View>
+            <View style={styles.aboutRow}>
+              <Text style={styles.aboutKey}>Firmware</Text>
+              <Text style={styles.aboutVal}>
+                {firmwareVersion
+                  ? `v${firmwareVersion}`
+                  : connected
+                    ? "requesting…"
+                    : "connect to read"}
+              </Text>
+            </View>
+            <View style={styles.aboutRow}>
+              <Text style={styles.aboutKey}>Device</Text>
+              <Text style={styles.aboutVal}>{deviceName ?? "—"}</Text>
+            </View>
+            <View style={styles.aboutRow}>
+              <Text style={styles.aboutKey}>Wi-Fi IP</Text>
+              <Text style={styles.aboutVal}>{wifiIp ?? "—"}</Text>
+            </View>
+            <View style={styles.aboutRow}>
+              <Text style={styles.aboutKey}>Signal</Text>
+              <Text style={styles.aboutVal}>{rssi != null ? `${rssi} dBm` : "—"}</Text>
+            </View>
+          </Card>
+        )}
       </View>
     </KeyboardAwareScrollView>
   );
@@ -669,5 +714,34 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: spacing.xl,
     textAlign: "center",
+  },
+  aboutCard: { marginTop: spacing.md },
+  aboutHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  aboutTitle: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.sm,
+    color: colors.onSurface,
+    letterSpacing: 0.3,
+  },
+  aboutRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  aboutKey: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+  },
+  aboutVal: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.sm,
+    color: colors.onSurface,
   },
 });

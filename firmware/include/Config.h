@@ -19,6 +19,11 @@
 #define AURA_SERVICE_UUID  "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define AURA_CHAR_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
+// Firmware version, reported to the app over BLE (hidden "About" reveal in the
+// Device tab). Bump this on every firmware change so field troubleshooting can
+// confirm which build is actually flashed.
+#define AURA_FW_VERSION    "1.1.0"
+
 // ---- Persisted settings ----------------------------------------------------
 static const uint8_t MAX_TEAMS = 16;
 
