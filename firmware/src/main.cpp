@@ -259,10 +259,15 @@ void setup() {
   Serial.printf("[MEM] internal free=%u  total heap=%u  psram free=%u\n",
                 heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                 ESP.getFreeHeap(), ESP.getFreePsram());
+  // Start BLE advertising FIRST so the phone app can always connect, even if
+  // the HUB75 panel init below ever stalls. Provisioning must never depend on
+  // the display coming up cleanly.
+  AuraBLE::begin();
+  Serial.println("[BLE] advertising as AuraMatrix");
   Display::begin();
   Display::setBrightness(gSettings.brightness);
   Display::boot();
-  AuraBLE::begin();
+  Serial.println("[DISP] panel init done");
   delay(1500);
 }
 
