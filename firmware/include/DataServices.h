@@ -49,9 +49,19 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
   int e = url.indexOf('/', s); if (e < 0) e = url.length();
   String host = url.substring(s, e);
 
-  const char* ua = userAgent ? userAgent :
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  // User-Agent selection:
+  //   nullptr    -> browser UA (ESPN/open-meteo want a browser-like UA)
+  //   "" (empty) -> send NO User-Agent header (adsb.lol 403s browser UAs but
+  //                 is perfectly happy with none — its originally-working state)
+  //   any string -> use it verbatim (weather.gov requires its own UA)
+  const char* ua = userAgent;
+  bool sendUa = true;
+  if (userAgent == nullptr) {
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  } else if (userAgent[0] == '\0') {
+    sendUa = false;
+  }
 
   // Retry transient transport failures (BLE<->Wi-Fi coexistence causes sporadic
   // DNS misses, TLS EOF/-29312, connect -1 and read-timeout -11). Up to 3 tries.
@@ -70,7 +80,7 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
     http.setConnectTimeout(12000);
     http.setTimeout(12000);
     if (!http.begin(client, url)) { Serial.println("[GET] begin() failed"); delay(400); continue; }
-    http.addHeader("User-Agent", ua);
+    if (sendUa) http.addHeader("User-Agent", ua);
     http.addHeader("Accept", "application/json");
     http.addHeader("Accept-Language", "en-US,en;q=0.9");
     int code = http.GET();
@@ -91,8 +101,9 @@ inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
   int nm = max(1, (int)(radiusMi / 1.15078));  // miles -> nautical miles
   String url = "https://api.adsb.lol/v2/lat/" + String(lat, 4) +
                "/lon/" + String(lon, 4) + "/dist/" + String(nm);
-  // adsb.lol asks clients to identify themselves; a fake browser UA gets a 403.
-  String body = httpGet(url, "AuraMatrix/1.0 (LED matrix flight display)");
+  // adsb.lol 403s browser-looking UAs; it originally worked with none, so send
+  // no User-Agent header at all.
+  String body = httpGet(url, "");
   if (body.isEmpty()) return out;
 
   JsonDocument doc;
@@ -128,8 +139,8 @@ inline FlightInfo flightByCallsign(const String& callsign, double homeLat, doubl
   String cs = callsign; cs.trim(); cs.toUpperCase();
   if (cs.isEmpty()) return out;
   String url = "https://api.adsb.lol/v2/callsign/" + cs;
-  // adsb.lol asks clients to identify themselves; a fake browser UA gets a 403.
-  String body = httpGet(url, "AuraMatrix/1.0 (LED matrix flight display)");
+  // adsb.lol 403s browser-looking UAs; send no User-Agent header at all.
+  String body = httpGet(url, "");
   if (body.isEmpty()) return out;
 
   JsonDocument doc;

@@ -223,3 +223,7 @@ Four new features (verified via testing_agent iteration_24, all pass):
 ## Updates (2026-06 — round 35)
 - **Coexistence conclusion:** BLE-connected Wi-Fi starvation on the single-radio S3 has no clean fix — `esp_coex_preference_set(PREFER_WIFI)` is deprecated in IDF 4.4.3; disabling modem sleep crashes; BLE conn-param relaxation + 3× retries help but don't eliminate `-11`/`-5`/`-29312`/DNS-fail while a phone is actively connected. Mitigation in place: per-source caching means each card populates within a minute or two and persists. KEY: fetches are reliable when NO phone is actively connected (matrix runs standalone by design; BLE only needed for occasional sync).
 - Next test for user: flash round-34 (adsb UA fix) and (a) watch the DISPLAY for ~2 min for rotating flight/score/weather cards, and (b) test with the app disconnected to confirm rock-solid fetches.
+
+## Updates (2026-06 — round 36)
+- [x] **adsb.lol 403 — robust fix.** adsb.lol rejects browser-looking UAs but originally worked with NONE. Reworked `httpGet` UA handling: nullptr→browser UA (ESPN/open-meteo), ""(empty)→send NO User-Agent header (adsb.lol), other→verbatim (weather.gov). Both flight calls (`nearestFlight`, `flightByCallsign`) now pass "". Restores adsb.lol's original 200 behavior. Needs re-flash.
+- Note: latest hardware log (phone CONNECTED) showed ESPN + weather clean `200` on try=1 with no coexistence errors — coexistence is acceptable in practice; adsb was the only 403 (browser UA), now fixed.
