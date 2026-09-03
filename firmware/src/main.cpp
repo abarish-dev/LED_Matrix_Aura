@@ -72,9 +72,11 @@ static bool wifiConnect() {
   uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
   if (WiFi.status() == WL_CONNECTED) {
-    // Keep the Wi-Fi radio always-on (disable modem sleep). With BLE connected,
-    // the shared 2.4GHz radio otherwise starves Wi-Fi -> DNS/TLS failures.
-    WiFi.setSleep(false);
+    // NOTE: do NOT disable Wi-Fi modem sleep here — ESP-IDF *requires* modem
+    // sleep to stay enabled when Wi-Fi and BLE run together (disabling it
+    // aborts with "Should enable WiFi modem sleep..."). Coexistence airtime is
+    // instead reclaimed by relaxing the BLE connection params (see
+    // BleProvisioning ServerCallbacks) + retrying transient fetch failures.
     // NTP for the Night Dimming schedule. Change TZ_INFO to your timezone
     // (POSIX TZ string). Default is US Eastern.
     #ifndef TZ_INFO

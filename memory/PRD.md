@@ -211,3 +211,6 @@ Four new features (verified via testing_agent iteration_24, all pass):
   2. `BleProvisioning.h`: added `ServerCallbacks::onConnect` → `updateConnParams(handle, 24, 60, 4, 600)` (30–75ms interval, slave latency 4, 6s timeout) so the connected BLE link is low-duty-cycle and leaves airtime for Wi-Fi.
   3. `DataServices.h httpGet()`: retry loop (3×) on transport errors (DNS miss / TLS EOF / -1 / -11) with re-resolve + 400–500ms backoff; connect+read timeouts bumped to 12s; added `Accept-Language` header.
 - [ ] **ESPN 403 still open** (site.api.espn.com Akamai bot block). Browser UA + Accept-Language added; if it persists on next flash, next step = proxy ESPN through the FastAPI backend (server-side fetch returns clean JSON to the ESP32).
+
+## Updates (2026-06 — round 33)
+- [x] **Reverted `WiFi.setSleep(false)` — it CRASHED the board.** Boot log showed `wifi:Error! Should enable WiFi modem sleep when both WiFi and Bluetooth are enabled!!!!!!` → abort()+reboot loop the moment it joined Wi-Fi. ESP-IDF *requires* Wi-Fi modem sleep ENABLED under BLE+Wi-Fi coexistence. Removed the line; kept the BLE conn-param relaxation (ServerCallbacks) + httpGet retries as the safe coexistence mitigations. Boot now healthy: `internal free=310328`, BLE advertising, panel init done.
