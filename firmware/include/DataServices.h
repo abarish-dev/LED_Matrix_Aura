@@ -46,6 +46,15 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
   HTTPClient http;
   http.setTimeout(8000);
   Serial.printf("[GET] heap=%u  psram=%u  %s\n", ESP.getFreeHeap(), ESP.getFreePsram(), url.c_str());
+  {
+    int s = url.indexOf("://"); s = (s < 0) ? 0 : s + 3;
+    int e = url.indexOf('/', s); if (e < 0) e = url.length();
+    String host = url.substring(s, e);
+    IPAddress rip;
+    int ok = WiFi.hostByName(host.c_str(), rip);
+    Serial.printf("[DNS] %s -> ok=%d ip=%s  dnsServer=%s\n",
+                  host.c_str(), ok, rip.toString().c_str(), WiFi.dnsIP().toString().c_str());
+  }
   if (!http.begin(client, url)) { Serial.println("[GET] begin() failed"); return ""; }
   if (userAgent) http.addHeader("User-Agent", userAgent);
   http.addHeader("Accept", "application/json");
