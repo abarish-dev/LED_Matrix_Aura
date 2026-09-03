@@ -450,7 +450,7 @@ export default function SummaryScreen() {
         </>
       ) : (
         <Text style={styles.glanceHint}>
-          {scoreLoading ? "Loading score…" : "No recent game · needs phone app"}
+          {scoreLoading ? "Loading score…" : "No recent or upcoming game"}
         </Text>
       )}
     </GlanceCard>
@@ -501,7 +501,7 @@ export default function SummaryScreen() {
           </View>
         )}
         <Text style={styles.miniStatus} numberOfLines={1}>
-          {score2 ? (s2live ? "🔴 LIVE" : score2.detail) : "needs phone app"}
+          {score2 ? (s2live ? "🔴 LIVE" : score2.detail) : "No game"}
         </Text>
       </Pressable>
     )}

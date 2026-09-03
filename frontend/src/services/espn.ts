@@ -56,15 +56,33 @@ function shortTime(iso: string): string {
   }
 }
 
+/** YYYYMMDD in local time. */
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
 /** Latest / upcoming game score for a specific team. */
 export async function getTeamScore(
   league: League,
   abbr: string,
 ): Promise<ScoreLine | null> {
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${PATHS[league]}/scoreboard`;
-  const data = await fetchJson(url);
+  // The bare /scoreboard only returns *today's* games, so on an off-day a team
+  // shows nothing. Query a window (yesterday-2 .. +8 days) and pick the game
+  // closest to now (recent final, live game, or next matchup).
+  const now = Date.now();
+  const start = ymd(new Date(now - 2 * 864e5));
+  const end = ymd(new Date(now + 8 * 864e5));
+  const base = `https://site.api.espn.com/apis/site/v2/sports/${PATHS[league]}/scoreboard`;
+  let data = await fetchJson(`${base}?dates=${start}-${end}&limit=100`);
+  // Fall back to the plain scoreboard if the range query returns nothing.
+  if (!data?.events?.length) data = await fetchJson(base);
   if (!data?.events) return null;
 
+  type Cand = { ev: any; comp: any; mine: any; opp: any; state: ScoreLine["state"]; dateMs: number };
+  const cands: Cand[] = [];
   for (const ev of data.events) {
     const comp = ev?.competitions?.[0];
     if (!comp) continue;
@@ -77,26 +95,36 @@ export async function getTeamScore(
     const st = comp?.status?.type ?? {};
     const state: ScoreLine["state"] =
       st.state === "in" ? "in" : st.state === "post" ? "post" : "pre";
-    const detail =
-      state === "pre" ? shortTime(ev.date) : st.shortDetail ?? st.description ?? "";
-    const recs = Array.isArray(mine.records) ? mine.records : [];
-    const record =
-      recs.find((r: any) => r?.type === "total" || r?.name === "overall")?.summary ??
-      recs[0]?.summary ??
-      null;
-    return {
-      state,
-      detail,
-      teamScore: mine.score != null ? parseInt(mine.score, 10) : null,
-      oppScore: opp?.score != null ? parseInt(opp.score, 10) : null,
-      oppAbbr: (opp?.team?.abbreviation ?? "").toUpperCase(),
-      atHome: mine.homeAway === "home",
-      startTime: ev.date ?? null,
-      record,
-      teamId: mine.team?.id != null ? String(mine.team.id) : null,
-    };
+    const dateMs = ev.date ? new Date(ev.date).getTime() : now;
+    cands.push({ ev, comp, mine, opp, state, dateMs });
   }
-  return null;
+  if (cands.length === 0) return null;
+
+  // Prefer a live game; otherwise the game whose start time is closest to now.
+  const live = cands.find((c) => c.state === "in");
+  const chosen =
+    live ?? cands.reduce((a, b) => (Math.abs(a.dateMs - now) <= Math.abs(b.dateMs - now) ? a : b));
+
+  const { ev, comp, mine, opp, state } = chosen;
+  const st = comp?.status?.type ?? {};
+  const detail =
+    state === "pre" ? shortTime(ev.date) : st.shortDetail ?? st.description ?? "";
+  const recs = Array.isArray(mine.records) ? mine.records : [];
+  const record =
+    recs.find((r: any) => r?.type === "total" || r?.name === "overall")?.summary ??
+    recs[0]?.summary ??
+    null;
+  return {
+    state,
+    detail,
+    teamScore: mine.score != null ? parseInt(mine.score, 10) : null,
+    oppScore: opp?.score != null ? parseInt(opp.score, 10) : null,
+    oppAbbr: (opp?.team?.abbreviation ?? "").toUpperCase(),
+    atHome: mine.homeAway === "home",
+    startTime: ev.date ?? null,
+    record,
+    teamId: mine.team?.id != null ? String(mine.team.id) : null,
+  };
 }
 
 /** Current win/loss streak for a team, e.g. "W3" / "L2", or null. */
