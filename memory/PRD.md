@@ -254,3 +254,8 @@ Four new features (verified via testing_agent iteration_24, all pass):
 
 ## Updates (2026-06 — round 44)
 - [x] **HARDWARE WORKING END-TO-END.** User's photo shows the matrix rendering the clock (4:00), weather sun icon, and 82°F pulled live over HTTPS. Data pipeline fully fixed. Weather + clock cards confirmed on panel. Flights (adsb) may still be rate-limited/no-planes; sports depends on game availability. App version 1.0.9, firmware AURA_FW_VERSION 1.1.0.
+
+## Updates (2026-06 — round 45)
+- [x] **ROOT CAUSE: panel went blank after app connected.** App default `weather.showClock=false` while firmware boots clock-on; connecting auto-pushes all settings (pushAllSections) → sets showClock=false on matrix → with no weather alert (len=233 empty), no flights (403), no game → 0 cards → panel cleared. Brightness 100%/night off confirmed not the cause.
+- [x] **Fix 1 (firmware, needs re-flash):** `buildSeq()` now adds the clock as a FALLBACK (`showClock || n==0`) so the panel is NEVER blank; `refreshData()` fetches temp when clock enabled OR nothing else has data (fallback clock shows temp too). Added `[CARD]` (n + per-source ok) and `[BRIGHT]` diagnostic serial logs.
+- [x] **Fix 2 (app):** default `weather.showClock` true (matches firmware; good first-run baseline). Toggle exists on Weather tab. Lint clean. (Existing installs have showClock=false persisted, but the firmware fallback covers them; or toggle Show Clock on + SYNC.)

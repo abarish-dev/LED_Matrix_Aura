@@ -92,7 +92,7 @@ export const DEFAULT_SETTINGS: Settings = {
   weather: {
     enabled: true,
     severity: "severe",
-    showClock: false,
+    showClock: true,
     showHiLo: false,
     showFeels: false,
     showWxIcon: false,

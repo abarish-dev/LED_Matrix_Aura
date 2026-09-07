@@ -136,6 +136,14 @@ static void applyBrightnessForNow() {
       }
     }
   }
+  static int lastLogged = -999;
+  if (b != lastLogged) {
+    struct tm tt; bool haveT = getLocalTime(&tt, 10);
+    Serial.printf("[BRIGHT] base=%d night.en=%d sunset=%d applied=%d  time=%02d:%02d\n",
+                  gSettings.brightness, gSettings.night.enabled, gSettings.night.useSunset,
+                  b, haveT ? tt.tm_hour : -1, haveT ? tt.tm_min : -1);
+    lastLogged = b;
+  }
   Display::setBrightness(b);
 }
 
@@ -194,7 +202,12 @@ static void refreshData() {
     gWeather = Data::activeAlert(gSettings.flights.lat, gSettings.flights.lon,
                                  gSettings.weather.severity);
 
-  if (gSettings.weather.showClock) {
+  // Fetch temp when the clock is enabled, OR when nothing else has data (so the
+  // fallback clock still shows the temperature instead of an empty panel).
+  bool anyOther = (gSettings.weather.enabled && gWeather.ok) ||
+                  (gSettings.flights.enabled && gFlight.ok) ||
+                  (gSettings.sports.enabled && gScore.ok);
+  if (gSettings.weather.showClock || !anyOther) {
     int feels = -999, code = -1, isDay = 1;
     gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon,
                                 gSettings.weather.showFeels ? &feels : nullptr,
@@ -261,7 +274,8 @@ static uint8_t buildSeq(uint8_t* seq) {
   if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
   if (gSettings.flights.enabled && gFlight.ok)   seq[n++] = 0;
   if (gSettings.sports.enabled  && gScore.ok)    seq[n++] = 1;
-  if (gSettings.weather.showClock)               seq[n++] = 2;
+  // Clock shows when enabled OR as a fallback so the panel is never blank.
+  if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
   return n;
 }
 
@@ -337,6 +351,15 @@ void loop() {
 
   uint8_t seq[4];
   uint8_t n = buildSeq(seq);
+  static int lastN = -1;
+  if ((int)n != lastN) {
+    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d clock=%d\n", n,
+                  (gSettings.weather.enabled && gWeather.ok),
+                  (gSettings.flights.enabled && gFlight.ok),
+                  (gSettings.sports.enabled && gScore.ok),
+                  gSettings.weather.showClock);
+    lastN = n;
+  }
 
   if (n == 0) {
     if (now - lastCard >= CARD_MS) { lastCard = now; Display::message("AURA", "waiting for data"); }
