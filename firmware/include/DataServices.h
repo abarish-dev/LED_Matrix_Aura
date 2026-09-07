@@ -451,4 +451,60 @@ inline void sunTimes(double lat, double lon, int& sunriseMin, int& sunsetMin) {
   sunsetMin  = parseMin(ss);
 }
 
+// ---- Backend proxy: one small call returns flight + alert + temp -----------
+// The server does the heavy multi-source fetching (reliable network). Sports
+// stays a direct ESPN call from the matrix (ESPN blocks datacenter IPs).
+struct FeedResult {
+  bool ok = false;
+  FlightInfo flight;
+  WeatherInfo alert;
+  bool haveTemp = false;
+  int tempF = -999, feelsF = -999, wxCode = -1, isDay = 1, hiF = -999, loF = -999;
+};
+
+inline FeedResult matrixFeed(const String& base, double lat, double lon,
+                             int radiusMi, const String& severity,
+                             bool wantFlights, bool wantWeather) {
+  FeedResult r;
+  if (base.isEmpty()) return r;
+  String url = base;
+  if (url.endsWith("/")) url.remove(url.length() - 1);
+  url += "/api/matrix/feed?lat=" + String(lat, 4) + "&lon=" + String(lon, 4) +
+         "&radius=" + String(radiusMi) + "&severity=" + severity +
+         "&flights=" + (wantFlights ? "1" : "0") + "&sports=0&weather=" +
+         (wantWeather ? "1" : "0");
+  String body = httpGet(url, "AuraMatrix/1.0");
+  if (body.isEmpty()) return r;
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return r;
+  r.ok = true;
+
+  JsonObjectConst f = doc["flight"];
+  if (f["ok"].as<int>() == 1) {
+    r.flight.ok = true;
+    r.flight.callsign = String((const char*)(f["cs"] | ""));
+    r.flight.airline = airlineFromCallsign(r.flight.callsign);
+    r.flight.distanceMi = f["dist"] | 0;
+    r.flight.altFt = f["alt"] | 0;
+    r.flight.headingDeg = f["hdg"] | -1;
+  }
+  JsonObjectConst a = doc["alert"];
+  if (a["ok"].as<int>() == 1) {
+    r.alert.ok = true;
+    r.alert.headline = String((const char*)(a["head"] | ""));
+    r.alert.severity = String((const char*)(a["sev"] | ""));
+  }
+  JsonObjectConst t = doc["temp"];
+  if (t["ok"].as<int>() == 1) {
+    r.haveTemp = true;
+    r.tempF = t["f"] | -999;
+    r.feelsF = t["feels"] | -999;
+    r.wxCode = t["code"] | -1;
+    r.isDay = t["day"] | 1;
+    r.hiF = t["hi"] | -999;
+    r.loF = t["lo"] | -999;
+  }
+  return r;
+}
+
 } // namespace Data

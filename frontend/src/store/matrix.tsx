@@ -236,7 +236,11 @@ async function pushAllSections(full: ReturnType<typeof buildFullPayload>) {
   await writeLive({ command: "weather", ...full.weather }); await gap();
   await writeLive({ command: "night", ...full.nightMode }); await gap();
   await writeLive({ command: "brightness", value: full.brightness }); await gap();
-  await writeLive({ command: "holiday", enabled: full.holidayThemes });
+  await writeLive({ command: "holiday", enabled: full.holidayThemes }); await gap();
+  // Tell the matrix our backend base URL so it can fetch flight/weather/temp via
+  // the reliable server proxy (one small call) instead of many direct HTTPS hits.
+  const server = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
+  await writeLive({ command: "server", url: server });
 }
 
 export function MatrixProvider({ children }: { children: React.ReactNode }) {

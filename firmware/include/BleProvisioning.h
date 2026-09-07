@@ -113,6 +113,9 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
         gFlashTest = true;
       } else if (command == "weather_test") {
         gWeatherTest = true;
+      } else if (command == "server") {
+        if (doc["url"].is<const char*>()) gSettings.serverUrl = (const char*)doc["url"];
+        gConfigChanged = true;
       } else if (command == "version") {
         // App is asking which firmware is flashed -> notify it back.
         JsonDocument v;

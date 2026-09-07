@@ -81,6 +81,7 @@ struct AuraSettings {
   bool       holidayThemes = true;
   String     wifiSsid = "";
   String     wifiPass = "";
+  String     serverUrl = "";    // optional backend proxy base (from the app)
 };
 
 // Single global instance, defined in main.cpp.

@@ -154,8 +154,35 @@ static uint16_t severityColor(const String& s) {
 static void refreshData() {
   if (WiFi.status() != WL_CONNECTED) return;
 
+  bool trackMode = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
+  bool proxyFlight = false, proxyWeather = false, proxyTemp = false;
+
+  // If the app gave us a backend URL, fetch flight + weather alert + temp in a
+  // SINGLE reliable call (server does the heavy lifting). Sports still comes
+  // direct from ESPN below (ESPN blocks datacenter IPs). Tracked-flight mode
+  // needs the direct callsign endpoint, so the proxy only does nearest-flight.
+  if (!gSettings.serverUrl.isEmpty()) {
+    Data::FeedResult fr = Data::matrixFeed(
+        gSettings.serverUrl, gSettings.flights.lat, gSettings.flights.lon,
+        gSettings.flights.radiusMi, gSettings.weather.severity,
+        gSettings.flights.enabled && !trackMode, gSettings.weather.enabled);
+    if (fr.ok) {
+      if (gSettings.flights.enabled && !trackMode) { gFlight = fr.flight; gEtaMin = -1; proxyFlight = true; }
+      if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
+      if (fr.haveTemp) {
+        gTempF  = fr.tempF;
+        gFeelsF = gSettings.weather.showFeels ? fr.feelsF : -999;
+        gWxCode = gSettings.weather.showWxIcon ? fr.wxCode : -1;
+        gIsDay  = fr.isDay;
+        gHiF    = gSettings.weather.showHiLo ? fr.hiF : -999;
+        gLoF    = gSettings.weather.showHiLo ? fr.loF : -999;
+        proxyTemp = true;
+      }
+    }
+  }
+
   if (gSettings.flights.enabled) {
-    if (gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty()) {
+    if (trackMode) {
       gFlight = Data::flightByCallsign(gSettings.flights.flightIdent,
                                        gSettings.flights.lat, gSettings.flights.lon);
       // Landing / descent detection for the tracked flight.
@@ -176,7 +203,7 @@ static void refreshData() {
         }
         prevAlt = gFlight.altFt;
       }
-    } else {
+    } else if (!proxyFlight) {
       gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
                                     gSettings.flights.radiusMi);
     }
@@ -195,7 +222,7 @@ static void refreshData() {
     ti++;
   }
 
-  if (gSettings.weather.enabled)
+  if (gSettings.weather.enabled && !proxyWeather)
     gWeather = Data::activeAlert(gSettings.flights.lat, gSettings.flights.lon,
                                  gSettings.weather.severity);
 
@@ -204,7 +231,7 @@ static void refreshData() {
   bool anyOther = (gSettings.weather.enabled && gWeather.ok) ||
                   (gSettings.flights.enabled && gFlight.ok) ||
                   (gSettings.sports.enabled && gScore.ok);
-  if (gSettings.weather.showClock || !anyOther) {
+  if ((gSettings.weather.showClock || !anyOther) && !proxyTemp) {
     int feels = -999, code = -1, isDay = 1;
     gTempF = Data::currentTempF(gSettings.flights.lat, gSettings.flights.lon,
                                 gSettings.weather.showFeels ? &feels : nullptr,
