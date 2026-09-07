@@ -74,6 +74,7 @@ _ESPN_PATHS = {"NFL": "football/nfl", "NBA": "basketball/nba",
 _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 _feed_cache: dict = {}          # key -> (expires_ts, payload)
+_last_temp: dict = {}           # "lat,lon" -> last good temp (survive rate-limits)
 _FEED_TTL = 20                  # seconds
 
 
@@ -195,29 +196,32 @@ async def _fetch_alert(cx, lat, lon, min_sev):
 
 async def _fetch_temp(cx, lat, lon):
     out = {"ok": 0}
+    key = f"{lat:.4f},{lon:.4f}"
     try:
         url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat:.4f}&longitude={lon:.4f}"
                f"&current=temperature_2m,apparent_temperature,weather_code,is_day"
                f"&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit"
                f"&timezone=auto&forecast_days=1")
-        r = await cx.get(url)
+        r = await cx.get(url, headers={"User-Agent": "AuraMatrix/1.0 (LED matrix)"})
         if r.status_code != 200:
-            return out
+            return _last_temp.get(key, out)   # graceful: reuse last good on 429/etc
         j = r.json() or {}
         cur = j.get("current") or {}
         daily = j.get("daily") or {}
         hi = (daily.get("temperature_2m_max") or [None])[0]
         lo = (daily.get("temperature_2m_min") or [None])[0]
-        return {"ok": 1,
-                "f": int(round(cur.get("temperature_2m"))) if cur.get("temperature_2m") is not None else -999,
-                "feels": int(round(cur.get("apparent_temperature"))) if cur.get("apparent_temperature") is not None else -999,
-                "code": int(cur.get("weather_code")) if cur.get("weather_code") is not None else -1,
-                "day": int(cur.get("is_day", 1)),
-                "hi": int(round(hi)) if hi is not None else -999,
-                "lo": int(round(lo)) if lo is not None else -999}
+        res = {"ok": 1,
+               "f": int(round(cur.get("temperature_2m"))) if cur.get("temperature_2m") is not None else -999,
+               "feels": int(round(cur.get("apparent_temperature"))) if cur.get("apparent_temperature") is not None else -999,
+               "code": int(cur.get("weather_code")) if cur.get("weather_code") is not None else -1,
+               "day": int(cur.get("is_day", 1)),
+               "hi": int(round(hi)) if hi is not None else -999,
+               "lo": int(round(lo)) if lo is not None else -999}
+        _last_temp[key] = res
+        return res
     except Exception as e:
         logger.info(f"[feed] temp error: {e}")
-        return out
+        return _last_temp.get(key, out)
 
 
 @api_router.get("/matrix/feed")

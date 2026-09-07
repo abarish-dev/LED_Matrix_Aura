@@ -274,3 +274,9 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - [x] **Firmware:** Config.h AuraSettings.serverUrl; BLE `server` command stores it; DataServices `matrixFeed()` (FeedResult) parses the proxy JSON; refreshData() now: if serverUrl set -> ONE proxy call fills nearest-flight + alert + temp (skips those direct fetches), sports still direct ESPN, tracked-flight still direct callsign. Falls back to all-direct if serverUrl empty (no regression).
 - [x] **App:** pushAllSections now sends `{command:"server", url: EXPO_PUBLIC_BACKEND_URL}` on connect/sync. Lint clean.
 - Net effect: matrix makes 2 reliable fetches (proxy + ESPN) instead of 4+ flaky ones; eliminates adsb rate-limits + most DNS churn. NEEDS firmware re-flash + app rebuild; backend already reachable at preview URL.
+
+## Updates (2026-06 — round 49)
+- [x] **Backend proxy tested: 11/11 pytest pass** (tests/test_matrix_feed.py, iteration_26.json): correct 200 shapes, 422 on missing lat/lon, toggles, 20s cache, regressions OK. ESPN score.ok=0 = expected datacenter block.
+- [x] **Hardening:** added custom User-Agent + last-good temp cache to `_fetch_temp` (survive open-meteo 429 bursts on the shared datacenter egress IP).
+- Confirmed live: proxy flight ok=1 reliably (adsb works server-side); temp intermittently 429 on datacenter -> FIRMWARE FALLS BACK to direct open-meteo (residential IP, not throttled) via the `!proxyTemp` gate, so temp always shows. ESPN sports always direct from matrix.
+- STATUS: proxy production-ready. End-to-end matrix integration pending user hardware (flash firmware + rebuild app so app pushes server URL on connect).

@@ -1,0 +1,46 @@
+{
+  "summary": "Backend-only testing of the new GET /api/matrix/feed proxy endpoint plus regression on existing endpoints (/api/, /api/status POST+GET, /health). 11/11 pytest cases pass against the external preview URL. All required behaviors are correct: well-formed JSON with keys flight/score/alert/temp each carrying an integer ok field, 422 on missing lat/lon, defaults applied when only lat/lon provided, toggles honored (flights=0/weather=0 -> those fetchers are skipped and return {ok:0}), sports request well-formed even when ESPN 403s (score.ok=0, expected), first call responds well under 15s and the 20s in-memory cache returns byte-identical payload on repeat within TTL, and response is compact (<4KB). One environmental observation worth flagging (not a code bug): open-meteo intermittently rate-limits (HTTP 429) the shared K8s datacenter egress IP, in which case temp.ok correctly falls back to 0. During the final run the rate limit had cleared and temp.ok=1 with a plausible f value. The /health route intentionally has no /api prefix so it is only reachable in-cluster on port 8001 (external ingress only proxies /api/*); test was adjusted to hit http://localhost:8001/health accordingly, matching the design.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/matrix/feed (temp subfetch)",
+        "issue": "open-meteo returns HTTP 429 Too Many Requests to the shared datacenter egress IP under bursty load, so temp.ok flips to 0 for periods of ~1-3 minutes at a time. Code handles it gracefully (returns {ok:0}) so the ESP32 is not broken, but the LED matrix will occasionally be missing temperature. Consider: (1) increasing _FEED_TTL to reduce upstream rate, (2) adding a small in-process 'last-good temp' fallback cache (e.g. keep last successful temp for up to 10 minutes and serve it with ok:1 on 429), or (3) sending a distinctive User-Agent like 'AuraMatrix/1.0 (contact@auramatrix.app)' (currently _fetch_temp is the only fetcher that sends no custom UA, so it uses httpx default which may be more aggressively throttled)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_matrix_feed.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional hardening: add a 'last-good' fallback cache for _fetch_temp so a transient open-meteo 429 does not blank the temperature field on the LED matrix.",
+    "Optional: set a descriptive User-Agent header in _fetch_temp (parity with _fetch_flight, _fetch_alert, _fetch_score) so open-meteo's per-UA throttling is friendlier.",
+    "No functional bug fixes required — endpoint behaves per spec (well-formed JSON, correct 422 validation, correct toggle semantics, working 20s cache, sub-second response times)."
+  ],
+  "critical_code_review_comments": [
+    "server.py is starting to mix generic scaffolding (StatusCheck CRUD) with the very domain-specific matrix feed proxy (~190 lines of helpers). Once it grows past ~700 lines, split the feed proxy into /app/backend/routers/matrix_feed.py with the four _fetch_* helpers moved into /app/backend/services/feed_sources.py.",
+    "_feed_cache is an unbounded dict — the key includes lat/lon truncated to 4 decimals plus team/severity/toggles so realistic cardinality is bounded, but consider using functools.lru_cache-style eviction or a size cap for defensiveness.",
+    "logger is used inside the async _fetch_* helpers but is defined AFTER app.include_router (line 275) — it happens to work because the helpers are only invoked at request time, but it's fragile. Move logging.basicConfig / logger = logging.getLogger(__name__) to the top of the file, right after imports.",
+    "datetime.utcnow() (line 34, StatusCheck default) is deprecated in Python 3.12+ — use datetime.now(timezone.utc) for future-proofing.",
+    "httpx.AsyncClient is created per request; for a 30s-polling ESP32 that's fine, but at scale a module-level client with a shared connection pool would reduce TCP/TLS handshakes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_matrix_feed.py (new — 11 pytest cases; test_health uses localhost:8001 because /health has no /api prefix by design)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "N/A (backend-only per request)"
+  },
+  "seed_data_creation": "None. The status_check POST test creates one row prefixed with client_name='TEST_matrix_feed_regression'; it is left in place (no destructive DELETE endpoint exists).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "External base URL EXPO_PUBLIC_BACKEND_URL=https://smart-matrix-hub.preview.emergentagent.com routes only /api/* to the FastAPI backend on port 8001; the un-prefixed /health probe must be tested on http://localhost:8001/health. The feed endpoint's ESPN fetch will return score.ok=0 from this environment because ESPN blocks datacenter IPs — this is EXPECTED and must not be flagged. open-meteo (temp) may 429 for 1-3 minutes at a time on the shared egress IP; when it does, temp.ok=0 is the correct graceful-degradation behavior of the code. If temp tests fail, wait ~30-60s and re-run before reporting.",
+  "rca_of_issue": "N/A — no functional defect. Observation: temp.ok occasionally 0 due to open-meteo per-IP rate limiting (HTTP 429). Reproduction: burst >~5-10 identical /api/matrix/feed calls within a minute from the preview environment. Backend logs show 'HTTP/1.1 429 Too Many Requests' from api.open-meteo.com. Mitigation options listed in action_items."
+}
