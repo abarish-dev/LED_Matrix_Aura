@@ -10,6 +10,10 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <time.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <esp_heap_caps.h>
 #include "Config.h"
 
@@ -121,6 +125,51 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
   return "";
 }
 
+// Like httpGet but parses the response directly from the socket stream using an
+// ArduinoJson filter, so a huge payload (e.g. a multi-day ESPN scoreboard, which
+// can be hundreds of KB) never has to be buffered whole in RAM. Returns true on
+// a parsed 200. Shares the DNS cache + retry behavior.
+static bool httpGetToDoc(const String& url, JsonDocument& doc, JsonDocument& filter,
+                         const char* userAgent = nullptr) {
+  int s = url.indexOf("://"); s = (s < 0) ? 0 : s + 3;
+  int e = url.indexOf('/', s); if (e < 0) e = url.length();
+  String host = url.substring(s, e);
+
+  const char* ua = userAgent ? userAgent :
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    IPAddress rip;
+    if (!resolveCached(host, rip)) { delay(500); continue; }
+
+    WiFiClientSecure client; client.setInsecure();
+    HTTPClient http;
+    http.setConnectTimeout(12000);
+    http.setTimeout(12000);
+    if (!http.begin(client, url)) { delay(400); continue; }
+    http.addHeader("User-Agent", ua);
+    http.addHeader("Accept", "application/json");
+    int code = http.GET();
+    Serial.printf("[GETDOC] try=%d code=%d intFree=%u  %s\n",
+                  attempt, code, heap_caps_get_free_size(MALLOC_CAP_INTERNAL), url.c_str());
+    if (code == 200) {
+      DeserializationError err =
+          deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+      http.end();
+      if (!err) return true;
+      Serial.printf("[GETDOC] parse err: %s\n", err.c_str());
+      return false;
+    }
+    http.end();
+    if (code > 0) return false;   // server answered non-200 -> don't retry
+    dnsForget(host);
+    delay(400);
+  }
+  return false;
+}
+
+
 // ---- Flights: nearest aircraft from adsb.lol -------------------------------
 inline FlightInfo nearestFlight(double lat, double lon, int radiusMi) {
   FlightInfo out;
@@ -223,23 +272,66 @@ inline ScoreInfo teamGame(const String& league, const String& abbr, bool wantStr
   else if (league == "NHL") path = "hockey/nhl";
   else return out;
 
+  // The bare /scoreboard only returns TODAY's games, so on a team's off-day it
+  // finds nothing. Query a date window (yesterday .. +3 days) and pick the game
+  // closest to now (recent final / live / next matchup), like the phone app.
   String url = "https://site.api.espn.com/apis/site/v2/sports/" + path + "/scoreboard";
-  String body = httpGet(url);
-  if (body.isEmpty()) return out;
+  struct tm t;
+  time_t nowT = 0;
+  if (getLocalTime(&t, 50)) {
+    nowT = mktime(&t);
+    char sd[9], ed[9];
+    time_t startT = nowT - 1 * 86400, endT = nowT + 3 * 86400;
+    struct tm st, et;
+    localtime_r(&startT, &st); localtime_r(&endT, &et);
+    strftime(sd, sizeof(sd), "%Y%m%d", &st);
+    strftime(ed, sizeof(ed), "%Y%m%d", &et);
+    url += "?dates=" + String(sd) + "-" + String(ed) + "&limit=100";
+  }
+
+  // Filter: keep only the few fields we need so even a big multi-day payload
+  // parses in a tiny amount of RAM (streamed, never buffered whole).
+  JsonDocument filter;
+  JsonObject fe = filter["events"][0].to<JsonObject>();
+  fe["date"] = true;
+  JsonObject fc = fe["competitions"][0].to<JsonObject>();
+  fc["status"]["type"]["shortDetail"] = true;
+  JsonObject fcomp = fc["competitors"][0].to<JsonObject>();
+  fcomp["homeAway"] = true;
+  fcomp["score"] = true;
+  fcomp["team"]["abbreviation"] = true;
+  fcomp["team"]["id"] = true;
 
   JsonDocument doc;
-  if (deserializeJson(doc, body)) return out;
+  if (!httpGetToDoc(url, doc, filter)) return out;
 
+  // Among this team's games in the window, choose the one closest to now.
   String myId;
+  long bestDelta = LONG_MAX;
   for (JsonObjectConst ev : doc["events"].as<JsonArrayConst>()) {
     JsonObjectConst comp = ev["competitions"][0];
     JsonArrayConst cs = comp["competitors"];
     bool match = false;
-    for (JsonObjectConst c : cs) {
-      String a = String((const char*)(c["team"]["abbreviation"] | ""));
-      if (a.equalsIgnoreCase(abbr)) { match = true; break; }
-    }
+    for (JsonObjectConst c : cs)
+      if (String((const char*)(c["team"]["abbreviation"] | "")).equalsIgnoreCase(abbr)) { match = true; break; }
     if (!match) continue;
+
+    // Parse the event's ISO date (e.g. 2026-09-03T23:05Z) to seconds for ranking.
+    long delta = 0;
+    const char* ds = ev["date"] | "";
+    if (nowT && ds && strlen(ds) >= 16) {
+      struct tm et = {};
+      if (sscanf(ds, "%d-%d-%dT%d:%d", &et.tm_year, &et.tm_mon, &et.tm_mday,
+                 &et.tm_hour, &et.tm_min) == 5) {
+        et.tm_year -= 1900; et.tm_mon -= 1;
+        time_t evT = mktime(&et);            // approx (UTC vs local); fine for ranking
+        delta = labs((long)(evT - nowT));
+      }
+    }
+    if (delta > bestDelta) continue;         // keep the closest-to-now match
+    bestDelta = delta;
+
+    out.home = ""; out.away = ""; out.hs = 0; out.as = 0;
     for (JsonObjectConst c : cs) {
       String ha = String((const char*)(c["homeAway"] | ""));
       String a  = String((const char*)(c["team"]["abbreviation"] | ""));
@@ -250,8 +342,9 @@ inline ScoreInfo teamGame(const String& league, const String& abbr, bool wantStr
     }
     out.status = String((const char*)(comp["status"]["type"]["shortDetail"] | ""));
     out.ok = true;
-    break;
   }
+  Serial.printf("[SPORTS] %s:%s -> ok=%d %s %d-%d %s\n", league.c_str(), abbr.c_str(),
+                out.ok, out.home.c_str(), out.hs, out.as, out.status.c_str());
   if (out.ok && wantStreak) out.streak = teamStreak(path, myId);
   return out;
 }
