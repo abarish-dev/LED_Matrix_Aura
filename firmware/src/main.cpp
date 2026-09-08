@@ -13,6 +13,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPUpdate.h>
+#include <Preferences.h>
 #include <time.h>
 #include <esp_heap_caps.h>
 #include "Config.h"
@@ -42,6 +43,8 @@ static Data::FlightInfo  gFlight;
 static Data::FlightInfo  gFlightList[5];   // nearby planes (closest first)
 static uint8_t           gFlightCount = 0;
 static uint8_t           gFlightShown = 0; // rotating index for on-wall cycling
+static int                gTrackedIdx = -1; // index of the tracked flight within gFlightList, -1 = not currently overhead
+static String              gTrackedCallsign;  // callsign of the tracked flight when a landing alert fires
 static Data::ScoreInfo   gScore;
 static Data::ScoreInfo   gScoreList[8];   // one game per in-season followed team
 static String            gScoreKeysArr[8];
@@ -161,6 +164,134 @@ static uint16_t severityColor(const String& s) {
   return Display::rgb(14, 165, 233);
 }
 
+// ---- Persisted settings (NVS) ----------------------------------------------
+// Wi-Fi creds + full config are cached to flash so the matrix survives a
+// power cut without needing the phone app to re-pair over BLE. Writes are
+// debounced (gSettingsDirty) so rapid slider drags don't hammer the flash.
+static Preferences gPrefs;
+static bool         gSettingsDirty = false;
+static uint32_t     gLastSaveMs = 0;
+
+static void saveSettings() {
+  JsonDocument doc;
+  doc["ssid"] = gSettings.wifiSsid;
+  doc["pass"] = gSettings.wifiPass;
+  doc["server"] = gSettings.serverUrl;
+  JsonObject f = doc["flights"].to<JsonObject>();
+  f["enabled"] = gSettings.flights.enabled;
+  f["lat"] = gSettings.flights.lat;
+  f["lon"] = gSettings.flights.lon;
+  f["radiusMi"] = gSettings.flights.radiusMi;
+  f["trackFlight"] = gSettings.flights.trackFlight;
+  f["flightIdent"] = gSettings.flights.flightIdent;
+  f["landingAlert"] = gSettings.flights.landingAlert;
+  JsonObject sp = doc["sports"].to<JsonObject>();
+  sp["enabled"] = gSettings.sports.enabled;
+  sp["ufc"] = gSettings.sports.ufc;
+  sp["showStreak"] = gSettings.sports.showStreak;
+  JsonArray teams = sp["teams"].to<JsonArray>();
+  for (uint8_t i = 0; i < gSettings.sports.count; i++) teams.add(gSettings.sports.teams[i]);
+  JsonArray rivals = sp["rivals"].to<JsonArray>();
+  for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++) rivals.add(gSettings.sports.rivals[i]);
+  JsonObject w = doc["weather"].to<JsonObject>();
+  w["enabled"] = gSettings.weather.enabled;
+  w["severity"] = gSettings.weather.severity;
+  w["showClock"] = gSettings.weather.showClock;
+  w["showHiLo"] = gSettings.weather.showHiLo;
+  w["showFeels"] = gSettings.weather.showFeels;
+  w["showWxIcon"] = gSettings.weather.showWxIcon;
+  JsonObject n = doc["night"].to<JsonObject>();
+  n["enabled"] = gSettings.night.enabled;
+  n["useSunset"] = gSettings.night.useSunset;
+  n["startHour"] = gSettings.night.startHour;
+  n["endHour"] = gSettings.night.endHour;
+  n["dimLevel"] = gSettings.night.dimLevel;
+  JsonObject nw = n["weekend"].to<JsonObject>();
+  nw["enabled"] = gSettings.night.weekend.enabled;
+  nw["startHour"] = gSettings.night.weekend.startHour;
+  nw["endHour"] = gSettings.night.weekend.endHour;
+  nw["dimLevel"] = gSettings.night.weekend.dimLevel;
+  doc["brightness"] = gSettings.brightness;
+  doc["holidayThemes"] = gSettings.holidayThemes;
+
+  String out;
+  serializeJson(doc, out);
+  gPrefs.begin("aura", false);
+  gPrefs.putString("cfg", out);
+  gPrefs.end();
+  Serial.printf("[NVS] saved config (%d bytes)\n", (int)out.length());
+}
+
+// Returns true if a saved config was found and applied to gSettings.
+static bool loadSettings() {
+  gPrefs.begin("aura", true);
+  String raw = gPrefs.getString("cfg", "");
+  gPrefs.end();
+  if (raw.isEmpty()) return false;
+  JsonDocument doc;
+  if (deserializeJson(doc, raw)) return false;
+
+  gSettings.wifiSsid  = String((const char*)(doc["ssid"] | ""));
+  gSettings.wifiPass  = String((const char*)(doc["pass"] | ""));
+  gSettings.serverUrl = String((const char*)(doc["server"] | ""));
+
+  JsonObjectConst f = doc["flights"];
+  if (!f.isNull()) {
+    gSettings.flights.enabled      = f["enabled"] | true;
+    gSettings.flights.lat          = f["lat"] | 0.0;
+    gSettings.flights.lon          = f["lon"] | 0.0;
+    gSettings.flights.radiusMi     = f["radiusMi"] | 25;
+    gSettings.flights.trackFlight  = f["trackFlight"] | false;
+    gSettings.flights.flightIdent  = String((const char*)(f["flightIdent"] | ""));
+    gSettings.flights.landingAlert = f["landingAlert"] | true;
+  }
+  JsonObjectConst sp = doc["sports"];
+  if (!sp.isNull()) {
+    gSettings.sports.enabled    = sp["enabled"] | true;
+    gSettings.sports.ufc        = sp["ufc"] | false;
+    gSettings.sports.showStreak = sp["showStreak"] | false;
+    uint8_t n = 0;
+    for (JsonVariantConst v : sp["teams"].as<JsonArrayConst>()) {
+      if (n >= MAX_TEAMS) break;
+      gSettings.sports.teams[n++] = String((const char*)v);
+    }
+    gSettings.sports.count = n;
+    n = 0;
+    for (JsonVariantConst v : sp["rivals"].as<JsonArrayConst>()) {
+      if (n >= MAX_TEAMS) break;
+      gSettings.sports.rivals[n++] = String((const char*)v);
+    }
+    gSettings.sports.rivalCount = n;
+  }
+  JsonObjectConst w = doc["weather"];
+  if (!w.isNull()) {
+    gSettings.weather.enabled   = w["enabled"] | true;
+    gSettings.weather.severity  = String((const char*)(w["severity"] | "severe"));
+    gSettings.weather.showClock = w["showClock"] | false;
+    gSettings.weather.showHiLo  = w["showHiLo"] | false;
+    gSettings.weather.showFeels = w["showFeels"] | false;
+    gSettings.weather.showWxIcon= w["showWxIcon"] | false;
+  }
+  JsonObjectConst n = doc["night"];
+  if (!n.isNull()) {
+    gSettings.night.enabled   = n["enabled"] | false;
+    gSettings.night.useSunset = n["useSunset"] | false;
+    gSettings.night.startHour = n["startHour"] | 22;
+    gSettings.night.endHour   = n["endHour"] | 7;
+    gSettings.night.dimLevel  = n["dimLevel"] | 20;
+    JsonObjectConst nw = n["weekend"];
+    if (!nw.isNull()) {
+      gSettings.night.weekend.enabled   = nw["enabled"] | false;
+      gSettings.night.weekend.startHour = nw["startHour"] | 23;
+      gSettings.night.weekend.endHour   = nw["endHour"] | 8;
+      gSettings.night.weekend.dimLevel  = nw["dimLevel"] | 20;
+    }
+  }
+  gSettings.brightness   = doc["brightness"] | 80;
+  gSettings.holidayThemes= doc["holidayThemes"] | true;
+  return true;
+}
+
 // ---- Over-the-air firmware update -----------------------------------------
 // Checks the backend for a newer firmware .bin and, if found, downloads + flashes
 // it over Wi-Fi (no USB cable). Called once after Wi-Fi connects and on demand
@@ -196,7 +327,7 @@ static void otaCheck() {
 static void refreshData() {
   if (WiFi.status() != WL_CONNECTED) return;
 
-  bool trackMode = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
+  bool wantTrack = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
   bool proxyFlight = false, proxyWeather = false, proxyTemp = false, proxyScore = false;
 
   // Send ALL followed teams (comma-joined) so the server returns a game for
@@ -211,17 +342,20 @@ static void refreshData() {
 
   // If the app gave us a backend URL, fetch flight + sports + weather + temp in
   // ONE reliable call (server does the heavy lifting, bypasses ESPN's datacenter
-  // block via site.web.api.espn.com, and dodges adsb rate-limits). Tracked-flight
-  // mode still needs the direct callsign endpoint, so the proxy does nearest only.
+  // block via site.web.api.espn.com, and dodges adsb rate-limits). Always fetch
+  // the full nearby-planes list (even in "track a flight" mode) so a tracked
+  // flight is found by matching its callsign in that list, instead of a
+  // separate direct call that goes blank whenever adsb.lol 403s/has no data
+  // for that one flight (e.g. cancelled).
   if (!gSettings.serverUrl.isEmpty()) {
     Data::FeedResult fr = Data::matrixFeed(
         gSettings.serverUrl, gSettings.flights.lat, gSettings.flights.lon,
         gSettings.flights.radiusMi, gSettings.weather.severity,
-        gSettings.flights.enabled && !trackMode, gSettings.weather.enabled,
+        gSettings.flights.enabled, gSettings.weather.enabled,
         entry, gSettings.sports.enabled && entry.length() > 0);
     if (fr.ok) {
-      if (gSettings.flights.enabled && !trackMode) {
-        gFlight = fr.flight; gEtaMin = -1; proxyFlight = true;
+      if (gSettings.flights.enabled) {
+        gFlight = fr.flight; proxyFlight = true;
         gFlightCount = fr.planeCount;
         for (uint8_t i = 0; i < fr.planeCount; i++) gFlightList[i] = fr.planes[i];
         if (gFlightShown >= gFlightCount) gFlightShown = 0;
@@ -248,39 +382,48 @@ static void refreshData() {
     }
   }
 
-  if (gSettings.flights.enabled) {
-    if (trackMode) {
-      gFlight = Data::flightByCallsign(gSettings.flights.flightIdent,
-                                       gSettings.flights.lat, gSettings.flights.lon);
-      // Landing / descent detection for the tracked flight.
-      static int prevAlt = -1;
-      gEtaMin = -1;
-      if (gFlight.ok && gFlight.altFt > 0) {
-        if (prevAlt > 0 && prevAlt > gFlight.altFt) {
-          int perMin = (prevAlt - gFlight.altFt) * 2; // ~30s fetch -> per-minute
+  // No backend proxy configured -> fetch the nearby list directly.
+  if (gSettings.flights.enabled && !proxyFlight) {
+    gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
+                                  gSettings.flights.radiusMi);
+    gFlightCount = gFlight.ok ? 1 : 0;
+    if (gFlightCount) gFlightList[0] = gFlight;
+    gFlightShown = 0;
+  }
+
+  // If tracking a specific flight, find it inside the nearby list (rather than
+  // a separate direct lookup). When found it's highlighted in the normal
+  // cycle; when not (cancelled, landed, out of range) the overhead traffic
+  // still shows instead of leaving the whole flight card blank.
+  gTrackedIdx = -1;
+  static int prevTrackedAlt = -1;
+  if (wantTrack) {
+    String want = gSettings.flights.flightIdent; want.trim(); want.toUpperCase();
+    for (uint8_t i = 0; i < gFlightCount; i++) {
+      String cs = gFlightList[i].callsign; cs.trim(); cs.toUpperCase();
+      if (cs == want) { gTrackedIdx = i; break; }
+    }
+    gEtaMin = -1;
+    if (gTrackedIdx >= 0) {
+      int alt = gFlightList[gTrackedIdx].altFt;
+      if (alt > 0) {
+        if (prevTrackedAlt > 0 && prevTrackedAlt > alt) {
+          int perMin = (prevTrackedAlt - alt) * 2; // ~30s fetch -> per-minute
           if (perMin > 50) {
-            int eta = gFlight.altFt / perMin;
+            int eta = alt / perMin;
             gEtaMin = eta > 120 ? -1 : eta;
           }
         }
         if (gSettings.flights.landingAlert) {
-          if (gFlight.altFt < 1200) gLandingFlash = 2;              // very low / landing
-          else if (prevAlt > 0 && (prevAlt - gFlight.altFt) > 1500 &&
-                   gFlight.altFt < 12000) gLandingFlash = 1;        // descending
+          if (alt < 1200) { gLandingFlash = 2; gTrackedCallsign = gFlightList[gTrackedIdx].callsign; }          // very low / landing
+          else if (prevTrackedAlt > 0 && (prevTrackedAlt - alt) > 1500 &&
+                   alt < 12000) { gLandingFlash = 1; gTrackedCallsign = gFlightList[gTrackedIdx].callsign; }    // descending
         }
-        prevAlt = gFlight.altFt;
+        prevTrackedAlt = alt;
       }
-    } else if (!proxyFlight) {
-      gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
-                                    gSettings.flights.radiusMi);
+    } else {
+      prevTrackedAlt = -1; // reset so a stale altitude doesn't fake a landing later
     }
-  }
-
-  // Tracked / direct-fallback modes render a single plane (no cycling list).
-  if (!proxyFlight) {
-    gFlightCount = gFlight.ok ? 1 : 0;
-    if (gFlightCount) gFlightList[0] = gFlight;
-    gFlightShown = 0;
   }
 
   // Direct ESPN fetch only as a fallback (no server URL, or proxy had no
@@ -305,7 +448,7 @@ static void refreshData() {
   // Fetch temp when the clock is enabled, OR when nothing else has data (so the
   // fallback clock still shows the temperature instead of an empty panel).
   bool anyOther = (gSettings.weather.enabled && gWeather.ok) ||
-                  (gSettings.flights.enabled && gFlight.ok) ||
+                  (gSettings.flights.enabled && gFlightCount > 0) ||
                   (gSettings.sports.enabled && gScore.ok);
   if ((gSettings.weather.showClock || !anyOther) && !proxyTemp) {
     int feels = -999, code = -1, isDay = 1;
@@ -348,18 +491,24 @@ static void drawCard(uint8_t t) {
   }
   if (t == 0) {
     // Cycle through nearby planes: show the next one each time the flight card
-    // comes up (mirrors the app's Overhead card). Tracked/fallback = single.
+    // comes up (mirrors the app's Overhead card). If a specific flight is
+    // being tracked and it's currently among the nearby planes, highlight it
+    // (green border + label) instead of hiding the rest of the traffic.
     Data::FlightInfo* fp = &gFlight;
+    int shownIdx = -1;
     if (gFlightCount > 1) {
       gFlightShown = gFlightShown % gFlightCount;
+      shownIdx = gFlightShown;
       fp = &gFlightList[gFlightShown];
       gFlightShown++;
     } else if (gFlightCount == 1) {
-      fp = &gFlightList[0];
+      fp = &gFlightList[0]; shownIdx = 0;
     }
+    bool tracked = (gTrackedIdx >= 0 && shownIdx == gTrackedIdx);
+    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : accent;
     Display::flight(fp->callsign, fp->distanceMi, fp->airline,
-                    fp->altFt, fp->headingDeg, accent, gEtaMin,
-                    fp->origin, fp->dest);
+                    fp->altFt, fp->headingDeg, cardAccent, tracked ? gEtaMin : -1,
+                    fp->origin, fp->dest, tracked);
     // Overlay the airline logo if one has been added to Logos.h.
     String icao = fp->callsign.substring(0, 3);
     const LogoAsset* lg = airlineLogo(icao);
@@ -389,7 +538,7 @@ static void drawCard(uint8_t t) {
 static uint8_t buildSeq(uint8_t* seq) {
   uint8_t n = 0;
   if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
-  if (gSettings.flights.enabled && gFlight.ok)   seq[n++] = 0;
+  if (gSettings.flights.enabled && gFlightCount > 0) seq[n++] = 0;
   if (gSettings.sports.enabled  && gScoreCount > 0) seq[n++] = 1;
   // Clock shows when enabled OR as a fallback so the panel is never blank.
   if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
@@ -415,6 +564,21 @@ void setup() {
   Display::boot();
   Serial.println("[DISP] panel init done");
   delay(1500);
+
+  // Auto-reconnect using settings saved from the last successful session, so
+  // the matrix keeps working after a power cut without needing the phone app
+  // to re-pair over BLE and resend Wi-Fi credentials.
+  if (loadSettings()) {
+    Serial.println("[NVS] restored saved settings");
+    if (!gSettings.wifiSsid.isEmpty()) {
+      Display::message("AURA", "reconnecting...");
+      bool ok = wifiConnect();
+      AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
+      if (ok) { applyBrightnessForNow(); refreshData(); lastFetch = millis(); }
+    }
+  } else {
+    Serial.println("[NVS] no saved settings yet");
+  }
 }
 
 void loop() {
@@ -437,12 +601,12 @@ void loop() {
     int mode = gLandingFlash;
     gLandingFlash = 0;
     for (int i = 0; i < 3; i++) {
-      Display::landing(gFlight.callsign, mode == 2);
+      Display::landing(gTrackedCallsign, mode == 2);
       delay(500);
       Display::clear(); Display::flip();
       delay(250);
     }
-    Display::landing(gFlight.callsign, mode == 2);
+    Display::landing(gTrackedCallsign, mode == 2);
     delay(2500);
     lastCard = 0;
   }
@@ -451,6 +615,7 @@ void loop() {
   if (gConfigChanged) {
     gConfigChanged = false;
     applyBrightnessForNow();
+    gSettingsDirty = true;   // flush to flash (debounced below)
     lastCard = 0; // redraw on next tick
   }
 
@@ -460,9 +625,18 @@ void loop() {
     bool ok = wifiConnect();
     AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
     if (ok) { applyBrightnessForNow(); refreshData(); lastFetch = millis(); }
+    gSettingsDirty = true;
   }
 
   uint32_t now = millis();
+
+  // Flush settings to flash a few seconds after the last change, so quick
+  // successive edits (e.g. dragging a slider) don't hammer the flash.
+  if (gSettingsDirty && now - gLastSaveMs > 4000) {
+    gLastSaveMs = now;
+    gSettingsDirty = false;
+    saveSettings();
+  }
 
   // Auto OTA check once, ~15s after boot, when Wi-Fi + a server URL are ready.
   static bool otaBootChecked = false;
@@ -484,8 +658,8 @@ void loop() {
   if ((int)n != lastN) {
     Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d clock=%d\n", n,
                   (gSettings.weather.enabled && gWeather.ok),
-                  (gSettings.flights.enabled && gFlight.ok),
-                  (gSettings.sports.enabled && gScore.ok),
+                  (gSettings.flights.enabled && gFlightCount > 0),
+                  (gSettings.sports.enabled && gScoreCount > 0),
                   gSettings.weather.showClock);
     lastN = n;
   }

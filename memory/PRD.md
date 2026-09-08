@@ -389,3 +389,26 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 ### Action items for user
 1. REDEPLOY backend (Publish) -> fixes sports on the current firmware.
 2. git pull + reflash to v1.4.1 -> vertically-centered flight data.
+
+
+## Session Update — Tracked-flight blank card + NVS settings persistence (firmware v1.5.0)
+
+### ROOT CAUSE of "flights on app but not on display" (from user serial log)
+- User had "Track a specific flight" = `AA735` enabled, and that flight was cancelled that day. Old logic: `trackMode` fully bypassed the nearby-planes proxy fetch (`flights=0` sent to `/api/matrix/feed`) and instead made a DIRECT `adsb.lol/v2/callsign/AA735` call every refresh, which returned `403` (no data for a cancelled flight). Since track mode replaced the whole flight card with only that one flight, a missing tracked flight = permanently blank flight card, even though sports/weather/clock worked fine and the app's own "Overhead Now" list (independent, phone-side fetch) kept working.
+
+### Fix: tracked flight now highlights within the normal overhead cycle (DONE, needs reflash)
+- `main.cpp refreshData()`: removed the direct `flightByCallsign` call entirely. Now ALWAYS fetches the full nearby-planes list via the backend proxy (`flights=` param no longer gated by trackMode), then searches `gFlightList[]` for a callsign match against `flights.flightIdent`. Sets `gTrackedIdx` (-1 if not currently overhead).
+- Landing/descent ETA detection now keys off the matched list entry's altitude (`gTrackedCallsign` stores its callsign for the landing-alert card) instead of a separate fetch.
+- `buildSeq()`/`[CARD]` log now check `gFlightCount > 0` instead of `gFlight.ok` (more robust).
+- `drawCard(0)`: when the currently-shown cycling plane matches `gTrackedIdx`, the card gets a green border + a "* TRACKED *" label (`DisplayManager.h flight()` gained a `tracked` bool param); otherwise every nearby plane just cycles normally like before. If the tracked flight isn't overhead (cancelled/landed/out of radius), the card simply shows normal overhead traffic instead of going blank.
+- `DisplayManager.h flight()`: line array bumped 6→7 slots for the new label; line pitch auto-compacts (11px → 9px) only when all 7 optional lines are present, so text never overflows the 64px panel.
+
+### Fix: settings/Wi-Fi now survive a power cut (DONE, needs reflash)
+- Previously `gSettings` (Wi-Fi ssid/pass + all app config) lived only in RAM — unplugging the matrix wiped everything and it sat blank waiting for BLE re-pairing.
+- `main.cpp` now uses ESP32 `Preferences` (NVS) to serialize the full `gSettings` to flash under `aura/cfg` (JSON blob) whenever `gConfigChanged`/`gWifiCredsChanged` fires (debounced ~4s to limit flash wear).
+- `setup()` now calls `loadSettings()` before anything else; if a saved SSID exists it auto-calls `wifiConnect()` and does an initial `refreshData()` — no phone/BLE interaction required to resume normal operation after a power cycle. BLE still advertises as before so the app can reconnect/adjust settings any time.
+
+### Action items for user
+1. Reflash firmware to v1.5.0 (OTA "Install update over Wi-Fi" from Device tab, or USB/PlatformIO). No backend redeploy needed this time (only firmware files changed).
+2. Re-verify: (a) overhead flights show/cycle on the display again, (b) if "Track a specific flight" is set to a real active flight, it shows a green "TRACKED" card when overhead, (c) unplug/replug the matrix — it should reconnect to Wi-Fi and resume showing data on its own within ~15s, no app interaction needed.
+

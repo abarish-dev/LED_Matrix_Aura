@@ -96,16 +96,20 @@ inline void drawArrow(int cx, int cy, int deg, int len, uint16_t color) {
 }
 
 // A single flight "card": callsign, airline, route, distance, altitude + ETA.
-// Lines are vertically centered as a block on the 64px panel.
+// Lines are vertically centered as a block on the 64px panel. When `tracked`
+// is true (this plane matches the app's "Track a specific flight" setting),
+// a green "TRACKED" label is added and the border is expected to already be
+// tinted (see caller) so it stands out from the normal overhead cycle.
 inline void flight(const String& callsign, int distanceMi, const String& airline,
                    int altFt = 0, int headingDeg = -1,
                    uint16_t border = 0, int etaMin = -1,
-                   const String& origin = "", const String& dest = "") {
+                   const String& origin = "", const String& dest = "",
+                   bool tracked = false) {
   clear();
   dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border ? border : rgb(60, 40, 5));
-  const int LH = 11;             // line pitch
-  String texts[6]; uint16_t cols[6]; int nl = 0;
+  String texts[7]; uint16_t cols[7]; int nl = 0;
   char buf[28];
+  if (tracked) { texts[nl] = "* TRACKED *"; cols[nl++] = rgb(16, 185, 129); }
   texts[nl] = callsign;          cols[nl++] = rgb(245, 158, 11);
   texts[nl] = airline;           cols[nl++] = rgb(230, 230, 230);
   if (origin.length() && dest.length()) {
@@ -124,6 +128,9 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
     else              snprintf(buf, sizeof(buf), "ETA ~%d min", etaMin);
     texts[nl] = buf;             cols[nl++] = rgb(16, 185, 129);
   }
+  // Tighten line pitch when every optional field is present (tracked flight
+  // with route + altitude/heading + ETA = up to 7 lines) so it still fits.
+  const int LH = (nl >= 7) ? 9 : 11;
   int total = nl * LH - (LH - 8);        // block height (8px glyph, no trailing gap)
   int startY = (MATRIX_H - total) / 2;
   if (startY < 1) startY = 1;
