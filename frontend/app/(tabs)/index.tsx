@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useAudioPlayer } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,9 +15,11 @@ import { getTeamScore, getTeamStreak, type ScoreLine } from "@/src/services/espn
 import {
   activeAlerts,
   currentConditions,
+  rainArriving,
   severityColorHex,
   type Alert,
   type CurrentWx,
+  type RainSoon,
 } from "@/src/services/weather";
 import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
 import { GlanceCard } from "@/src/components/summary/GlanceCard";
@@ -55,7 +57,8 @@ export default function SummaryScreen() {
   const favTeam = teamByKey(settings.sports.favorites[0]) ?? settings.sports.teams[0] ?? null;
   const secondTeam = teamByKey(settings.sports.favorites[1]);
 
-  const [plane, setPlane] = useState<Plane | null>(null);
+  const [planes, setPlanes] = useState<Plane[]>([]);
+  const [planeIdx, setPlaneIdx] = useState(0);
   const [planeLoading, setPlaneLoading] = useState(false);
   const [score, setScore] = useState<ScoreLine | null>(null);
   const [scoreLoading, setScoreLoading] = useState(false);
@@ -64,6 +67,7 @@ export default function SummaryScreen() {
   const [wx, setWx] = useState<CurrentWx | null>(null);
   const [wxLoading, setWxLoading] = useState(false);
   const [alert, setAlert] = useState<Alert | null>(null);
+  const [rainSoon, setRainSoon] = useState<RainSoon | null>(null);
   const [landing, setLanding] = useState<LandingInfo | null>(null);
   const [streak, setStreak] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -173,10 +177,13 @@ export default function SummaryScreen() {
       activeAlerts(f.lat!, f.lon!).then((list) => {
         if (id === reqRef.current) setAlert(list[0] ?? null);
       });
+      rainArriving(f.lat!, f.lon!).then((r) => {
+        if (id === reqRef.current) setRainSoon(r);
+      });
       setPlaneLoading(true);
       nearbyPlanes(f.lat!, f.lon!, f.radiusMi, 8).then((list) => {
         if (id === reqRef.current) {
-          setPlane(list[0] ?? null);
+          setPlanes(list);
           setPlaneLoading(false);
           checkAutoTrack(list);
           checkLanding(list);
@@ -281,7 +288,23 @@ export default function SummaryScreen() {
     }
   };
 
+  const trackedActive =
+    f.trackFlight && !!f.flightIdent && planes.some((p) => norm(p.callsign) === f.flightIdent);
+  const cycleIdx = planes.length ? planeIdx % planes.length : 0;
+  const plane =
+    (trackedActive ? planes.find((p) => norm(p.callsign) === f.flightIdent) ?? null : null) ??
+    planes[cycleIdx] ??
+    null;
+
   const isTracked = plane != null && f.trackFlight && f.flightIdent === norm(plane.callsign);
+
+  // Cycle through nearby planes one at a time on the Overhead card (unless a
+  // specific flight is pinned/tracked).
+  useEffect(() => {
+    if (trackedActive || planes.length < 2) return;
+    const iv = setInterval(() => setPlaneIdx((i) => i + 1), 4000);
+    return () => clearInterval(iv);
+  }, [trackedActive, planes.length]);
 
   const onPlaneTap = () => {
     if (!located || !plane) {
@@ -344,6 +367,13 @@ export default function SummaryScreen() {
                 <Text style={styles.trackTagText}>TRACKING</Text>
               </View>
             )}
+            {!isTracked && planes.length > 1 && (
+              <View style={styles.countTag}>
+                <Text style={styles.countTagText}>
+                  {cycleIdx + 1}/{planes.length}
+                </Text>
+              </View>
+            )}
           </View>
           {!effCompact && (
             <>
@@ -353,7 +383,11 @@ export default function SummaryScreen() {
                 {plane.distanceMi} mi{plane.headingDeg >= 0 ? ` ${compass(plane.headingDeg)}` : ""}
               </Text>
               <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
-                {isTracked ? "Pinned to the wall · tap to stop" : "Tap to pin this flight to the wall"}
+                {isTracked
+                  ? "Pinned to the wall · tap to stop"
+                  : planes.length > 1
+                    ? "Cycling nearby flights · tap to pin this one"
+                    : "Tap to pin this flight to the wall"}
               </Text>
             </>
           )}
@@ -659,6 +693,25 @@ export default function SummaryScreen() {
         </Pressable>
       )}
 
+      {rainSoon && (
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            router.push("/weather");
+          }}
+          style={({ pressed }) => [styles.rainCard, pressed && { opacity: 0.85 }]}
+        >
+          <Ionicons name="rainy" size={20} color={colors.info} style={styles.rainIcon} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rainTitle}>Rain arriving in ~{rainSoon.minutes} min</Text>
+            <Text style={styles.rainSub}>
+              {rainSoon.label} moving in · tap to see it on radar
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.surfaceTertiary} />
+        </Pressable>
+      )}
+
       <View style={styles.sectionRow}>
         <Text style={styles.sectionLabel}>On The Wall Now</Text>
         <View style={styles.sectionActions}>
@@ -846,6 +899,22 @@ const styles = StyleSheet.create({
   },
   landingCardHot: { backgroundColor: "#3a2a05" },
   landingIcon: { transform: [{ rotate: "135deg" }] },
+  rainCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.info,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.info,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  rainIcon: {},
+  rainTitle: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
+  rainSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
   landingTitle: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
   landingSub: { fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginTop: 1 },
   sectionRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
@@ -878,6 +947,13 @@ const styles = StyleSheet.create({
   planeLogo: { width: 22, height: 22 },
   trackTag: { backgroundColor: colors.brand, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 1 },
   trackTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.onBrandPrimary, letterSpacing: 0.5 },
+  countTag: {
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  countTagText: { fontFamily: fonts.mono, fontSize: 10, color: colors.onSurfaceSecondary },
   scoreLine: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   teamBadge: {
     width: 26,

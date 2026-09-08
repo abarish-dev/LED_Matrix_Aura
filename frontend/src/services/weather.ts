@@ -160,6 +160,60 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
   }
 }
 
+// ---- Short-term rain nowcast (Open-Meteo minutely_15, keyless) -------------
+
+export type RainSoon = { minutes: number; mmPerHr: number; label: string };
+
+/**
+ * Detects rain arriving at the point within the next hour while it's not
+ * currently raining. Uses Open-Meteo's 15-minute precipitation nowcast (the
+ * same radar-derived data RainViewer draws), returning minutes-until + a
+ * light/moderate/heavy label, or null if nothing is on the way.
+ */
+export async function rainArriving(lat: number, lon: number): Promise<RainSoon | null> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}` +
+      `&longitude=${lon.toFixed(4)}` +
+      `&current=precipitation` +
+      `&minutely_15=precipitation` +
+      `&timezone=auto&forecast_days=1`;
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const nowPrecip =
+      typeof data?.current?.precipitation === "number" ? data.current.precipitation : 0;
+    if (nowPrecip > 0.05) return null; // already raining — not an "arriving" alert
+    const times: string[] = Array.isArray(data?.minutely_15?.time) ? data.minutely_15.time : [];
+    const precs: number[] = Array.isArray(data?.minutely_15?.precipitation)
+      ? data.minutely_15.precipitation
+      : [];
+    if (!times.length || times.length !== precs.length) return null;
+    const now = Date.now();
+    for (let i = 0; i < times.length; i++) {
+      const ts = new Date(times[i]).getTime();
+      const dtMin = (ts - now) / 60000;
+      if (dtMin < 0 || dtMin > 60) continue;
+      const mm = precs[i];
+      if (typeof mm === "number" && mm >= 0.1) {
+        const mmPerHr = mm * 4; // 15-min accumulation → hourly rate
+        const label = mmPerHr < 2.5 ? "Light rain" : mmPerHr < 7.6 ? "Moderate rain" : "Heavy rain";
+        return {
+          minutes: Math.max(1, Math.round(dtMin)),
+          mmPerHr: Math.round(mmPerHr * 10) / 10,
+          label,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function expiresLabel(iso: string | null): string {
   if (!iso) return "";
   try {

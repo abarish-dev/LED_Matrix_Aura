@@ -301,3 +301,24 @@ Four new features (verified via testing_agent iteration_24, all pass):
 
 ## Updates (2026-06 — round 53) — More detailed weather icons
 - [x] Rewrote DisplayManager wxIcon(): two-tone cloud (dark outline + light body + highlight) so it reads as a rounded cloud not a blob; sun now has a bright core + rays; partly-cloudy offsets sun upper-left with cloud lower-right so both are visible; rain = sharper blue streaks; snow = plus-shaped flakes; storm = filled lightning bolt (fillTriangle); overcast adds a second puff. Bumped AURA_FW_VERSION 1.1.0 -> 1.2.0. Needs re-flash (icon shows when Show Weather Icon is enabled).
+
+
+## Session Update — Plane Cycling + Rain Arriving Alert
+
+### Weather icon fix answer
+- Confirmed to user: the v1.2.0 detailed weather icons are firmware-only. No app regenerate/republish needed — just `git pull` + flash the ESP32 (USB or OTA). App republish is only for React Native UI changes.
+
+### Multiple planes cycling (bug fix — DONE)
+- Problem: Summary "Overhead" glance card only ever showed the single closest plane even when several were in range.
+- Fix (`app/(tabs)/index.tsx`): the Overhead card now holds the full nearby list and auto-cycles through them one at a time (every 4s), with a `n/N` counter chip and "Cycling nearby flights · tap to pin this one" hint. Tapping still pins the currently shown flight; when a flight is pinned/tracked, cycling stops and only that flight shows.
+- Flights tab list bumped from 4 → 8 planes.
+- NOTE: only visually verifiable on the phone build — adsb.lol has no web CORS, so the web preview shows "No aircraft in range".
+
+### Rain Arriving Alert (feature — DONE)
+- `src/services/weather.ts` → new `rainArriving(lat, lon)` using Open-Meteo `minutely_15` precipitation nowcast. Returns `{ minutes, mmPerHr, label }` when rain will start within the next 60 min AND it is not already raining; null otherwise.
+- Summary tab (`index.tsx`) shows a blue "Rain arriving in ~X min" banner (below the landing card) that deep-links to the Weather/radar tab. Banner only appears when rain is imminent — verified the located summary renders without errors (currently hidden in Miami test since rain wasn't within the hour).
+
+### Still open / needs user input
+- **Team Logo Sharpening (P3)**: requires the user's hardware photos of the 64px logos on the matrix to hand-tune `firmware/include/Logos.h` bitmaps. Waiting on photos.
+- **OTA Upload In-App (P2)**: user unsure what it means — deferred pending explanation/confirmation.
+

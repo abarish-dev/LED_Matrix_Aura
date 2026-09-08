@@ -71,7 +71,7 @@ export default function FlightsScreen() {
     const id = ++fetchIdRef.current;
     setPlanesLoading(true);
     try {
-      const list = await nearbyPlanes(f.lat, f.lon, f.radiusMi, 4);
+      const list = await nearbyPlanes(f.lat, f.lon, f.radiusMi, 8);
       if (id !== fetchIdRef.current) return;
       setPlanes(list);
     } finally {
