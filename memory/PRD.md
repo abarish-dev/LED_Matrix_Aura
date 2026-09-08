@@ -412,3 +412,21 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash firmware to v1.5.0 (OTA "Install update over Wi-Fi" from Device tab, or USB/PlatformIO). No backend redeploy needed this time (only firmware files changed).
 2. Re-verify: (a) overhead flights show/cycle on the display again, (b) if "Track a specific flight" is set to a real active flight, it shows a green "TRACKED" card when overhead, (c) unplug/replug the matrix — it should reconnect to Wi-Fi and resume showing data on its own within ~15s, no app interaction needed.
 
+
+
+
+## Session Update — Boot felt "stuck" after v1.5.0 (firmware v1.5.1)
+
+### Diagnosis (from user serial log — confirmed NOT hung, just slow)
+- After auto-reconnecting Wi-Fi in `setup()` (v1.5.0's new feature), the board runs 3 sequential blocking HTTPS calls before the first card ever draws: sun-times (night dimming) → matrix feed → boot-time OTA check. Each hit a known ESP32 "fresh TLS session" quirk (`SSL - The connection indicated an EOF`, code -29312) on the FIRST use of a given host after boot, which the existing retry logic recovers from — but each retry costs up to 12s, so the chain can take 30–90s. The screen sat on the stale "WI-FI / <ssid>" message that whole time, looking frozen, even though the log proved it eventually recovered (`[CARD] n=3...` + a successful feed fetch at the end).
+- User's follow-up run showed it self-recovered and started working ("its running"). `[NVS] restored saved settings` did NOT print on that run, meaning Wi-Fi came back via the app's BLE reconnect (not the new NVS auto-load) — the auto-reconnect-after-power-loss path itself hasn't been exercised/confirmed yet. It only activates once a settings write has actually happened post-v1.5.0 (any BLE config push saves to NVS within ~4s); the NEXT unplug/replug after that should show `[NVS] restored saved settings` in the log.
+
+### Fix (DONE, needs reflash)
+- `setup()`: after a successful auto-reconnect, display now shows **"AURA / loading data..."** instead of leaving the stale "WI-FI / <ssid>" text up during the slow first fetches — makes clear the board is working, not frozen.
+- `loop()`: the boot-time OTA check is now gated behind a new `gFirstCardShown` flag (set the first time any real card actually renders), so a slow/flaky OTA check can never block the very first card from showing. It still runs once ~15s after the first card is up.
+- `Config.h`: `AURA_FW_VERSION` → `1.5.1`.
+
+### Action items for user
+1. Reflash to v1.5.1 (OTA or USB).
+2. To actually confirm the power-loss persistence feature: change any setting in the app (or just leave it running ~5s after last change), THEN unplug/replug — log should show `[NVS] restored saved settings` and Wi-Fi reconnecting without the app.
+3. The underlying SSL EOF-on-first-use retries are a known ESP32/mbedTLS quirk already handled by existing retry logic — expected occasionally, self-heals, not a new bug.

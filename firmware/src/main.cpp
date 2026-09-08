@@ -37,6 +37,7 @@ static const uint32_t FETCH_MS = 30000;   // refresh live data every 30s
 
 static uint32_t lastCard = 0, lastFetch = 0;
 static uint8_t  cardIndex = 0;
+static bool     gFirstCardShown = false; // true once any real card has rendered (gates the boot-time OTA check so it can't block the first render)
 
 // Cached fetch results.
 static Data::FlightInfo  gFlight;
@@ -574,7 +575,13 @@ void setup() {
       Display::message("AURA", "reconnecting...");
       bool ok = wifiConnect();
       AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
-      if (ok) { applyBrightnessForNow(); refreshData(); lastFetch = millis(); }
+      if (ok) {
+        // Distinct message so the panel doesn't sit on the stale "WI-FI /
+        // ssid" text while the (occasionally slow, self-retrying) first
+        // fetches run — makes clear the board is working, not frozen.
+        Display::message("AURA", "loading data...");
+        applyBrightnessForNow(); refreshData(); lastFetch = millis();
+      }
     }
   } else {
     Serial.println("[NVS] no saved settings yet");
@@ -638,9 +645,12 @@ void loop() {
     saveSettings();
   }
 
-  // Auto OTA check once, ~15s after boot, when Wi-Fi + a server URL are ready.
+  // Auto OTA check once after the panel has shown real data (so a slow/flaky
+  // first connection can't block the very first card from ever rendering —
+  // this check alone can take 30s+ when the fresh Wi-Fi/TLS session needs a
+  // couple of retries, see [GET] retry comments above).
   static bool otaBootChecked = false;
-  if (!otaBootChecked && now > 15000 && WiFi.status() == WL_CONNECTED &&
+  if (!otaBootChecked && gFirstCardShown && now > 15000 && WiFi.status() == WL_CONNECTED &&
       !gSettings.serverUrl.isEmpty()) {
     otaBootChecked = true;
     otaCheck();
@@ -681,6 +691,7 @@ void loop() {
     alertScrollX = 0;              // fresh marquee each time the alert comes up
     applyBrightnessForNow();       // re-evaluate the night schedule each card
     drawCard(cur);
+    gFirstCardShown = true;
   }
 
   // While the alert card is showing, keep scrolling the headline.
