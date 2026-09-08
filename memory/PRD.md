@@ -372,3 +372,20 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 - Team Logo Sharpening fine-tune (P3): still want user's hardware photos to hand-adjust specific logos.
 - If sports still empty after flashing: verify teams synced (SYNC button) and that the team is in-season.
 
+
+
+
+## Session Update — Sports Root Cause (DEPLOY) + Centered Flight Card (v1.4.1)
+
+### ROOT CAUSE of "still no sports" (from user serial logs)
+- The matrix calls the DEPLOYED backend `https://smart-matrix-hub.emergent.host/api/matrix/feed?...&team=MLB:NYY,NHL:CAR,NFL:BAL` and gets `len=163` (empty `scores`). That deployed server runs the OLD code (pre multi-team), so the comma-joined team list isn't understood → no scores.
+- CONFIRMED my dev backend returns the games for the exact device query: scores=[MLB:NYY (COL@NYY 9/8), NFL:BAL (BAL@IND 9/13)] (~1029 bytes). NHL:CAR correctly omitted (offseason). ESPN has NYY games 9/8-9/11.
+- The firmware direct-ESPN fallback also logged `MLB:NYY -> ok=0` even though the game exists - the streamed `teamGame` filter parse is unreliable, but it's only a fallback; the proxy is the real path.
+- FIX = REDEPLOY the backend (Publish). After redeploy the proxy returns `scores` and firmware v1.4.0+ (which already parses the `scores` array) shows all in-season teams cycling - NO reflash needed for sports. Teams must be synced to the matrix (SYNC/reconnect).
+
+### Vertically centered flight card (firmware v1.4.1 - needs reflash)
+- `DisplayManager.h flight()` rewritten to collect present lines (callsign, airline, optional route, dist, optional alt/heading, optional ETA) into an array and center the block vertically on the 64px panel (was fixed top-down y=2..57). `Config.h` AURA_FW_VERSION -> 1.4.1.
+
+### Action items for user
+1. REDEPLOY backend (Publish) -> fixes sports on the current firmware.
+2. git pull + reflash to v1.4.1 -> vertically-centered flight data.
