@@ -198,48 +198,65 @@ inline void message(const char* line1, const char* line2) {
 
 // A small (~14px) weather symbol drawn at top-left (x,y) of the clock card.
 inline void wxIcon(int x, int y, int code, bool isDay) {
-  const uint16_t sun = rgb(245, 200, 60), cloud = rgb(200, 200, 210),
-                 rain = rgb(90, 150, 255), snow = rgb(180, 220, 255),
-                 bolt = rgb(250, 220, 40), moon = rgb(220, 220, 180);
+  const uint16_t sun = rgb(255, 205, 45), sunCore = rgb(255, 235, 140),
+                 cloudLo = rgb(120, 128, 145), cloudHi = rgb(215, 220, 232),
+                 rain = rgb(70, 150, 255), snow = rgb(225, 245, 255),
+                 bolt = rgb(255, 225, 40), moon = rgb(225, 225, 190);
   int cx = x + 7, cy = y + 6;
-  auto drawCloud = [&](uint16_t c) {
-    dma->fillCircle(cx - 3, cy + 1, 3, c);
-    dma->fillCircle(cx + 3, cy + 1, 3, c);
-    dma->fillCircle(cx, cy - 1, 4, c);
-    dma->fillRect(cx - 6, cy + 1, 12, 3, c);
+  // Cloud with a darker outline + lighter body + highlight so it reads as a
+  // rounded cloud, not a flat blob.
+  auto drawCloud = [&](int ox, int oy) {
+    int bx = cx + ox, by = cy + oy;
+    dma->fillCircle(bx - 3, by + 1, 3, cloudLo);
+    dma->fillCircle(bx + 3, by + 1, 3, cloudLo);
+    dma->fillCircle(bx, by - 2, 4, cloudLo);
+    dma->fillRect(bx - 6, by + 1, 13, 4, cloudLo);
+    dma->fillCircle(bx - 3, by, 2, cloudHi);
+    dma->fillCircle(bx + 3, by, 2, cloudHi);
+    dma->fillCircle(bx, by - 2, 3, cloudHi);
+    dma->fillRect(bx - 5, by, 10, 3, cloudHi);
+    dma->fillCircle(bx - 1, by - 3, 1, rgb(245, 248, 255)); // highlight
+  };
+  auto drawSun = [&](int ox, int oy, int rad) {
+    int sx = cx + ox, sy = cy + oy;
+    for (int a = 0; a < 8; a++) {
+      float r = a * PI / 4.0;
+      dma->drawLine(sx + cos(r) * (rad + 1.5), sy + sin(r) * (rad + 1.5),
+                    sx + cos(r) * (rad + 3), sy + sin(r) * (rad + 3), sun);
+    }
+    dma->fillCircle(sx, sy, rad, sun);
+    dma->fillCircle(sx, sy, rad - 1, sunCore);
   };
   bool clear = (code == 0);
   bool partly = (code == 1 || code == 2);
   bool rainy = ((code >= 51 && code <= 67) || (code >= 80 && code <= 82));
   bool snowy = ((code >= 71 && code <= 77) || code == 85 || code == 86);
   bool storm = (code >= 95);
-  if (clear || partly) {
-    if (isDay) {
-      dma->fillCircle(cx, cy, 3, sun);
-      for (int a = 0; a < 8; a++) {
-        float r = a * PI / 4.0;
-        dma->drawLine(cx + cos(r) * 5, cy + sin(r) * 5, cx + cos(r) * 7, cy + sin(r) * 7, sun);
-      }
-    } else {
-      dma->fillCircle(cx, cy, 4, moon);
-      dma->fillCircle(cx + 2, cy - 1, 4, rgb(0, 0, 0)); // crescent mask
-    }
-    if (partly) drawCloud(cloud);
+  if (clear) {
+    if (isDay) drawSun(0, 0, 3);
+    else { dma->fillCircle(cx, cy, 4, moon); dma->fillCircle(cx + 2, cy - 1, 4, rgb(0, 0, 0)); }
+  } else if (partly) {
+    if (isDay) drawSun(-3, -3, 2); else { dma->fillCircle(cx - 3, cy - 3, 3, moon); dma->fillCircle(cx - 1, cy - 4, 3, rgb(0, 0, 0)); }
+    drawCloud(1, 2);
   } else if (storm) {
-    drawCloud(cloud);
-    dma->drawLine(cx, cy + 4, cx - 2, cy + 8, bolt);
-    dma->drawLine(cx - 2, cy + 8, cx + 1, cy + 8, bolt);
-    dma->drawLine(cx + 1, cy + 8, cx - 1, cy + 11, bolt);
+    drawCloud(0, -1);
+    dma->fillTriangle(cx - 1, cy + 3, cx + 3, cy + 3, cx, cy + 7, bolt);
+    dma->fillTriangle(cx, cy + 6, cx + 2, cy + 6, cx - 1, cy + 11, bolt);
   } else if (rainy) {
-    drawCloud(cloud);
-    for (int i = -3; i <= 3; i += 3) dma->drawLine(cx + i, cy + 5, cx + i - 1, cy + 9, rain);
+    drawCloud(0, -1);
+    for (int i = -3; i <= 3; i += 3)
+      dma->drawLine(cx + i, cy + 4, cx + i - 1, cy + 9, rain);
   } else if (snowy) {
-    drawCloud(cloud);
-    dma->drawPixel(cx - 3, cy + 7, snow);
-    dma->drawPixel(cx, cy + 8, snow);
-    dma->drawPixel(cx + 3, cy + 7, snow);
+    drawCloud(0, -1);
+    for (int i = -3; i <= 3; i += 3) {
+      dma->drawPixel(cx + i, cy + 6, snow);
+      dma->drawPixel(cx + i, cy + 8, snow);
+      dma->drawPixel(cx + i - 1, cy + 7, snow);
+      dma->drawPixel(cx + i + 1, cy + 7, snow);
+    }
   } else {
-    drawCloud(cloud); // overcast / fog / unknown
+    drawCloud(0, 0); // overcast / fog
+    dma->fillCircle(cx + 3, cy - 3, 2, cloudLo); // second puff = overcast
   }
 }
 

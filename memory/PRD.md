@@ -298,3 +298,6 @@ Four new features (verified via testing_agent iteration_24, all pass):
   - App: store installOta() -> writeLive({command:"ota"}); Device Info (7-tap) fetches /api/firmware/latest, shows "Latest firmware vX" row + "Install update over Wi-Fi" button (BLE-connected only).
   - Workflow: user compiles .bin in PlatformIO -> uploads to backend once -> matrices self-update over WiFi. (fw_store cleared of test bin.)
 - Note (optional/non-blocking): OTA upload endpoint has no auth/size cap — fine for personal use; can add a token later.
+
+## Updates (2026-06 — round 53) — More detailed weather icons
+- [x] Rewrote DisplayManager wxIcon(): two-tone cloud (dark outline + light body + highlight) so it reads as a rounded cloud not a blob; sun now has a bright core + rays; partly-cloudy offsets sun upper-left with cloud lower-right so both are visible; rain = sharper blue streaks; snow = plus-shaped flakes; storm = filled lightning bolt (fillTriangle); overcast adds a second puff. Bumped AURA_FW_VERSION 1.1.0 -> 1.2.0. Needs re-flash (icon shows when Show Weather Icon is enabled).
