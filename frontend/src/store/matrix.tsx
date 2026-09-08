@@ -154,6 +154,7 @@ type MatrixContextValue = {
   sendWifi: (ssid: string, pass: string) => Promise<void>;
   flashTest: () => Promise<void>;
   weatherTest: () => Promise<void>;
+  installOta: () => Promise<void>;
 };
 
 const MatrixContext = createContext<MatrixContextValue | null>(null);
@@ -598,6 +599,10 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     await writeLive({ command: "weather_test", ts: Date.now() });
   }, []);
 
+  const installOta = useCallback(async () => {
+    await writeLive({ command: "ota", ts: Date.now() });
+  }, []);
+
   // ---- RSSI refresh while connected ----------------------------------------
   useEffect(() => {
     if (bleStatus !== "connected") return;
@@ -638,6 +643,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     sendWifi,
     flashTest,
     weatherTest,
+    installOta,
   };
 
   return (

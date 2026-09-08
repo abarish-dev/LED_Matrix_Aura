@@ -81,6 +81,7 @@ export default function DeviceScreen() {
     sendWifi,
     settings,
     firmwareVersion,
+    installOta,
     updateBrightness,
     updateNightMode,
     updateWeekend,
@@ -96,6 +97,19 @@ export default function DeviceScreen() {
   const [bright, setBright] = useState(settings.brightness);
   const [aboutTaps, setAboutTaps] = useState(0);
   const [showAbout, setShowAbout] = useState(false);
+  const [fwLatest, setFwLatest] = useState<{ version: string; update: boolean } | null>(null);
+
+  // When the hidden About panel opens, ask the backend what the latest firmware
+  // is (so we can show "update available" against the connected board's version).
+  useEffect(() => {
+    if (!showAbout) return;
+    const base = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
+    if (!base) return;
+    fetch(`${base}/api/firmware/latest?current=${encodeURIComponent(firmwareVersion ?? "")}`)
+      .then((r) => r.json())
+      .then((d) => setFwLatest({ version: d.version ?? "", update: !!d.update }))
+      .catch(() => setFwLatest(null));
+  }, [showAbout, firmwareVersion]);
 
   useEffect(() => {
     if (lastSsid) setSsid(lastSsid);
@@ -494,6 +508,23 @@ export default function DeviceScreen() {
               <Text style={styles.aboutKey}>Signal</Text>
               <Text style={styles.aboutVal}>{rssi != null ? `${rssi} dBm` : "—"}</Text>
             </View>
+            <View style={styles.aboutRow}>
+              <Text style={styles.aboutKey}>Latest firmware</Text>
+              <Text style={styles.aboutVal}>
+                {fwLatest?.version ? `v${fwLatest.version}` : "none uploaded"}
+              </Text>
+            </View>
+            {fwLatest?.update && connected && (
+              <View style={{ marginTop: spacing.sm }}>
+                <PrimaryButton
+                  label="Install update over Wi-Fi"
+                  onPress={async () => {
+                    await installOta();
+                    toast.show("Update sent — the matrix will install & reboot", "success");
+                  }}
+                />
+              </View>
+            )}
           </Card>
         )}
       </View>

@@ -92,3 +92,4 @@ extern volatile bool gWifiCredsChanged;   // new SSID/pass received
 extern volatile bool gConfigChanged;      // any display config changed
 extern volatile bool gFlashTest;          // one-shot test pattern requested
 extern volatile bool gWeatherTest;        // one-shot sample weather alert
+extern volatile bool gOtaRequested;       // one-shot OTA firmware update requested

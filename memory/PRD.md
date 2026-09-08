@@ -289,3 +289,12 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - Backend feed final test: flight.ok=1, score.ok=1 (NYY 9/8), alert.ok=0 (no active alert, correct), temp.ok=1. health + /api/ regressions pass.
 - Firmware refreshData reviewed coherent: ONE proxy call -> flight+sports+weather+temp; direct fetches gated as fallback (proxyFlight/Score/Weather/Temp); rotation team chosen pre-proxy.
 - Color depth 6-bit for logos. NEEDS: user flash firmware + rebuild app (app pushes serverUrl on connect). Verify: sports card appears + logos crisper.
+
+## Updates (2026-06 — round 52) — OTA + Radar-on-Summary (tested 11/11 + frontend)
+- [x] **Radar thumbnail on Summary:** index.tsx now renders a "Sky right now" label + <RadarCard lat lon> below the glance cards when located (ZIP/GPS set). Tap opens fullscreen radar. Verified on web with ZIP 10001.
+- [x] **Firmware OTA pipeline:**
+  - Backend server.py: POST /api/firmware/upload (version + .bin, rejects <1000B -> 400), GET /api/firmware/latest?current= ({version,size,available,update,url}), GET /api/firmware/download (FileResponse). Stored in backend/fw_store/. Tested 11/11 (tests/test_firmware_ota.py).
+  - Firmware main.cpp: `#include <HTTPUpdate.h>`; otaCheck() GETs /api/firmware/latest, if update -> httpUpdate.update() over HTTPS (setInsecure) + rebootOnUpdate. Auto-runs once ~15s after boot when serverUrl+WiFi ready; also on BLE {command:"ota"}. gOtaRequested flag (Config.h/main.cpp), BLE "ota" handler.
+  - App: store installOta() -> writeLive({command:"ota"}); Device Info (7-tap) fetches /api/firmware/latest, shows "Latest firmware vX" row + "Install update over Wi-Fi" button (BLE-connected only).
+  - Workflow: user compiles .bin in PlatformIO -> uploads to backend once -> matrices self-update over WiFi. (fw_store cleared of test bin.)
+- Note (optional/non-blocking): OTA upload endpoint has no auth/size cap — fine for personal use; can add a token later.

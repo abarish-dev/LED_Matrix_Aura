@@ -113,6 +113,8 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
         gFlashTest = true;
       } else if (command == "weather_test") {
         gWeatherTest = true;
+      } else if (command == "ota") {
+        gOtaRequested = true;
       } else if (command == "server") {
         if (doc["url"].is<const char*>()) gSettings.serverUrl = (const char*)doc["url"];
         gConfigChanged = true;

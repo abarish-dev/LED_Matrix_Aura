@@ -11,6 +11,8 @@
 // ============================================================================
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPUpdate.h>
 #include <time.h>
 #include <esp_heap_caps.h>
 #include "Config.h"
@@ -25,6 +27,7 @@ volatile bool  gWifiCredsChanged = false;
 volatile bool  gConfigChanged    = false;
 volatile bool  gFlashTest        = false;
 volatile bool  gWeatherTest      = false;
+volatile bool  gOtaRequested     = false;
 
 // ---- Timing ----------------------------------------------------------------
 static const uint32_t CARD_MS  = 8000;    // seconds per card
@@ -149,6 +152,38 @@ static uint16_t severityColor(const String& s) {
   if (s.equalsIgnoreCase("severe"))   return Display::rgb(249, 115, 22);
   if (s.equalsIgnoreCase("moderate")) return Display::rgb(234, 179, 8);
   return Display::rgb(14, 165, 233);
+}
+
+// ---- Over-the-air firmware update -----------------------------------------
+// Checks the backend for a newer firmware .bin and, if found, downloads + flashes
+// it over Wi-Fi (no USB cable). Called once after Wi-Fi connects and on demand
+// via the BLE "ota" command.
+static void otaCheck() {
+  if (gSettings.serverUrl.isEmpty() || WiFi.status() != WL_CONNECTED) return;
+  String base = gSettings.serverUrl;
+  if (base.endsWith("/")) base.remove(base.length() - 1);
+  String body = Data::httpGet(base + "/api/firmware/latest?current=" AURA_FW_VERSION, "AuraMatrix/1.0");
+  if (body.isEmpty()) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) return;
+  if (!(doc["update"] | false)) { Serial.println("[OTA] up to date"); return; }
+
+  String ver = String((const char*)(doc["version"] | ""));
+  String url = base + String((const char*)(doc["url"] | "/api/firmware/download"));
+  Serial.printf("[OTA] new firmware v%s -> installing from %s\n", ver.c_str(), url.c_str());
+  Display::message("UPDATE", ("v" + ver).c_str());
+  delay(800);
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  httpUpdate.rebootOnUpdate(true);   // auto-reboot into the new firmware
+  t_httpUpdate_return ret = httpUpdate.update(client, url);
+  if (ret == HTTP_UPDATE_FAILED) {
+    Serial.printf("[OTA] FAILED (%d): %s\n", httpUpdate.getLastError(),
+                  httpUpdate.getLastErrorString().c_str());
+    Display::message("UPDATE", "failed");
+    delay(1500);
+  }
 }
 
 static void refreshData() {
@@ -336,6 +371,9 @@ void loop() {
   // Flash test (one-shot from the app).
   if (gFlashTest) { gFlashTest = false; Display::flashTest(); lastCard = 0; }
 
+  // OTA firmware update (one-shot from the app's "Install update" button).
+  if (gOtaRequested) { gOtaRequested = false; otaCheck(); lastCard = 0; }
+
   // Weather preview (one-shot from the app).
   if (gWeatherTest) {
     gWeatherTest = false;
@@ -375,6 +413,15 @@ void loop() {
   }
 
   uint32_t now = millis();
+
+  // Auto OTA check once, ~15s after boot, when Wi-Fi + a server URL are ready.
+  static bool otaBootChecked = false;
+  if (!otaBootChecked && now > 15000 && WiFi.status() == WL_CONNECTED &&
+      !gSettings.serverUrl.isEmpty()) {
+    otaBootChecked = true;
+    otaCheck();
+    lastCard = 0;
+  }
 
   if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
 

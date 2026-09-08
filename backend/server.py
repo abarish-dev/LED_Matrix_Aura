@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -255,6 +255,62 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
     _feed_cache[key] = (_time.time() + _FEED_TTL, payload)
     return payload
 
+
+
+# ---------------------------------------------------------------------------
+# Firmware OTA: host a compiled .bin + version so matrices self-update over
+# Wi-Fi. The .bin is built in the user's PlatformIO (this env can't compile
+# ESP32); they upload it here once, then every matrix pulls it automatically.
+# ---------------------------------------------------------------------------
+import json as _json
+_FW_DIR = ROOT_DIR / "fw_store"
+_FW_DIR.mkdir(exist_ok=True)
+_FW_BIN = _FW_DIR / "firmware.bin"
+_FW_META = _FW_DIR / "meta.json"
+
+
+def _fw_meta() -> dict:
+    if _FW_META.exists():
+        try:
+            return _json.loads(_FW_META.read_text())
+        except Exception:
+            pass
+    return {"version": "", "size": 0}
+
+
+@api_router.post("/firmware/upload")
+async def firmware_upload(version: str = Form(...), file: UploadFile = File(...)):
+    """Upload a compiled firmware .bin + its version string (e.g. 1.2.0)."""
+    data = await file.read()
+    if not data or len(data) < 1000:
+        raise HTTPException(status_code=400, detail="empty or invalid .bin")
+    _FW_BIN.write_bytes(data)
+    _FW_META.write_text(_json.dumps({"version": version.strip(), "size": len(data)}))
+    logger.info(f"[ota] uploaded firmware v{version} ({len(data)} bytes)")
+    return {"ok": True, "version": version.strip(), "size": len(data)}
+
+
+@api_router.get("/firmware/latest")
+async def firmware_latest(current: str = ""):
+    """Matrix polls this to learn the latest version. `update` is true when the
+    hosted version differs from the caller's `current`."""
+    m = _fw_meta()
+    has = bool(m.get("version")) and _FW_BIN.exists()
+    return {
+        "version": m.get("version", ""),
+        "size": m.get("size", 0),
+        "available": has,
+        "update": has and m.get("version", "") != (current or ""),
+        "url": "/api/firmware/download",
+    }
+
+
+@api_router.get("/firmware/download")
+async def firmware_download():
+    if not _FW_BIN.exists():
+        raise HTTPException(status_code=404, detail="no firmware uploaded")
+    return FileResponse(str(_FW_BIN), media_type="application/octet-stream",
+                        filename="firmware.bin")
 
 
 # Include the router in the main app

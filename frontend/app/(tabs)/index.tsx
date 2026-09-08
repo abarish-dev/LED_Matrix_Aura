@@ -21,6 +21,7 @@ import {
 } from "@/src/services/weather";
 import { findTeam, teamLogoUrl, readableOn } from "@/src/data/teams";
 import { GlanceCard } from "@/src/components/summary/GlanceCard";
+import { RadarCard } from "@/src/components/RadarCard";
 import {
   REFRESH_MS,
   ORDER_KEY,
@@ -780,6 +781,12 @@ export default function SummaryScreen() {
     >
       {Header}
       {visibleOrder.map((key, i) => renderCard(key, i))}
+      {located && (
+        <>
+          <Text style={styles.radarLabel}>Sky right now</Text>
+          <RadarCard lat={f.lat!} lon={f.lon!} />
+        </>
+      )}
       {Footer}
     </ScrollView>
   );
@@ -787,6 +794,14 @@ export default function SummaryScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
+  radarLabel: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    marginTop: spacing.xl,
+    marginBottom: -spacing.xs,
+    letterSpacing: 0.3,
+  },
   content: { paddingHorizontal: spacing.lg, paddingBottom: 150 },
   header: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.xl },
   logo: { width: 52, height: 52 },
