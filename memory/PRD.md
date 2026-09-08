@@ -430,3 +430,19 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.5.1 (OTA or USB).
 2. To actually confirm the power-loss persistence feature: change any setting in the app (or just leave it running ~5s after last change), THEN unplug/replug — log should show `[NVS] restored saved settings` and Wi-Fi reconnecting without the app.
 3. The underlying SSL EOF-on-first-use retries are a known ESP32/mbedTLS quirk already handled by existing retry logic — expected occasionally, self-heals, not a new bug.
+
+
+
+## Session Update — OTA re-flash loop (firmware v1.5.2)
+
+### Root cause (from user serial log)
+- The backend's OTA store (`fw_store/meta.json`) had a MISLABELED `.bin`: metadata said `version: "1.4.1"`, but the actual binary content baked inside was really a v1.5.0 build (confirmed by the device's own `current=1.5.0` in its follow-up OTA check after installing it). `otaCheck()` only compared "is server version STRING different from mine" — so it treated `"1.4.1" != "1.5.1"` as "update available", downloaded/flashed the mislabeled file, rebooted into what's actually v1.5.0, then immediately saw `"1.4.1" != "1.5.0"` again → infinite re-flash loop (not a hard brick — device stays fully functional between flashes, just keeps rebooting every 30-60s).
+
+### Fix (DONE)
+- `main.cpp otaCheck()`: added `isNewerVersion()` — parses `X.Y.Z` and only proceeds with the OTA install if the server's version is a **strictly higher** semantic version than `AURA_FW_VERSION`, not just "different". A stale/mislabeled/lower upload is now logged and skipped instead of triggering a re-flash.
+- `Config.h`: `AURA_FW_VERSION` → `1.5.2`.
+
+### Action items for user (no USB needed — can self-heal via OTA)
+1. Build the new `.pio/build/adafruit_matrixportal_esp32s3/firmware.bin` from this updated source.
+2. Re-upload it correctly labeled: `curl -F "version=1.5.2" -F "file=@firmware.bin" https://<deployed-backend-url>/api/firmware/upload`.
+3. The currently-looping device (running ~v1.5.0) will see `1.5.2 > 1.5.0` — a legitimate, one-time real upgrade — install it, and the new version-guard then prevents this class of loop permanently going forward.

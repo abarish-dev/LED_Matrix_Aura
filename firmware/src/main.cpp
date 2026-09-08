@@ -297,6 +297,34 @@ static bool loadSettings() {
 // Checks the backend for a newer firmware .bin and, if found, downloads + flashes
 // it over Wi-Fi (no USB cable). Called once after Wi-Fi connects and on demand
 // via the BLE "ota" command.
+
+// Parses "X.Y.Z" into three ints for comparison (missing/short parts = 0).
+static void parseVersion(const String& v, int out[3]) {
+  out[0] = out[1] = out[2] = 0;
+  int idx = 0, start = 0;
+  for (uint32_t i = 0; i <= v.length() && idx < 3; i++) {
+    if (i == v.length() || v[i] == '.') {
+      if (i > (uint32_t)start) out[idx] = v.substring(start, i).toInt();
+      idx++;
+      start = i + 1;
+    }
+  }
+}
+
+// True only if `server` is a strictly HIGHER version than `current`. Guards
+// against re-flashing forever when the backend's stored .bin is stale or was
+// uploaded with a mismatched version label (the string just won't equal
+// AURA_FW_VERSION, which used to be treated as "always update").
+static bool isNewerVersion(const String& server, const String& current) {
+  int s[3], c[3];
+  parseVersion(server, s);
+  parseVersion(current, c);
+  for (int i = 0; i < 3; i++) {
+    if (s[i] != c[i]) return s[i] > c[i];
+  }
+  return false; // equal
+}
+
 static void otaCheck() {
   if (gSettings.serverUrl.isEmpty() || WiFi.status() != WL_CONNECTED) return;
   String base = gSettings.serverUrl;
@@ -308,6 +336,11 @@ static void otaCheck() {
   if (!(doc["update"] | false)) { Serial.println("[OTA] up to date"); return; }
 
   String ver = String((const char*)(doc["version"] | ""));
+  if (!isNewerVersion(ver, AURA_FW_VERSION)) {
+    Serial.printf("[OTA] server has v%s, not newer than running v%s -> skipping "
+                  "(stale or mislabeled upload)\n", ver.c_str(), AURA_FW_VERSION);
+    return;
+  }
   String url = base + String((const char*)(doc["url"] | "/api/firmware/download"));
   Serial.printf("[OTA] new firmware v%s -> installing from %s\n", ver.c_str(), url.c_str());
   Display::message("UPDATE", ("v" + ver).c_str());
