@@ -155,20 +155,32 @@ static void refreshData() {
   if (WiFi.status() != WL_CONNECTED) return;
 
   bool trackMode = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
-  bool proxyFlight = false, proxyWeather = false, proxyTemp = false;
+  bool proxyFlight = false, proxyWeather = false, proxyTemp = false, proxyScore = false;
 
-  // If the app gave us a backend URL, fetch flight + weather alert + temp in a
-  // SINGLE reliable call (server does the heavy lifting). Sports still comes
-  // direct from ESPN below (ESPN blocks datacenter IPs). Tracked-flight mode
-  // needs the direct callsign endpoint, so the proxy only does nearest-flight.
+  // Pick this cycle's team (rotates through followed teams, one per refresh)
+  // BEFORE the proxy call so the server can fetch its game in the same request.
+  static uint8_t ti = 0;
+  String entry;
+  if (gSettings.sports.enabled && gSettings.sports.count > 0) {
+    ti = ti % gSettings.sports.count;
+    entry = gSettings.sports.teams[ti];   // e.g. "MLB:NYY"
+    ti++;
+  }
+
+  // If the app gave us a backend URL, fetch flight + sports + weather + temp in
+  // ONE reliable call (server does the heavy lifting, bypasses ESPN's datacenter
+  // block via site.web.api.espn.com, and dodges adsb rate-limits). Tracked-flight
+  // mode still needs the direct callsign endpoint, so the proxy does nearest only.
   if (!gSettings.serverUrl.isEmpty()) {
     Data::FeedResult fr = Data::matrixFeed(
         gSettings.serverUrl, gSettings.flights.lat, gSettings.flights.lon,
         gSettings.flights.radiusMi, gSettings.weather.severity,
-        gSettings.flights.enabled && !trackMode, gSettings.weather.enabled);
+        gSettings.flights.enabled && !trackMode, gSettings.weather.enabled,
+        entry, gSettings.sports.enabled && entry.length() > 0);
     if (fr.ok) {
       if (gSettings.flights.enabled && !trackMode) { gFlight = fr.flight; gEtaMin = -1; proxyFlight = true; }
       if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
+      if (entry.length() > 0 && fr.haveScore) { gScore = fr.score; gScoreKey = entry; proxyScore = true; }
       if (fr.haveTemp) {
         gTempF  = fr.tempF;
         gFeelsF = gSettings.weather.showFeels ? fr.feelsF : -999;
@@ -209,17 +221,13 @@ static void refreshData() {
     }
   }
 
-  if (gSettings.sports.enabled && gSettings.sports.count > 0) {
-    // Rotate through followed teams one per refresh.
-    static uint8_t ti = 0;
-    ti = ti % gSettings.sports.count;
-    String entry = gSettings.sports.teams[ti];  // "NFL:DAL"
+  // Direct ESPN fetch only as a fallback (no server URL, or proxy had no score).
+  if (gSettings.sports.enabled && gSettings.sports.count > 0 && !proxyScore && entry.length() > 0) {
     int colon = entry.indexOf(':');
     if (colon > 0)
       gScore = Data::teamGame(entry.substring(0, colon), entry.substring(colon + 1),
                               gSettings.sports.showStreak);
     gScoreKey = entry;
-    ti++;
   }
 
   if (gSettings.weather.enabled && !proxyWeather)

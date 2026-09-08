@@ -458,21 +458,26 @@ struct FeedResult {
   bool ok = false;
   FlightInfo flight;
   WeatherInfo alert;
+  ScoreInfo score;
+  bool haveScore = false;
   bool haveTemp = false;
   int tempF = -999, feelsF = -999, wxCode = -1, isDay = 1, hiF = -999, loF = -999;
 };
 
 inline FeedResult matrixFeed(const String& base, double lat, double lon,
                              int radiusMi, const String& severity,
-                             bool wantFlights, bool wantWeather) {
+                             bool wantFlights, bool wantWeather,
+                             const String& team, bool wantSports) {
   FeedResult r;
   if (base.isEmpty()) return r;
   String url = base;
   if (url.endsWith("/")) url.remove(url.length() - 1);
   url += "/api/matrix/feed?lat=" + String(lat, 4) + "&lon=" + String(lon, 4) +
          "&radius=" + String(radiusMi) + "&severity=" + severity +
-         "&flights=" + (wantFlights ? "1" : "0") + "&sports=0&weather=" +
-         (wantWeather ? "1" : "0");
+         "&flights=" + (wantFlights ? "1" : "0") +
+         "&sports=" + (wantSports ? "1" : "0") +
+         "&weather=" + (wantWeather ? "1" : "0");
+  if (wantSports && team.length()) url += "&team=" + team;
   String body = httpGet(url, "AuraMatrix/1.0");
   if (body.isEmpty()) return r;
   JsonDocument doc;
@@ -487,6 +492,16 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.flight.distanceMi = f["dist"] | 0;
     r.flight.altFt = f["alt"] | 0;
     r.flight.headingDeg = f["hdg"] | -1;
+  }
+  JsonObjectConst sc = doc["score"];
+  if (sc["ok"].as<int>() == 1) {
+    r.haveScore = true;
+    r.score.ok = true;
+    r.score.home = String((const char*)(sc["home"] | ""));
+    r.score.away = String((const char*)(sc["away"] | ""));
+    r.score.hs = sc["hs"] | 0;
+    r.score.as = sc["as"] | 0;
+    r.score.status = String((const char*)(sc["st"] | ""));
   }
   JsonObjectConst a = doc["alert"];
   if (a["ok"].as<int>() == 1) {

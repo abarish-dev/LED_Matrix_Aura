@@ -125,7 +125,9 @@ async def _fetch_score(cx, team):
         now = datetime.now(timezone.utc)
         start = (now - timedelta(days=2)).strftime("%Y%m%d")
         end = (now + timedelta(days=8)).strftime("%Y%m%d")
-        url = (f"https://site.api.espn.com/apis/site/v2/sports/{path}/scoreboard"
+        # site.web.api.espn.com is NOT Akamai-blocked from datacenter IPs
+        # (site.api.espn.com returns 403), and serves the same scoreboard.
+        url = (f"https://site.web.api.espn.com/apis/site/v2/sports/{path}/scoreboard"
                f"?dates={start}-{end}&limit=100")
         r = await cx.get(url, headers={"User-Agent": _BROWSER_UA})
         if r.status_code != 200:

@@ -280,3 +280,7 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - [x] **Hardening:** added custom User-Agent + last-good temp cache to `_fetch_temp` (survive open-meteo 429 bursts on the shared datacenter egress IP).
 - Confirmed live: proxy flight ok=1 reliably (adsb works server-side); temp intermittently 429 on datacenter -> FIRMWARE FALLS BACK to direct open-meteo (residential IP, not throttled) via the `!proxyTemp` gate, so temp always shows. ESPN sports always direct from matrix.
 - STATUS: proxy production-ready. End-to-end matrix integration pending user hardware (flash firmware + rebuild app so app pushes server URL on connect).
+
+## Updates (2026-06 — round 50)
+- [x] **Sports moved to proxy (reliable).** Discovered site.web.api.espn.com is NOT datacenter-blocked (site.api.espn.com=403). Backend _fetch_score now uses site.web.api.espn.com -> proxy returns score ok=1 (NYY vs COL, next game). Firmware: matrixFeed() now takes team+wantSports and parses `score`; refreshData() picks the rotation team BEFORE the proxy call, gets score from the feed, and only falls back to direct ESPN teamGame if serverUrl empty or proxy score missing. So matrix now makes ONE proxy call for flight+sports+weather+temp; ESPN direct is fallback only.
+- [x] **Logos:** raised panel color depth 4-bit -> 6-bit (262k colors) now that memory is comfortable, to fix posterized airline logos. Needs re-flash.

@@ -32,7 +32,8 @@ inline void begin() {
   // ~90KB of internal RAM vs. double-buffered 8-bit, which is what let the
   // matrix sit stuck on "waiting for data" (every fetch died with code=-1).
   cfg.double_buff = false;      // single buffer -> frees one full framebuffer
-  cfg.setPixelColorDepthBits(4); // 4 bits/channel (4096 colors) -> half the buffer
+  cfg.setPixelColorDepthBits(6); // 6 bits/channel (262k colors) -> crisp logos,
+                                 // still ~half the RAM of the default 8-bit
   // Many P2.5 128x64 panels use FM6126A driver ICs, which need a special
   // init or a block of LEDs stays stuck lit. If your panel goes blank/worse
   // after flashing, delete this one line to fall back to the generic driver.
