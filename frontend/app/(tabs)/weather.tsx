@@ -69,7 +69,7 @@ const SEVERITIES: {
 ];
 
 export default function WeatherScreen() {
-  const { settings, updateWeather, updateQuietHours, updateSecondLocation, updateFlights, bleStatus, weatherTest } = useMatrix();
+  const { settings, updateWeather, updateQuietHours, updateRainQuiet, updateSecondLocation, updateFlights, bleStatus, weatherTest } = useMatrix();
   const insets = useSafeAreaInsets();
   const w = settings.weather;
   const f = settings.flights;
@@ -394,6 +394,42 @@ export default function WeatherScreen() {
                   <Text style={styles.clockHint}>
                     During these hours only extreme alerts chime — lower-severity
                     ones stay silent so they don&apos;t wake you.
+                  </Text>
+                </>
+              )}
+            </>
+          )}
+        </Card>
+
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Rain Arriving Alert"
+            icon="rainy"
+            value={w.rainAlert}
+            onValueChange={(v) => updateWeather({ rainAlert: v })}
+          />
+          <Text style={styles.clockHint}>
+            Show a heads-up on the Summary tab when rain is heading your way
+            within the next hour.
+          </Text>
+          {w.rainAlert && (
+            <>
+              <View style={styles.divider} />
+              <ToggleRow
+                label="Quiet hours"
+                icon="moon"
+                value={w.rainQuiet.enabled}
+                onValueChange={(v) => updateRainQuiet({ enabled: v })}
+              />
+              {w.rainQuiet.enabled && (
+                <>
+                  <View style={styles.nightRow}>
+                    <HourStepper label="From" hour={w.rainQuiet.startHour} onChange={(h) => updateRainQuiet({ startHour: h })} />
+                    <HourStepper label="To" hour={w.rainQuiet.endHour} onChange={(h) => updateRainQuiet({ endHour: h })} />
+                  </View>
+                  <Text style={styles.clockHint}>
+                    During these hours the rain-arriving banner stays hidden so it
+                    won&apos;t disturb you overnight.
                   </Text>
                 </>
               )}

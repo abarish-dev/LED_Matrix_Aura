@@ -87,6 +87,35 @@ def _haversine_mi(lat1, lon1, lat2, lon2):
     return R * 2 * _math.atan2(_math.sqrt(a), _math.sqrt(1 - a))
 
 
+_route_cache: dict = {}          # callsign -> (expires_ts, {airline, from, to})
+
+
+async def _enrich_route(cx, cs):
+    """Airline name + origin/destination IATA for a callsign (adsbdb.com,
+    keyless). Cached 6h. Best-effort — returns {} on any failure."""
+    cs = (cs or "").strip()
+    if not cs:
+        return {}
+    hit = _route_cache.get(cs)
+    if hit and hit[0] > _time.time():
+        return hit[1]
+    info = {}
+    try:
+        r = await cx.get(f"https://api.adsbdb.com/v0/callsign/{cs}",
+                         headers={"User-Agent": "AuraMatrix/1.0"})
+        if r.status_code == 200:
+            fr = ((r.json() or {}).get("response") or {}).get("flightroute") or {}
+            info = {
+                "airline": ((fr.get("airline") or {}).get("name") or "")[:18],
+                "from": (fr.get("origin") or {}).get("iata_code") or "",
+                "to": (fr.get("destination") or {}).get("iata_code") or "",
+            }
+    except Exception:
+        info = {}
+    _route_cache[cs] = (_time.time() + 6 * 3600, info)
+    return info
+
+
 async def _fetch_flight(cx, lat, lon, radius_mi):
     out = {"ok": 0}
     try:
@@ -96,20 +125,37 @@ async def _fetch_flight(cx, lat, lon, radius_mi):
         if r.status_code != 200:
             return out
         ac = (r.json() or {}).get("ac") or []
-        best, bd = None, 1e9
+        cands = []
         for a in ac:
             if a.get("lat") is None or a.get("lon") is None:
                 continue
+            cs = (a.get("flight") or "").strip()
+            if not cs:
+                continue
             d = _haversine_mi(lat, lon, a["lat"], a["lon"])
-            if d < bd:
-                bd, best = d, a
-        if not best:
-            return out
-        cs = (best.get("flight") or "").strip()
-        alt = best.get("alt_baro")
-        return {"ok": 1, "cs": cs, "dist": int(round(bd)),
+            alt = a.get("alt_baro")
+            cands.append({
+                "cs": cs, "dist": int(round(d)),
                 "alt": int(alt) if isinstance(alt, (int, float)) else 0,
-                "hdg": int(round(best.get("track"))) if isinstance(best.get("track"), (int, float)) else -1}
+                "hdg": int(round(a.get("track"))) if isinstance(a.get("track"), (int, float)) else -1,
+                "_d": d,
+            })
+        if not cands:
+            return out
+        cands.sort(key=lambda c: c["_d"])
+        top = cands[:5]
+        # Enrich each with airline name + route (parallel, best-effort).
+        import asyncio
+        routes = await asyncio.gather(*[_enrich_route(cx, c["cs"]) for c in top],
+                                      return_exceptions=True)
+        planes = []
+        for c, rt in zip(top, routes):
+            rt = rt if isinstance(rt, dict) else {}
+            planes.append({"cs": c["cs"], "dist": c["dist"], "alt": c["alt"], "hdg": c["hdg"],
+                           "airline": rt.get("airline", ""), "from": rt.get("from", ""),
+                           "to": rt.get("to", "")})
+        first = planes[0]
+        return {"ok": 1, **first, "list": planes}
     except Exception as e:
         logger.info(f"[feed] flight error: {e}")
         return out

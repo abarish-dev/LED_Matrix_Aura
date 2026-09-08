@@ -15,6 +15,7 @@ import { getTeamScore, getTeamStreak, type ScoreLine } from "@/src/services/espn
 import {
   activeAlerts,
   currentConditions,
+  isQuietNow,
   rainArriving,
   severityColorHex,
   type Alert,
@@ -693,7 +694,13 @@ export default function SummaryScreen() {
         </Pressable>
       )}
 
-      {rainSoon && (
+      {rainSoon &&
+        settings.weather.rainAlert &&
+        !isQuietNow(
+          settings.weather.rainQuiet.enabled,
+          settings.weather.rainQuiet.startHour,
+          settings.weather.rainQuiet.endHour,
+        ) && (
         <Pressable
           onPress={() => {
             Haptics.selectionAsync();

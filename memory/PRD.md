@@ -322,3 +322,27 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - **Team Logo Sharpening (P3)**: requires the user's hardware photos of the 64px logos on the matrix to hand-tune `firmware/include/Logos.h` bitmaps. Waiting on photos.
 - **OTA Upload In-App (P2)**: user unsure what it means — deferred pending explanation/confirmation.
 
+
+
+## Session Update — Plane Details On Wall + Quiet Rain Hours
+
+### Plane Details On Wall (firmware + backend — DONE, hardware-verify pending)
+- Backend `/api/matrix/feed` (`server.py`): `_fetch_flight` now returns the closest plane PLUS a `list` of up to 5 nearby planes (closest first). Each plane is enriched via new `_enrich_route()` (adsbdb.com, keyless, 6h cache) with `airline` name + `from`/`to` IATA route. Top-level `flight` keeps `cs/dist/alt/hdg` for backward compat and adds `airline/from/to`.
+- Firmware:
+  - `DataServices.h`: `FlightInfo` gained `origin`/`dest`; `FeedResult` gained `planes[5]` + `planeCount`; `matrixFeed()` parses the `list` (prefers server airline, falls back to `airlineFromCallsign`).
+  - `main.cpp`: stores `gFlightList[5]`/`gFlightCount`/`gFlightShown`; `drawCard(0)` advances through the list each time the flight card appears (mirrors the app's cycling). Tracked/direct-fallback = single plane.
+  - `DisplayManager.h` `flight()`: new optional `origin`/`dest` params render a green "ORIG>DEST" route line; layout re-flowed to fit callsign/airline/route/dist/alt/ETA on 64px.
+  - `Config.h`: `AURA_FW_VERSION` bumped `1.2.0` → `1.3.0`. NOTE: needs flash/OTA to take effect; hardware visual check pending.
+- Verified: backend returns airline+route+list (24/24 pytest incl. new `tests/test_flight_route_feed.py`). Firmware not compilable in this env — untested on hardware.
+
+### Quiet Rain Hours (app — DONE, tested)
+- Store (`matrix.tsx`): `weather.rainAlert` (bool, default true) + `weather.rainQuiet {enabled,startHour,endHour}` (default off/22–7); new `updateRainQuiet` action. App-only (not sent to matrix).
+- `weather.ts`: exported shared `isQuietNow()` helper.
+- Summary (`index.tsx`): rain banner now gated by `rainAlert` AND not within `rainQuiet` window.
+- Weather tab (`weather.tsx`): new "Rain Arriving Alert" card — master toggle + Quiet hours toggle with From/To hour steppers.
+- Verified by testing agent (iteration 28): card renders, toggles work, Summary stable. AsyncStorage persistence spot-check recommended on device (harness starts with empty localStorage).
+
+### Still open / needs user input
+- **Team Logo Sharpening (P3)**: waiting on user's hardware photos of the 64px logos.
+- **OTA Upload In-App (P2)**: user unsure what it means — deferred.
+

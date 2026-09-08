@@ -39,6 +39,9 @@ static uint8_t  cardIndex = 0;
 
 // Cached fetch results.
 static Data::FlightInfo  gFlight;
+static Data::FlightInfo  gFlightList[5];   // nearby planes (closest first)
+static uint8_t           gFlightCount = 0;
+static uint8_t           gFlightShown = 0; // rotating index for on-wall cycling
 static Data::ScoreInfo   gScore;
 static Data::WeatherInfo gWeather;
 static String            gScoreKey;   // "NFL:DAL" of the current score card
@@ -213,7 +216,12 @@ static void refreshData() {
         gSettings.flights.enabled && !trackMode, gSettings.weather.enabled,
         entry, gSettings.sports.enabled && entry.length() > 0);
     if (fr.ok) {
-      if (gSettings.flights.enabled && !trackMode) { gFlight = fr.flight; gEtaMin = -1; proxyFlight = true; }
+      if (gSettings.flights.enabled && !trackMode) {
+        gFlight = fr.flight; gEtaMin = -1; proxyFlight = true;
+        gFlightCount = fr.planeCount;
+        for (uint8_t i = 0; i < fr.planeCount; i++) gFlightList[i] = fr.planes[i];
+        if (gFlightShown >= gFlightCount) gFlightShown = 0;
+      }
       if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
       if (entry.length() > 0 && fr.haveScore) { gScore = fr.score; gScoreKey = entry; proxyScore = true; }
       if (fr.haveTemp) {
@@ -254,6 +262,13 @@ static void refreshData() {
       gFlight = Data::nearestFlight(gSettings.flights.lat, gSettings.flights.lon,
                                     gSettings.flights.radiusMi);
     }
+  }
+
+  // Tracked / direct-fallback modes render a single plane (no cycling list).
+  if (!proxyFlight) {
+    gFlightCount = gFlight.ok ? 1 : 0;
+    if (gFlightCount) gFlightList[0] = gFlight;
+    gFlightShown = 0;
   }
 
   // Direct ESPN fetch only as a fallback (no server URL, or proxy had no score).
@@ -314,10 +329,21 @@ static void drawCard(uint8_t t) {
     return;
   }
   if (t == 0) {
-    Display::flight(gFlight.callsign, gFlight.distanceMi, gFlight.airline,
-                    gFlight.altFt, gFlight.headingDeg, accent, gEtaMin);
+    // Cycle through nearby planes: show the next one each time the flight card
+    // comes up (mirrors the app's Overhead card). Tracked/fallback = single.
+    Data::FlightInfo* fp = &gFlight;
+    if (gFlightCount > 1) {
+      gFlightShown = gFlightShown % gFlightCount;
+      fp = &gFlightList[gFlightShown];
+      gFlightShown++;
+    } else if (gFlightCount == 1) {
+      fp = &gFlightList[0];
+    }
+    Display::flight(fp->callsign, fp->distanceMi, fp->airline,
+                    fp->altFt, fp->headingDeg, accent, gEtaMin,
+                    fp->origin, fp->dest);
     // Overlay the airline logo if one has been added to Logos.h.
-    String icao = gFlight.callsign.substring(0, 3);
+    String icao = fp->callsign.substring(0, 3);
     const LogoAsset* lg = airlineLogo(icao);
     if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
   } else if (t == 1) {

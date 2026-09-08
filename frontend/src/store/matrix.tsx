@@ -53,6 +53,8 @@ export type Settings = {
     showFeels: boolean;
     showWxIcon: boolean;
     alertSound: boolean;
+    rainAlert: boolean; // show the "rain arriving soon" banner on Summary
+    rainQuiet: { enabled: boolean; startHour: number; endHour: number };
     quietHours: { enabled: boolean; startHour: number; endHour: number };
     secondLocation: { zip: string; lat: number | null; lon: number | null; city: string; state: string };
   };
@@ -97,6 +99,8 @@ export const DEFAULT_SETTINGS: Settings = {
     showFeels: false,
     showWxIcon: false,
     alertSound: false,
+    rainAlert: true,
+    rainQuiet: { enabled: false, startHour: 22, endHour: 7 },
     quietHours: { enabled: false, startHour: 22, endHour: 7 },
     secondLocation: { zip: "", lat: null, lon: null, city: "", state: "" },
   },
@@ -137,6 +141,7 @@ type MatrixContextValue = {
   updateSports: (patch: Partial<Settings["sports"]>) => void;
   updateWeather: (patch: Partial<Settings["weather"]>) => void;
   updateQuietHours: (patch: Partial<Settings["weather"]["quietHours"]>) => void;
+  updateRainQuiet: (patch: Partial<Settings["weather"]["rainQuiet"]>) => void;
   updateSecondLocation: (patch: Partial<Settings["weather"]["secondLocation"]>) => void;
   toggleTeam: (team: SavedTeam) => void;
   reorderTeams: (teams: SavedTeam[]) => void;
@@ -371,6 +376,20 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
         const next = {
           ...prev,
           weather: { ...prev.weather, quietHours: { ...prev.weather.quietHours, ...patch } },
+        };
+        persist(next);
+        return next;
+      });
+    },
+    [persist],
+  );
+
+  const updateRainQuiet = useCallback(
+    (patch: Partial<Settings["weather"]["rainQuiet"]>) => {
+      setSettings((prev) => {
+        const next = {
+          ...prev,
+          weather: { ...prev.weather, rainQuiet: { ...prev.weather.rainQuiet, ...patch } },
         };
         persist(next);
         return next;
@@ -628,6 +647,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     updateSports,
     updateWeather,
     updateQuietHours,
+    updateRainQuiet,
     updateSecondLocation,
     toggleTeam,
     reorderTeams,

@@ -164,6 +164,15 @@ export async function currentConditions(lat: number, lon: number): Promise<Curre
 
 export type RainSoon = { minutes: number; mmPerHr: number; label: string };
 
+/** True when the current local hour falls inside a quiet-hours window. */
+export function isQuietNow(enabled: boolean, startHour: number, endHour: number): boolean {
+  if (!enabled) return false;
+  const h = new Date().getHours();
+  if (startHour === endHour) return false;
+  if (startHour < endHour) return h >= startHour && h < endHour;
+  return h >= startHour || h < endHour; // wraps midnight
+}
+
 /**
  * Detects rain arriving at the point within the next hour while it's not
  * currently raining. Uses Open-Meteo's 15-minute precipitation nowcast (the

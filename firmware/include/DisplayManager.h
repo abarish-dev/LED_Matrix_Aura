@@ -95,28 +95,36 @@ inline void drawArrow(int cx, int cy, int deg, int len, uint16_t color) {
   }
 }
 
-// A single flight "card": callsign, airline, distance, altitude + heading + ETA.
+// A single flight "card": callsign, airline, route, distance, altitude + ETA.
 inline void flight(const String& callsign, int distanceMi, const String& airline,
                    int altFt = 0, int headingDeg = -1,
-                   uint16_t border = 0, int etaMin = -1) {
+                   uint16_t border = 0, int etaMin = -1,
+                   const String& origin = "", const String& dest = "") {
   clear();
   dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border ? border : rgb(60, 40, 5));
-  centerText(callsign.c_str(), 3, rgb(245, 158, 11), 1);
-  centerText(airline.c_str(), 15, rgb(230, 230, 230), 1);
+  bool haveRoute = origin.length() && dest.length();
   char buf[28];
+  centerText(callsign.c_str(), 2, rgb(245, 158, 11), 1);
+  centerText(airline.c_str(), 13, rgb(230, 230, 230), 1);
+  int y = 24;
+  if (haveRoute) {
+    snprintf(buf, sizeof(buf), "%s>%s", origin.c_str(), dest.c_str());
+    centerText(buf, y, rgb(120, 220, 170), 1);
+    y += 11;
+  }
   snprintf(buf, sizeof(buf), "%d mi", distanceMi);
-  centerText(buf, 28, rgb(160, 160, 160), 1);
+  centerText(buf, y, rgb(160, 160, 160), 1); y += 11;
   if (altFt > 0 || headingDeg >= 0) {
     if (headingDeg >= 0)
       snprintf(buf, sizeof(buf), "%dft %s", altFt, headingToCompass(headingDeg));
     else
       snprintf(buf, sizeof(buf), "%d ft", altFt);
-    centerText(buf, 40, rgb(120, 170, 255), 1);
+    centerText(buf, y, rgb(120, 170, 255), 1); y += 11;
   }
-  if (etaMin >= 0) {
+  if (etaMin >= 0 && y <= 56) {
     if (etaMin <= 10) snprintf(buf, sizeof(buf), "ARRIVING ~%dm", etaMin);
     else              snprintf(buf, sizeof(buf), "ETA ~%d min", etaMin);
-    centerText(buf, 53, rgb(16, 185, 129), 1);
+    centerText(buf, y, rgb(16, 185, 129), 1);
   }
   if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(245, 158, 11));
   flip();

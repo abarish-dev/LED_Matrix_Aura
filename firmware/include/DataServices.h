@@ -19,7 +19,7 @@
 
 namespace Data {
 
-struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; int altFt=0; int headingDeg=-1; };
+struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; int altFt=0; int headingDeg=-1; String origin; String dest; };
 struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; String streak; };
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
 
@@ -457,6 +457,8 @@ inline void sunTimes(double lat, double lon, int& sunriseMin, int& sunsetMin) {
 struct FeedResult {
   bool ok = false;
   FlightInfo flight;
+  FlightInfo planes[5];   // up to 5 nearby aircraft, closest first (for cycling)
+  uint8_t planeCount = 0;
   WeatherInfo alert;
   ScoreInfo score;
   bool haveScore = false;
@@ -486,12 +488,38 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
 
   JsonObjectConst f = doc["flight"];
   if (f["ok"].as<int>() == 1) {
-    r.flight.ok = true;
-    r.flight.callsign = String((const char*)(f["cs"] | ""));
-    r.flight.airline = airlineFromCallsign(r.flight.callsign);
-    r.flight.distanceMi = f["dist"] | 0;
-    r.flight.altFt = f["alt"] | 0;
-    r.flight.headingDeg = f["hdg"] | -1;
+    // Parse the nearby-aircraft list (closest first) for on-wall cycling.
+    JsonArrayConst list = f["list"];
+    uint8_t n = 0;
+    for (JsonObjectConst p : list) {
+      if (n >= 5) break;
+      FlightInfo& fi = r.planes[n];
+      fi.ok = true;
+      fi.callsign = String((const char*)(p["cs"] | ""));
+      String air = String((const char*)(p["airline"] | ""));
+      fi.airline = air.length() ? air : airlineFromCallsign(fi.callsign);
+      fi.distanceMi = p["dist"] | 0;
+      fi.altFt = p["alt"] | 0;
+      fi.headingDeg = p["hdg"] | -1;
+      fi.origin = String((const char*)(p["from"] | ""));
+      fi.dest = String((const char*)(p["to"] | ""));
+      n++;
+    }
+    r.planeCount = n;
+    // Backward-compatible single flight = closest (or the top-level fields).
+    if (n > 0) {
+      r.flight = r.planes[0];
+    } else {
+      r.flight.ok = true;
+      r.flight.callsign = String((const char*)(f["cs"] | ""));
+      String air = String((const char*)(f["airline"] | ""));
+      r.flight.airline = air.length() ? air : airlineFromCallsign(r.flight.callsign);
+      r.flight.distanceMi = f["dist"] | 0;
+      r.flight.altFt = f["alt"] | 0;
+      r.flight.headingDeg = f["hdg"] | -1;
+      r.flight.origin = String((const char*)(f["from"] | ""));
+      r.flight.dest = String((const char*)(f["to"] | ""));
+    }
   }
   JsonObjectConst sc = doc["score"];
   if (sc["ok"].as<int>() == 1) {
