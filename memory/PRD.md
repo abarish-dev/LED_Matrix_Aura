@@ -346,3 +346,29 @@ Four new features (verified via testing_agent iteration_24, all pass):
 - **Team Logo Sharpening (P3)**: waiting on user's hardware photos of the 64px logos.
 - **OTA Upload In-App (P2)**: user unsure what it means — deferred.
 
+
+
+## Session Update — Multi-Game Sports + Route Info + Cleaner Logos (firmware v1.4.0)
+
+Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/airline/dist/alt + cycles planes). User asks: (1) show ALL followed teams' games (Yankees AND Ravens), (2) sports still not appearing, (3) add departure/arrival (route) to flight cards, (4) NetJets logo missing + American logo "extra pixel" + stray green pixels near sun/logos.
+
+### Multi-game sports (backend + firmware — DONE, hardware-verify pending)
+- Backend `/api/matrix/feed`: `team` param is now a COMMA-SEPARATED list ("MLB:NYY,NFL:BAL"). Fetches a game for every team in parallel and returns `scores` = list of `{ok,home,hs,away,as,st,key}` for teams that have a game in the window, plus `score` (=scores[0], backward-compat). Verified: NYY+BAL+KC all returned.
+- Firmware: `FeedResult` gained `scores[8]/scoreKeys[8]/scoreCount`; `matrixFeed()` parses the `scores` array. `main.cpp` now sends ALL followed teams (comma-joined, was rotating one per refresh), stores `gScoreList[8]/gScoreKeysArr[8]/gScoreCount/gScoreShown`, and `drawCard(1)` cycles through every team's game each time the sports card appears (mirrors the flight cycling). `buildSeq` uses `gScoreCount>0`. Direct-ESPN fallback (no server URL) fetches just the first team.
+- WHY sports may have looked empty: only ONE team was fetched per 30s refresh before; an out-of-season team (NBA/NHL in offseason) produced no card. Now all in-season teams cycle. NOTE: teams must be SYNCED to the matrix (press SYNC / reconnect) — the matrix only shows teams present in `gSettings.sports.teams`.
+
+### Departure/arrival on flight card (already in v1.3.0, confirmed)
+- Backend enriches each plane with `airline/from/to` via adsbdb; firmware `flight()` draws a green "ORIG>DEST" line when both present. Verified commercial flights return routes (VIR26Q JFK→LHR). GA/private (Frontier tail, NetJets) usually have NO route in adsbdb → line stays blank (data limitation, not a bug).
+
+### Logos + airline names (DONE)
+- `DataServices.h airlineFromCallsign`: added Alaska/Hawaiian/Allegiant + private ops NetJets(EJA)/ExecJet(EJM)/Flexjet(LXJ)/PlaneSense(DPJ) so at least the NAME shows when no logo exists.
+- `tools/generate_logos.py`: rewrote `to_rgb565_array` to drop faint anti-aliased edge pixels (alpha<96 → off) and kill muddy near-black specks (max<24 → off). Regenerated `include/logos/generated_logos.h` (135 logos). This removes the stray "extra pixel"/green edge artifacts on team + airline logos. NetJets has no Google-Flights logo source → name fallback only.
+- `Config.h`: `AURA_FW_VERSION` → `1.4.0`.
+
+### Flash required
+- All of the above needs the ESP32 reflashed to v1.4.0 (git pull + USB/OTA). No app rebuild required.
+
+### Still open
+- Team Logo Sharpening fine-tune (P3): still want user's hardware photos to hand-adjust specific logos.
+- If sports still empty after flashing: verify teams synced (SYNC button) and that the team is in-season.
+

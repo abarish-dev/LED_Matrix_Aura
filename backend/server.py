@@ -283,20 +283,30 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
     if hit and hit[0] > _time.time():
         return hit[1]
 
-    payload = {"flight": {"ok": 0}, "score": {"ok": 0}, "alert": {"ok": 0}, "temp": {"ok": 0}}
+    payload = {"flight": {"ok": 0}, "score": {"ok": 0}, "scores": [], "alert": {"ok": 0}, "temp": {"ok": 0}}
+    # `team` may be a comma-separated list of "LEAGUE:ABBR" so we can return a
+    # game for EVERY followed team (the matrix then cycles through them all).
+    team_list = [t.strip() for t in (team or "").split(",") if t.strip()][:8]
     async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as cx:
         import asyncio
         tasks = {}
         if flights:
             tasks["flight"] = _fetch_flight(cx, lat, lon, radius)
-        if sports and team:
-            tasks["score"] = _fetch_score(cx, team)
         if weather:
             tasks["alert"] = _fetch_alert(cx, lat, lon, severity)
         tasks["temp"] = _fetch_temp(cx, lat, lon)
-        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
-        for k, res in zip(tasks.keys(), results):
+        score_tasks = [_fetch_score(cx, t) for t in team_list] if sports else []
+        results = await asyncio.gather(*tasks.values(), *score_tasks, return_exceptions=True)
+        n = len(tasks)
+        for k, res in zip(tasks.keys(), results[:n]):
             payload[k] = res if isinstance(res, dict) else {"ok": 0}
+        # Build the per-team scores list (only teams that actually have a game).
+        scores = []
+        for t, res in zip(team_list, results[n:]):
+            if isinstance(res, dict) and res.get("ok") == 1:
+                scores.append({**res, "key": t})
+        payload["scores"] = scores
+        payload["score"] = scores[0] if scores else {"ok": 0}
 
     _feed_cache[key] = (_time.time() + _FEED_TTL, payload)
     return payload

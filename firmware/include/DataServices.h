@@ -43,7 +43,14 @@ static String airlineFromCallsign(const String& cs) {
   if (p == "SKW") return "SkyWest";
   if (p == "NKS") return "Spirit";
   if (p == "FFT") return "Frontier";
-  return cs; // fall back to raw callsign
+  if (p == "ASA") return "Alaska";
+  if (p == "HAL") return "Hawaiian";
+  if (p == "AAY") return "Allegiant";
+  if (p == "EJA") return "NetJets";
+  if (p == "EJM") return "Exec Jet";
+  if (p == "LXJ") return "Flexjet";
+  if (p == "DPJ") return "PlaneSense";
+  return cs; // fall back to raw callsign (e.g. GA tail number)
 }
 
 // Tiny per-host DNS cache. Cheap routers rate-limit / ban a client that sends
@@ -461,6 +468,9 @@ struct FeedResult {
   uint8_t planeCount = 0;
   WeatherInfo alert;
   ScoreInfo score;
+  ScoreInfo scores[8];    // one game per followed team that is in-season
+  String    scoreKeys[8]; // "LEAGUE:ABBR" for each entry in scores[]
+  uint8_t   scoreCount = 0;
   bool haveScore = false;
   bool haveTemp = false;
   int tempF = -999, feelsF = -999, wxCode = -1, isDay = 1, hiF = -999, loF = -999;
@@ -531,6 +541,23 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.score.as = sc["as"] | 0;
     r.score.status = String((const char*)(sc["st"] | ""));
   }
+  // Parse the full per-team scores list (all followed teams that are playing)
+  // so the matrix can cycle through EVERY game, not just one.
+  JsonArrayConst scs = doc["scores"];
+  uint8_t sn = 0;
+  for (JsonObjectConst s : scs) {
+    if (sn >= 8) break;
+    ScoreInfo& si = r.scores[sn];
+    si.ok = true;
+    si.home = String((const char*)(s["home"] | ""));
+    si.away = String((const char*)(s["away"] | ""));
+    si.hs = s["hs"] | 0;
+    si.as = s["as"] | 0;
+    si.status = String((const char*)(s["st"] | ""));
+    r.scoreKeys[sn] = String((const char*)(s["key"] | ""));
+    sn++;
+  }
+  r.scoreCount = sn;
   JsonObjectConst a = doc["alert"];
   if (a["ok"].as<int>() == 1) {
     r.alert.ok = true;

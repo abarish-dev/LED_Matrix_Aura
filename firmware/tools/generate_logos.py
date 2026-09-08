@@ -45,13 +45,23 @@ session.headers.update({"User-Agent": "Mozilla/5.0 AuraLogoGen"})
 
 
 def to_rgb565_array(img):
+    # Resize with high quality, then clean up anti-aliased edges: faint pixels
+    # become fully off (black) and muddy near-black specks are killed. This
+    # removes the stray/"extra" edge pixels that read as odd colors on the LEDs.
     img = img.convert("RGBA").resize((SIZE, SIZE), Image.LANCZOS)
-    bg = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 255))
-    img = Image.alpha_composite(bg, img).convert("RGB")
+    px = img.load()
     out = []
     for y in range(SIZE):
         for x in range(SIZE):
-            r, g, b = img.getpixel((x, y))
+            r, g, b, a = px[x, y]
+            if a < 96:                       # drop faint anti-aliased edges
+                r = g = b = 0
+            else:                            # composite opaque-ish pixel over black
+                r = r * a // 255
+                g = g * a // 255
+                b = b * a // 255
+                if max(r, g, b) < 24:        # kill muddy near-black specks
+                    r = g = b = 0
             out.append(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
     return out
 

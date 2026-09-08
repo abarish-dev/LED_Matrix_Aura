@@ -43,6 +43,10 @@ static Data::FlightInfo  gFlightList[5];   // nearby planes (closest first)
 static uint8_t           gFlightCount = 0;
 static uint8_t           gFlightShown = 0; // rotating index for on-wall cycling
 static Data::ScoreInfo   gScore;
+static Data::ScoreInfo   gScoreList[8];   // one game per in-season followed team
+static String            gScoreKeysArr[8];
+static uint8_t           gScoreCount = 0;
+static uint8_t           gScoreShown = 0; // rotating index for on-wall cycling
 static Data::WeatherInfo gWeather;
 static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
@@ -195,14 +199,14 @@ static void refreshData() {
   bool trackMode = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
   bool proxyFlight = false, proxyWeather = false, proxyTemp = false, proxyScore = false;
 
-  // Pick this cycle's team (rotates through followed teams, one per refresh)
-  // BEFORE the proxy call so the server can fetch its game in the same request.
-  static uint8_t ti = 0;
+  // Send ALL followed teams (comma-joined) so the server returns a game for
+  // each one and the matrix can cycle through every team that's playing.
   String entry;
   if (gSettings.sports.enabled && gSettings.sports.count > 0) {
-    ti = ti % gSettings.sports.count;
-    entry = gSettings.sports.teams[ti];   // e.g. "MLB:NYY"
-    ti++;
+    for (uint8_t i = 0; i < gSettings.sports.count; i++) {
+      if (entry.length()) entry += ",";
+      entry += gSettings.sports.teams[i];   // e.g. "MLB:NYY,NFL:BAL"
+    }
   }
 
   // If the app gave us a backend URL, fetch flight + sports + weather + temp in
@@ -223,7 +227,15 @@ static void refreshData() {
         if (gFlightShown >= gFlightCount) gFlightShown = 0;
       }
       if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
-      if (entry.length() > 0 && fr.haveScore) { gScore = fr.score; gScoreKey = entry; proxyScore = true; }
+      if (entry.length() > 0 && fr.scoreCount > 0) {
+        gScoreCount = fr.scoreCount;
+        for (uint8_t i = 0; i < fr.scoreCount; i++) {
+          gScoreList[i] = fr.scores[i];
+          gScoreKeysArr[i] = fr.scoreKeys[i];
+        }
+        if (gScoreShown >= gScoreCount) gScoreShown = 0;
+        gScore = fr.scores[0]; gScoreKey = fr.scoreKeys[0]; proxyScore = true;
+      }
       if (fr.haveTemp) {
         gTempF  = fr.tempF;
         gFeelsF = gSettings.weather.showFeels ? fr.feelsF : -999;
@@ -271,13 +283,19 @@ static void refreshData() {
     gFlightShown = 0;
   }
 
-  // Direct ESPN fetch only as a fallback (no server URL, or proxy had no score).
-  if (gSettings.sports.enabled && gSettings.sports.count > 0 && !proxyScore && entry.length() > 0) {
-    int colon = entry.indexOf(':');
-    if (colon > 0)
-      gScore = Data::teamGame(entry.substring(0, colon), entry.substring(colon + 1),
+  // Direct ESPN fetch only as a fallback (no server URL, or proxy had no
+  // score). Fetches just the FIRST team to stay light on the ESP32.
+  if (gSettings.sports.enabled && gSettings.sports.count > 0 && !proxyScore) {
+    String first = gSettings.sports.teams[0];
+    int colon = first.indexOf(':');
+    if (colon > 0) {
+      gScore = Data::teamGame(first.substring(0, colon), first.substring(colon + 1),
                               gSettings.sports.showStreak);
-    gScoreKey = entry;
+      gScoreKey = first;
+      gScoreCount = gScore.ok ? 1 : 0;
+      if (gScoreCount) { gScoreList[0] = gScore; gScoreKeysArr[0] = first; }
+      gScoreShown = 0;
+    }
   }
 
   if (gSettings.weather.enabled && !proxyWeather)
@@ -347,17 +365,23 @@ static void drawCard(uint8_t t) {
     const LogoAsset* lg = airlineLogo(icao);
     if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
   } else if (t == 1) {
+    // Cycle through every followed team's game, one each time the sports card
+    // comes up (mirrors the flight card + the app).
+    if (gScoreCount > 1) gScoreShown = gScoreShown % gScoreCount;
+    else gScoreShown = 0;
+    Data::ScoreInfo& s = (gScoreCount > 0) ? gScoreList[gScoreShown] : gScore;
+    String key = (gScoreCount > 0) ? gScoreKeysArr[gScoreShown] : gScoreKey;
     // Brighten border for a starred rivalry team, else use the holiday accent.
     uint16_t border = accent;
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
-      if (gSettings.sports.rivals[i] == gScoreKey) { border = Display::rgb(245, 158, 11); break; }
-    Display::score(gScore.home, gScore.hs, gScore.away, gScore.as, gScore.status, border, gScore.streak);
-    int colon = gScoreKey.indexOf(':');
+      if (gSettings.sports.rivals[i] == key) { border = Display::rgb(245, 158, 11); break; }
+    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak);
+    int colon = key.indexOf(':');
     if (colon > 0) {
-      const LogoAsset* lg = teamLogo(gScoreKey.substring(0, colon),
-                                     gScoreKey.substring(colon + 1));
+      const LogoAsset* lg = teamLogo(key.substring(0, colon), key.substring(colon + 1));
       if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
     }
+    if (gScoreCount > 1) gScoreShown++;
   }
 }
 
@@ -366,7 +390,7 @@ static uint8_t buildSeq(uint8_t* seq) {
   uint8_t n = 0;
   if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
   if (gSettings.flights.enabled && gFlight.ok)   seq[n++] = 0;
-  if (gSettings.sports.enabled  && gScore.ok)    seq[n++] = 1;
+  if (gSettings.sports.enabled  && gScoreCount > 0) seq[n++] = 1;
   // Clock shows when enabled OR as a fallback so the panel is never blank.
   if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
   return n;
