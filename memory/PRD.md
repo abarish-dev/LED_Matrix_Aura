@@ -284,3 +284,8 @@ Four new features (verified via testing_agent iteration_24, all pass):
 ## Updates (2026-06 — round 50)
 - [x] **Sports moved to proxy (reliable).** Discovered site.web.api.espn.com is NOT datacenter-blocked (site.api.espn.com=403). Backend _fetch_score now uses site.web.api.espn.com -> proxy returns score ok=1 (NYY vs COL, next game). Firmware: matrixFeed() now takes team+wantSports and parses `score`; refreshData() picks the rotation team BEFORE the proxy call, gets score from the feed, and only falls back to direct ESPN teamGame if serverUrl empty or proxy score missing. So matrix now makes ONE proxy call for flight+sports+weather+temp; ESPN direct is fallback only.
 - [x] **Logos:** raised panel color depth 4-bit -> 6-bit (262k colors) now that memory is comfortable, to fix posterized airline logos. Needs re-flash.
+
+## Updates (2026-06 — round 51) — ASSIGNMENT COMPLETE (pending user hardware verify)
+- Backend feed final test: flight.ok=1, score.ok=1 (NYY 9/8), alert.ok=0 (no active alert, correct), temp.ok=1. health + /api/ regressions pass.
+- Firmware refreshData reviewed coherent: ONE proxy call -> flight+sports+weather+temp; direct fetches gated as fallback (proxyFlight/Score/Weather/Temp); rotation team chosen pre-proxy.
+- Color depth 6-bit for logos. NEEDS: user flash firmware + rebuild app (app pushes serverUrl on connect). Verify: sports card appears + logos crisper.
