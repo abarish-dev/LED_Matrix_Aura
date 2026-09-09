@@ -38,6 +38,12 @@ inline void begin() {
   // init or a block of LEDs stays stuck lit. If your panel goes blank/worse
   // after flashing, delete this one line to fall back to the generic driver.
   cfg.driver = HUB75_I2S_CFG::FM6126A;
+  // Ghosting fix: bright elements (e.g. the weather clock's sun icon) can
+  // leak a faint stray-colored pixel onto neighboring rows/cols without extra
+  // blanking time around the row latch. 2 is the documented starting point
+  // for this library (max 4; higher trades a little brightness for less
+  // ghosting) — bump toward 3-4 here if any stray pixels are still visible.
+  cfg.latch_blanking = 2;
   dma = new MatrixPanel_I2S_DMA(cfg);
   dma->begin();
   dma->setBrightness8(120);

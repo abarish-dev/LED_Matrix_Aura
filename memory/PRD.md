@@ -446,3 +446,26 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Build the new `.pio/build/adafruit_matrixportal_esp32s3/firmware.bin` from this updated source.
 2. Re-upload it correctly labeled: `curl -F "version=1.5.2" -F "file=@firmware.bin" https://<deployed-backend-url>/api/firmware/upload`.
 3. The currently-looping device (running ~v1.5.0) will see `1.5.2 > 1.5.0` — a legitimate, one-time real upgrade — install it, and the new version-guard then prevents this class of loop permanently going forward.
+
+
+## Session Update — Sun icon ghosting fix + smarter sports card logic (firmware v1.5.3, backend)
+
+### Sun icon "green pixels" (firmware, needs reflash)
+- Root cause: the earlier logo-alpha cleanup (v1.4.0) only fixed BITMAP team/airline logos — the weather clock's sun icon is drawn procedurally (vector `drawSun()`/`fillCircle`/`drawLine` in `DisplayManager.h`), a completely different code path, so it was never actually fixed. The stray colored pixels near bright vector shapes are classic HUB75 ghosting (insufficient blanking time around the row latch, well-documented for the ESP32-HUB75-MatrixPanel-DMA library).
+- Fix: `Display::begin()` now sets `cfg.latch_blanking = 2;` (library's documented ghosting fix, range 1-4; higher trades a little brightness for less ghosting — bump to 3-4 if any stray pixels remain visible after reflash).
+- `Config.h` → `AURA_FW_VERSION` `1.5.3`.
+
+### Smarter sports card logic (backend only — NO reflash needed, just redeploy)
+- `server.py _fetch_score()` rewritten: now returns 0-2 games per team instead of always exactly one "closest to now" game:
+  - LIVE game (state="in") → shown alone, previous finished game is hidden.
+  - Otherwise: a game that finished within the last 12h AND a game starting within the next 12h are BOTH included together (two cards cycle for that team).
+  - If neither of those applies (already >12h since the last final, nothing starting soon) → falls back to showing the single next scheduled game, however far out, so the card never goes empty.
+- NOTE on interpretation: user's spec said "13 hours after game completes... show next game" — implemented as a single clean 12h cutoff for the recent-final display (falls straight through to "next game" once >12h old) rather than a separate 12-13h dead zone, to avoid ever showing a blank card for that extra hour.
+- `matrix_feed()` flattens each team's 0-2 results into the existing `scores[]` array (cap 8 total, same firmware array size as before) — **no firmware changes were needed for this feature**, the existing multi-card cycling code already handles multiple entries with the same team `key`.
+- LIMITATION: the ESP32's direct-ESPN fallback (`DataServices.h teamGame()`, only used when no backend `serverUrl` is configured) was NOT updated to this new logic — it keeps the old "closest game" behavior. This only matters if the app never syncs a server URL to the matrix, which isn't the normal setup path.
+- Verified live: `/api/matrix/feed?team=MLB:NYY,NFL:BAL,NHL:NJD` correctly returns each team's next scheduled game as a fallback (no live/recent-final games at test time); NHL:NJD correctly omitted (offseason, no events).
+
+### Action items for user
+1. Redeploy (Publish) to get the sports logic live — no firmware change required for this part.
+2. Reflash to v1.5.3 to get the sun-icon ghosting fix (OTA or USB).
+

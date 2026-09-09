@@ -1,0 +1,46 @@
+{
+  "summary": "Backend-only verification of the new sports-card windowing logic in GET /api/matrix/feed (_fetch_score / matrix_feed in server.py). All 35 backend pytest cases pass (24 pre-existing regression + 11 new sports-logic cases). Confirmed against LIVE ESPN data at test-run time (server clock reads Sept 9 2026, not Jan 2026 as stated in the request context): (1) payload always has both back-compat 'score' (single) and new 'scores' (array) keys, each entry has ok/home/hs/away/as/st/key; legacy 'score' == scores[0] when non-empty else {ok:0}. (2) NHL:NJD (genuinely off-season in September, zero events in the ESPN scoreboard window) is silently OMITTED from 'scores' -- no error, no placeholder entry. Verified directly against ESPN's own scoreboard API that NHL had zero events in the -2d..+8d window at test time. (3) NFL:BAL (in-season, but next game >12h out, no live/no recent final) correctly falls back to exactly ONE 'next scheduled game' entry (9/13 game vs IND), matching the fallback contract. (4) MLB:NYY (game later the same day, within 12h) shows exactly one entry for today's matchup (COL @ NYY). (5) Multi-team query team=MLB:NYY,NFL:BAL,NHL:NJD returns independent per-team results (NYY + BAL present, NJD correctly absent), scores.length <= 8. (6) team_list itself is capped to 8 entries (verified with a 10-team CSV -- only first 8 processed, consistent with the firmware's fixed-size array). (7) sports=0 correctly excludes scores entirely (empty list, legacy score={ok:0}). (8) flights=1/weather=1 regression on the same endpoint unaffected -- flight/alert/temp blocks still well-formed and temp.ok=1 with a numeric Fahrenheit reading. LIMITATION (per the request's own caveat): at test-run time there was NO live game (state=in) anywhere across MLB/NFL/NBA/NHL and NO 'post' final within the last 12h in MLB (confirmed by querying ESPN's raw scoreboard directly for all 4 leagues), so the 'live hides previous game' and 'recent-final + upcoming-within-12h shown together' code paths could not be exercised against a real live fixture -- this is a testability limitation of live sports data, not a defect. Code review of the two branches in _fetch_score (lines ~227-248) shows the logic is written correctly: `if live: return [to_dict(*live)]` unconditionally short-circuits before appending recent_final/upcoming_12h, and the non-live branch independently appends both recent_final and upcoming_12h to the same out[] list when both exist. Firmware ghosting fix is hardware-only and was not tested (out of scope, no code accessible here).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/matrix/feed", "issue": "The live-game-hides-previous-final and recent-final+upcoming-together branches of _fetch_score could not be exercised against a real live ESPN fixture during this test run (no live/recent-final games existed for any tracked league at test time). Logic reviewed by code inspection and appears correct, but has not been runtime-verified end-to-end for those two specific states."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sports_card_logic.py",
+    "/app/backend/tests/test_matrix_feed.py",
+    "/app/backend/tests/test_flight_route_feed.py",
+    "/app/backend/tests/test_firmware_ota.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_results_sports.xml"
+  ],
+  "action_items": [
+    "No functional fixes required -- the fallback ('next game'), offseason-omission, multi-team, and toggle behaviors (the testable slice per the request's own note) all produced the expected observable behavior.",
+    "Recommend main agent (or a future testing pass) re-run test_sports_card_logic.py during a window when a tracked team actually has a live game or a final within the last 12h + another game starting soon, to close the loop on the two untestable branches noted above. The test file is written generically (by team, not by fixed date) so it will remain valid for future runs.",
+    "Firmware ghosting fix (HUB75 latch_blanking) is unverifiable in this environment -- requires physical hardware per the request; skipped as instructed."
+  ],
+  "critical_code_review_comments": [
+    "_fetch_score is well-structured and the three-way state machine (live / recent_final+upcoming_12h / next_game fallback) matches the PRD spec precisely, including the documented approximation caveat that ESPN gives start-time only so 'finished within 12h' is inferred from state=='post' + start-time delta.",
+    "server.py is now ~440 lines spanning 3 concerns (status CRUD, matrix feed proxy, firmware OTA) -- still under the 700-line threshold flagged in prior iterations, no new size concern introduced by this change.",
+    "team_list = [...][:8] silently truncates beyond 8 teams with no warning/error surfaced to the caller (matches firmware's fixed array size, but if a user configures 9+ teams in the app the 9th+ team will just vanish with no feedback -- worth a frontend-side cap/validation if not already present).",
+    "scores = scores[:8] after flattening is a second independent cap -- combined with the 8-team input cap, the max possible entries (16, since a team can contribute up to 2) is correctly bounded down to 8 for the firmware, but note a pathological case: if the first 4-5 teams in the list each produce 2 entries (recent-final + upcoming), later teams' single fallback entries could be silently dropped even though earlier teams already got 2 slots each. This is a minor fairness edge case, not a bug, worth mentioning to main agent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sports_card_logic.py (new -- 11 pytest cases covering shape, fallback, offseason-omission, multi-team cap, sports toggle, and flights/weather regression)"
+  ],
+  "success_rate": {
+    "backend": "100% (35/35)",
+    "frontend": "not tested (backend-only per review request)"
+  },
+  "seed_data_creation": "No new seed data created. No destructive/mutating endpoints were exercised in this session's test file (matrix/feed is read-only).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BASE_URL comes from EXPO_PUBLIC_BACKEND_URL in frontend/.env (https://smart-matrix-hub.preview.emergentagent.com); /health is unprefixed, hit at http://localhost:8001/health internally. Server clock at time of this test run was Sept 9 2026 (not Jan 2026) -- NHL was genuinely off-season (zero ESPN scoreboard events, verified directly against ESPN's raw API), MLB/NFL were in-season. If retesting later, re-verify which leagues are in/out of season for the current date before picking teams for the offseason-omission and fallback tests. To find a real live-game or recent-final+upcoming-combo fixture, query the raw ESPN scoreboard endpoints directly first (see test file docstring for the exact URL pattern) across all 4 leagues to locate a state=='in' or a 'post' event with delta<=12h, then target that specific team in test_sports_card_logic.py.",
+  "rca_of_issue": "N/A -- no defect found in the testable scope. Two behaviors (live-hides-previous, recent-final+upcoming-together) are code-reviewed as correct but not runtime-verified due to lack of a live real-world fixture at test time, consistent with the limitation the review request itself anticipated."
+}

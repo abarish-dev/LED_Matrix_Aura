@@ -162,13 +162,24 @@ async def _fetch_flight(cx, lat, lon, radius_mi):
 
 
 async def _fetch_score(cx, team):
-    out = {"ok": 0}
+    """Returns a LIST of 0-2 game dicts for this team:
+      - a LIVE game takes over completely (previous/finished game is hidden).
+      - otherwise, a game that finished within the last 12h AND/OR a game that
+        starts within the next 12h are both included together.
+      - if neither applies (i.e. more than ~12h since the last final, and
+        nothing else starting soon), fall back to the single next scheduled
+        game so the card always has something once the recent result ages out.
+    NOTE: ESPN's scoreboard only gives each game's START time, not an actual
+    "finished at" timestamp, so "finished within the last 12h" is approximated
+    using the start time of games ESPN already marks as final (state=="post").
+    """
     try:
         league, _, abbr = team.partition(":")
         path = _ESPN_PATHS.get(league.upper())
         if not path or not abbr:
-            return out
+            return []
         now = datetime.now(timezone.utc)
+        now_ts = now.timestamp()
         start = (now - timedelta(days=2)).strftime("%Y%m%d")
         end = (now + timedelta(days=8)).strftime("%Y%m%d")
         # site.web.api.espn.com is NOT Akamai-blocked from datacenter IPs
@@ -180,10 +191,28 @@ async def _fetch_score(cx, team):
             # fall back to today-only scoreboard
             r = await cx.get(url.split("?")[0], headers={"User-Agent": _BROWSER_UA})
             if r.status_code != 200:
-                return out
+                return []
         events = (r.json() or {}).get("events") or []
-        chosen, best_delta = None, 1e18
-        now_ts = now.timestamp()
+
+        def to_dict(comp, comps):
+            home = away = ""
+            hs = as_ = 0
+            for c in comps:
+                ab = (c.get("team") or {}).get("abbreviation", "").upper()
+                sc = int(c.get("score")) if str(c.get("score", "")).isdigit() else 0
+                if c.get("homeAway") == "home":
+                    home, hs = ab, sc
+                else:
+                    away, as_ = ab, sc
+            st = ((comp.get("status") or {}).get("type") or {}).get("shortDetail", "")
+            return {"ok": 1, "home": home, "hs": hs, "away": away, "as": as_, "st": st}
+
+        HOUR = 3600
+        live = None
+        recent_final, recent_delta = None, 1e18       # smallest hours-since-start, <=12h
+        upcoming_12h, upcoming_delta = None, 1e18      # smallest hours-until-start, <=12h
+        next_game, next_delta = None, 1e18             # smallest hours-until-start, any distance
+
         for ev in events:
             comp = (ev.get("competitions") or [{}])[0]
             comps = comp.get("competitors") or []
@@ -192,28 +221,37 @@ async def _fetch_score(cx, team):
             try:
                 ets = datetime.fromisoformat(ev.get("date", "").replace("Z", "+00:00")).timestamp()
             except Exception:
-                ets = now_ts
-            state = ((comp.get("status") or {}).get("type") or {}).get("state")
-            delta = 0 if state == "in" else abs(ets - now_ts)
-            if delta < best_delta:
-                best_delta, chosen = delta, (comp, comps)
-        if not chosen:
-            return out
-        comp, comps = chosen
-        home = away = ""
-        hs = as_ = 0
-        for c in comps:
-            ab = (c.get("team") or {}).get("abbreviation", "").upper()
-            sc = int(c.get("score")) if str(c.get("score", "")).isdigit() else 0
-            if c.get("homeAway") == "home":
-                home, hs = ab, sc
-            else:
-                away, as_ = ab, sc
-        st = ((comp.get("status") or {}).get("type") or {}).get("shortDetail", "")
-        return {"ok": 1, "home": home, "hs": hs, "away": away, "as": as_, "st": st}
+                continue
+            state = ((comp.get("status") or {}).get("type") or {}).get("state")  # "pre" | "in" | "post"
+
+            if state == "in":
+                live = (comp, comps)
+            elif state == "post":
+                delta = now_ts - ets
+                if 0 <= delta <= 12 * HOUR and delta < recent_delta:
+                    recent_delta, recent_final = delta, (comp, comps)
+            elif state == "pre":
+                delta = ets - now_ts
+                if delta >= 0:
+                    if delta <= 12 * HOUR and delta < upcoming_delta:
+                        upcoming_delta, upcoming_12h = delta, (comp, comps)
+                    if delta < next_delta:
+                        next_delta, next_game = delta, (comp, comps)
+
+        if live:
+            return [to_dict(*live)]   # live game only — hide any previous result
+
+        out = []
+        if recent_final:
+            out.append(to_dict(*recent_final))
+        if upcoming_12h:
+            out.append(to_dict(*upcoming_12h))
+        if not out and next_game:
+            out.append(to_dict(*next_game))
+        return out
     except Exception as e:
         logger.info(f"[feed] score error: {e}")
-        return out
+        return []
 
 
 async def _fetch_alert(cx, lat, lon, min_sev):
@@ -300,11 +338,17 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
         n = len(tasks)
         for k, res in zip(tasks.keys(), results[:n]):
             payload[k] = res if isinstance(res, dict) else {"ok": 0}
-        # Build the per-team scores list (only teams that actually have a game).
+        # Build the per-team scores list. `_fetch_score` now returns a LIST
+        # per team (0-2 entries: live-only, or recent-final + upcoming-soon
+        # together, or a single next-game fallback) — flatten them all,
+        # capped to the firmware's fixed-size array (8).
         scores = []
         for t, res in zip(team_list, results[n:]):
-            if isinstance(res, dict) and res.get("ok") == 1:
-                scores.append({**res, "key": t})
+            if isinstance(res, list):
+                for g in res:
+                    if isinstance(g, dict) and g.get("ok") == 1:
+                        scores.append({**g, "key": t})
+        scores = scores[:8]
         payload["scores"] = scores
         payload["score"] = scores[0] if scores else {"ok": 0}
 
