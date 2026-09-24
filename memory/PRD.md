@@ -536,3 +536,8 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.5.6 via USB (or OTA once uploaded).
 2. Confirm the flight callsign, clock digits, and weather sun icon now render as solid cyan/white without the green/red split.
 
+
+### CONFIRMED by user (v1.5.6)
+- Color-split fix verified working: flight callsign + clock now show solid stable blue/cyan, no green/red split.
+- The "stuck at 3:53" symptom was a transient home internet/router outage (ALL external hosts failing identically in the log — open-meteo, ESPN, adsb.lol, our own backend, weather.gov — not a firmware bug). Resolved itself after restarting the unit once internet was back. No code change needed for this.
+
