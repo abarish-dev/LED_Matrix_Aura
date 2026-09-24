@@ -13,9 +13,13 @@ import io
 import os
 import sys
 import requests
-from PIL import Image
+from PIL import Image, ImageFilter, ImageEnhance
 
-SIZE = 16
+# Bumped from 16 -> 24: at 16px the fine curves on detailed logos (e.g. the
+# Carolina Hurricanes swirl) blurred into an unrecognizable blob. 24px still
+# fits cleanly in the corner of a score/flight card with no text overlap
+# (centered card text never reaches inside x=2..26 on the 128-wide panel).
+SIZE = 24
 OUT = os.path.join(os.path.dirname(__file__), "..", "include", "logos", "generated_logos.h")
 
 TEAMS = {
@@ -45,10 +49,22 @@ session.headers.update({"User-Agent": "Mozilla/5.0 AuraLogoGen"})
 
 
 def to_rgb565_array(img):
-    # Resize with high quality, then clean up anti-aliased edges: faint pixels
-    # become fully off (black) and muddy near-black specks are killed. This
-    # removes the stray/"extra" edge pixels that read as odd colors on the LEDs.
-    img = img.convert("RGBA").resize((SIZE, SIZE), Image.LANCZOS)
+    # Sharpen the source BEFORE downscaling so fine details (thin outlines,
+    # curved wordmarks) survive the resize instead of blurring into mush.
+    img = img.convert("RGBA")
+    r, g, b, a = img.split()
+    rgb = Image.merge("RGB", (r, g, b)).filter(
+        ImageFilter.UnsharpMask(radius=2, percent=150, threshold=2)
+    )
+    img = Image.merge("RGBA", (*rgb.split(), a))
+
+    # High quality resize, then a contrast bump so the few pixels each shape
+    # gets at this size stay bold/legible instead of washing out to gray.
+    img = img.resize((SIZE, SIZE), Image.LANCZOS)
+    r, g, b, a = img.split()
+    rgb = ImageEnhance.Contrast(Image.merge("RGB", (r, g, b))).enhance(1.3)
+    img = Image.merge("RGBA", (*rgb.split(), a))
+
     px = img.load()
     out = []
     for y in range(SIZE):

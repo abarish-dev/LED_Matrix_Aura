@@ -578,3 +578,18 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.6.1 (OTA or USB).
 2. The current network outage itself needs to be resolved on the user's end (router/ISP) — not a code fix.
 
+
+## Session Update — Sharper team/airline logos (firmware v1.6.2)
+
+### Context
+- User asked for a better Carolina Hurricanes logo on the display. Root cause: `tools/generate_logos.py` downscaled team logos from ESPN's 500x500 source straight to 16x16 with a plain LANCZOS resize. At that size, fine curved details (the Hurricanes' swirl, thin outline rings) blurred into an unrecognizable gray/red/black blob — same issue would apply to any visually detailed team crest, not just this one team.
+
+### Fix (DONE, needs reflash)
+- `tools/generate_logos.py`: bumped output size 16x16 → 24x24, and added an UnsharpMask sharpen pass on the source image *before* the LANCZOS downscale, plus a 1.3x contrast boost *after* downscale (both applied only to RGB, alpha/transparency untouched). This keeps thin details from washing out at low resolution.
+- Verified no layout collisions: the logo sits at a fixed (2,2) top-left corner; all score/flight-card text is horizontally centered and, for every real-world abbreviation/opponent string length, never renders closer than ~30px from the left edge — comfortably clear of the new 24px logo.
+- Regenerated `include/logos/generated_logos.h` for all 135 team + airline logos (was 16x16/512B each, now 24x24/1152B each — ~155KB total in PROGMEM, negligible for the MatrixPortal S3's flash).
+- `Logos.h` comment updated (16x16 → 24x24). `Config.h` → `AURA_FW_VERSION` = `1.6.2`.
+
+### Action items for user
+1. Reflash to v1.6.2 (OTA via the app's "Install update over Wi-Fi" once uploaded to the backend, or USB).
+2. No app or backend redeploy needed — this is a firmware-only visual change.

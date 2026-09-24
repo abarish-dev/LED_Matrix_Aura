@@ -1,7 +1,7 @@
 // ============================================================================
 //  Logos.h — airline + team logo assets for the matrix.
 //
-//  Logos are pre-converted to 16x16 RGB565 bitmaps (uint16_t arrays) and blitted
+//  Logos are pre-converted to 24x24 RGB565 bitmaps (uint16_t arrays) and blitted
 //  with Display::drawLogo(). The actual pixel data + registry tables live in
 //  the auto-generated `logos/generated_logos.h`.
 //
