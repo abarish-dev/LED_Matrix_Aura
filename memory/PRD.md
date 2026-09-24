@@ -469,3 +469,24 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Redeploy (Publish) to get the sports logic live — no firmware change required for this part.
 2. Reflash to v1.5.3 to get the sun-icon ghosting fix (OTA or USB).
 
+
+
+## Session Update — Color-split text = wrong panel driver (firmware v1.5.4)
+
+### Context
+- User's ORIGINAL LED panel was fried and replaced with a new physical panel. On v1.5.3 (confirmed via serial log: `current=1.5.3`, and the semantic version-guard from v1.5.2 correctly rejected a stale server-side "v1.2.0" entry — that fix is working in the field), the clock card showed the time digits with a green fringe along the top edge and red/pink fill instead of solid orange, and a separate garbled/blank clock render was seen once before a reset cleared it.
+
+### Root cause
+- `DisplayManager.h Display::begin()` force-set `cfg.driver = HUB75_I2S_CFG::FM6126A;` — a special init sequence needed by the user's OLD (now-fried) panel's driver ICs. The REPLACEMENT panel is very likely NOT FM6126A-based; sending that special init sequence to a non-FM6126A panel gets misinterpreted as pixel/row data, scrambling R/G/B row alignment — exactly matching the observed "green top edge, red/pink body" split on bright (orange = R+G) text.
+
+### Fix (DONE, needs reflash)
+- Removed the forced `cfg.driver = HUB75_I2S_CFG::FM6126A;` line — now uses the library's generic/default driver, which matches most non-FM6126A panels.
+- Left `cfg.latch_blanking = 2` (v1.5.3's ghosting fix) in place — unrelated to this issue.
+- `Config.h` → `AURA_FW_VERSION` = `1.5.4`.
+- Left a code comment: if a FUTURE panel swap shows stuck-lit/dim LEDs at boot (the classic FM6126A symptom), re-add `cfg.driver = HUB75_I2S_CFG::FM6126A;`.
+
+### Action items for user
+1. Reflash via USB (PlatformIO Upload) since they already have that set up from testing v1.5.3.
+2. Verify: clock digits render solid orange (no green/red split), sun/cloud icons don't show stray colored fringing, and the earlier one-off blank/garbled clock render doesn't recur.
+3. If STILL split/garbled after removing FM6126A, the next thing to check would be `cfg.mux_pattern` / panel scan-rate config for the new panel model — will need the panel's spec sheet or another serial log.
+

@@ -34,10 +34,15 @@ inline void begin() {
   cfg.double_buff = false;      // single buffer -> frees one full framebuffer
   cfg.setPixelColorDepthBits(6); // 6 bits/channel (262k colors) -> crisp logos,
                                  // still ~half the RAM of the default 8-bit
-  // Many P2.5 128x64 panels use FM6126A driver ICs, which need a special
-  // init or a block of LEDs stays stuck lit. If your panel goes blank/worse
-  // after flashing, delete this one line to fall back to the generic driver.
-  cfg.driver = HUB75_I2S_CFG::FM6126A;
+  // NOTE: the FM6126A driver init that used to be forced here was tuned for
+  // an older/different physical panel. On a REPLACEMENT panel (not FM6126A
+  // based), sending that special init sequence gets misread as pixel data,
+  // scrambling the R/G/B row alignment — this shows up as a colored fringe
+  // along the top/bottom edge of bright text (e.g. orange digits showing a
+  // green top edge + red/pink body instead of solid orange). If you swap to
+  // yet another panel and see stuck/dim LEDs at boot (the classic FM6126A
+  // symptom), re-enable it with:
+  //   cfg.driver = HUB75_I2S_CFG::FM6126A;
   // Ghosting fix: bright elements (e.g. the weather clock's sun icon) can
   // leak a faint stray-colored pixel onto neighboring rows/cols without extra
   // blanking time around the row latch. 2 is the documented starting point
