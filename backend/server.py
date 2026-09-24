@@ -248,7 +248,47 @@ async def _fetch_score(cx, team):
             out.append(to_dict(*upcoming_12h))
         if not out and next_game:
             out.append(to_dict(*next_game))
-        return out
+        if out:
+            return out
+
+        # Nothing in the +/-8ish day scoreboard window at all (a real
+        # off-season gap, e.g. before the season opener) — fall back to the
+        # team's profile endpoint for their season record + next scheduled
+        # game however far out, so a followed team is never just silently
+        # blank. Tagged mode="record" so the UI shows "record + next game"
+        # instead of a live score line.
+        try:
+            r2 = await cx.get(
+                f"https://site.web.api.espn.com/apis/site/v2/sports/{path}/teams/{abbr.lower()}",
+                headers={"User-Agent": _BROWSER_UA},
+            )
+            if r2.status_code == 200:
+                team_d = (r2.json() or {}).get("team") or {}
+                rec_items = (team_d.get("record") or {}).get("items") or []
+                record = rec_items[0].get("summary") if rec_items else None
+                ne = (team_d.get("nextEvent") or [None])[0]
+                opp_abbr, st_text = "", "Season"
+                if ne:
+                    comp2 = (ne.get("competitions") or [{}])[0]
+                    comps2 = comp2.get("competitors") or []
+                    mine2 = next(
+                        (c for c in comps2
+                         if (c.get("team") or {}).get("abbreviation", "").upper() == abbr.upper()),
+                        None,
+                    )
+                    opp2 = next((c for c in comps2 if c is not mine2), None)
+                    opp_abbr = ((opp2 or {}).get("team") or {}).get("abbreviation", "").upper()
+                    try:
+                        ev_dt = datetime.fromisoformat(ne.get("date", "").replace("Z", "+00:00"))
+                        st_text = ev_dt.strftime("%-m/%-d %-I:%M %p UTC")
+                    except Exception:
+                        st_text = "Upcoming"
+                if record or opp_abbr:
+                    return [{"ok": 1, "mode": "record", "home": abbr.upper(), "away": opp_abbr,
+                             "hs": 0, "as": 0, "record": record or "", "st": st_text}]
+        except Exception as e:
+            logger.info(f"[feed] record fallback error: {e}")
+        return []
     except Exception as e:
         logger.info(f"[feed] score error: {e}")
         return []

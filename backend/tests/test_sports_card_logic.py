@@ -92,17 +92,22 @@ class TestFeedShape:
 
 
 class TestFallbackAndOmission:
-    def test_offseason_team_is_silently_omitted(self, api):
+    def test_offseason_team_gets_record_fallback_not_omitted(self, api):
         """NHL is off-season in September -> ESPN scoreboard window (today-2d
-        .. today+8d) has zero NHL events -> team should produce ZERO entries,
-        not an error."""
+        .. today+8d) has zero NHL events -> team now falls back to the
+        record+next-game tier (mode='record') instead of being silently
+        omitted (this is the new behavior under test this session)."""
         r = api.get(FEED, params={"lat": LAT, "lon": LON, "team": "NHL:NJD",
                                    "sports": 1, "weather": 0, "flights": 0}, timeout=25)
         assert r.status_code == 200, r.text
         body = r.json()
-        keys = [s["key"] for s in body["scores"]]
-        assert "NHL:NJD" not in keys, f"expected NHL:NJD omitted, got: {body['scores']!r}"
-        assert body["score"] == {"ok": 0} or body["score"].get("key") != "NHL:NJD"
+        entries = [s for s in body["scores"] if s["key"] == "NHL:NJD"]
+        assert len(entries) == 1, f"expected exactly 1 record-fallback entry, got: {body['scores']!r}"
+        entry = entries[0]
+        assert entry["mode"] == "record"
+        assert entry["ok"] == 1
+        assert isinstance(entry.get("record"), str) and entry["record"] != ""
+        assert isinstance(entry.get("st"), str) and entry["st"] != ""
 
     def test_in_season_team_with_no_game_within_12h_falls_back_to_next_game(self, api):
         """NFL:BAL has no live game and its next game is several days out
@@ -137,10 +142,12 @@ class TestMultiTeam:
         assert len(body["scores"]) <= 8
         keys_present = {s["key"] for s in body["scores"]}
         # NYY (game today) and BAL (fallback next game) should be present;
-        # NJD (off-season) should be omitted.
+        # NJD (off-season) now gets the record-fallback tier too (also present).
         assert "MLB:NYY" in keys_present
         assert "NFL:BAL" in keys_present
-        assert "NHL:NJD" not in keys_present
+        assert "NHL:NJD" in keys_present
+        njd_entry = next(s for s in body["scores"] if s["key"] == "NHL:NJD")
+        assert njd_entry.get("mode") == "record"
 
     def test_more_than_8_teams_truncated_to_8_team_list(self, api):
         teams = ",".join([f"MLB:{a}" for a in

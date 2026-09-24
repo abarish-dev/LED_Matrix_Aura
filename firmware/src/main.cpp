@@ -560,7 +560,7 @@ static void drawCard(uint8_t t) {
     uint16_t border = accent;
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
       if (gSettings.sports.rivals[i] == key) { border = Display::rgb(56, 189, 248); break; }
-    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak);
+    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record);
     int colon = key.indexOf(':');
     if (colon > 0) {
       const LogoAsset* lg = teamLogo(key.substring(0, colon), key.substring(colon + 1));

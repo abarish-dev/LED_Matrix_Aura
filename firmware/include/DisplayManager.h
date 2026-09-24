@@ -162,12 +162,25 @@ inline void landing(const String& callsign, bool landed) {
   flip();
 }
 
-// A single game score "card".
+// A single game score "card". When `isRecord` is true (off-season / no game
+// within the normal window), `home`/`away` are just team/opponent abbreviations
+// (no meaningful score yet) and `record` + `status` carry the season record
+// and next-game date instead.
 inline void score(const String& home, int hs, const String& away, int as,
-                   const String& status, uint16_t border = 0, const String& streak = "") {
+                   const String& status, uint16_t border = 0, const String& streak = "",
+                   bool isRecord = false, const String& record = "") {
   clear();
   if (border) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border);
   char l[24];
+  if (isRecord) {
+    centerText(home.c_str(), 8, rgb(255, 255, 255), 1);
+    if (record.length()) centerText(record.c_str(), 24, rgb(56, 189, 248), 1);
+    String nextLine = away.length() ? ("Next: " + away) : String("Next game");
+    centerText(nextLine.c_str(), 40, rgb(200, 200, 200), 1);
+    centerText(status.c_str(), 52, rgb(16, 185, 129), 1);
+    flip();
+    return;
+  }
   snprintf(l, sizeof(l), "%s %d", away.c_str(), as);
   centerText(l, 8, rgb(255, 255, 255), 1);
   snprintf(l, sizeof(l), "%s %d", home.c_str(), hs);

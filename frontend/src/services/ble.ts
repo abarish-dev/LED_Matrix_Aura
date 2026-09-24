@@ -159,10 +159,33 @@ export async function connectToMatrix(
         onStatus("connecting");
 
         try {
-          const d = await device.connect();
-          await d.discoverAllServicesAndCharacteristics();
-          // Bump the ATT MTU so multi-hundred-byte config writes don't fail.
-          try { await d.requestMTU(512); } catch { /* iOS auto-negotiates */ }
+          // The scan found the device fine, but the actual GATT connect +
+          // service discovery can hang indefinitely on some phones/ESP32
+          // BLE stack states (e.g. a stale connection slot left over from a
+          // previous session) with no native error ever firing — leaving the
+          // UI stuck on "Connecting…" forever. Race it against a timeout so
+          // the user always gets a clear, actionable message instead.
+          const d = await Promise.race([
+            (async () => {
+              const dev = await device.connect();
+              await dev.discoverAllServicesAndCharacteristics();
+              // Bump the ATT MTU so multi-hundred-byte config writes don't fail.
+              try { await dev.requestMTU(512); } catch { /* iOS auto-negotiates */ }
+              return dev;
+            })(),
+            new Promise<never>((_, rej) =>
+              setTimeout(
+                () =>
+                  rej(
+                    new BleError(
+                      "CONNECT_TIMEOUT",
+                      "Connection timed out. Try toggling Bluetooth off/on, or power-cycle the matrix, then tap Connect again.",
+                    ),
+                  ),
+                12000,
+              ),
+            ),
+          ]);
           connectedDevice = d;
 
           d.onDisconnected(() => {
@@ -182,11 +205,16 @@ export async function connectToMatrix(
           resolve({ id: d.id, name: d.name ?? "LED Matrix", rssi });
         } catch (e: any) {
           connectedDevice = null;
+          // If the connect actually lands moments after we gave up on it,
+          // don't leave a dangling half-open connection behind.
+          try { await device.cancelConnection(); } catch { /* ignore */ }
           reject(
-            new BleError(
-              "CONNECT_ERROR",
-              e?.message ?? "Failed to connect to the matrix.",
-            ),
+            e instanceof BleError
+              ? e
+              : new BleError(
+                  "CONNECT_ERROR",
+                  e?.message ?? "Failed to connect to the matrix.",
+                ),
           );
         }
       },
@@ -327,9 +355,26 @@ export async function connectToKnownDevice(
     throw new BleError("BLUETOOTH_OFF", "Bluetooth is off.");
   }
   onStatus("connecting");
-  const d = await bleManager.connectToDevice(deviceId);
-  await d.discoverAllServicesAndCharacteristics();
-  try { await d.requestMTU(512); } catch { /* iOS auto-negotiates */ }
+  const d = await Promise.race([
+    (async () => {
+      const dev = await bleManager.connectToDevice(deviceId);
+      await dev.discoverAllServicesAndCharacteristics();
+      try { await dev.requestMTU(512); } catch { /* iOS auto-negotiates */ }
+      return dev;
+    })(),
+    new Promise<never>((_, rej) =>
+      setTimeout(
+        () =>
+          rej(
+            new BleError(
+              "CONNECT_TIMEOUT",
+              "Connection timed out. Try toggling Bluetooth off/on, or power-cycle the matrix, then retry.",
+            ),
+          ),
+        12000,
+      ),
+    ),
+  ]);
   connectedDevice = d;
   d.onDisconnected(() => {
     connectedDevice = null;

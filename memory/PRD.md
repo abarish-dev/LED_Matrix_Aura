@@ -541,3 +541,24 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 - Color-split fix verified working: flight callsign + clock now show solid stable blue/cyan, no green/red split.
 - The "stuck at 3:53" symptom was a transient home internet/router outage (ALL external hosts failing identically in the log — open-meteo, ESPN, adsb.lol, our own backend, weather.gov — not a firmware bug). Resolved itself after restarting the unit once internet was back. No code change needed for this.
 
+
+
+## Session Update — BLE connect timeout fix + off-season record/next-game fallback (firmware v1.6.0, backend, frontend)
+
+### 1. BLE "stuck on Connecting…" fix (frontend, no reflash needed — pure JS)
+- `src/services/ble.ts`: `connectToMatrix()`'s actual GATT connect + service discovery step had NO timeout — if it stalls (stale BLE session, phone BLE stack issue, etc.) with no native error ever firing, the UI would spin on "Connecting…" forever. Now raced against a 12s timeout with a clear actionable message ("try toggling Bluetooth, or power-cycle the matrix"); on timeout it also calls `device.cancelConnection()` to avoid a dangling half-open connection. Same fix applied to `connectToKnownDevice()` for consistency.
+- NOTE: could not be tested with real BLE hardware in this sandbox (BLE requires a native build + physical device) — needs user verification on their next connect attempt.
+
+### 2. Off-season "record + next game" fallback (backend + firmware v1.6.0 + frontend app)
+- User request: for a followed team with no live/recent/near-term game (e.g. NHL Hurricanes preseason gap, or NBA before opening night), always show the team's season win-loss record + next scheduled game's date, on BOTH the app's Sports tab and the physical matrix, instead of showing nothing.
+- `server.py _fetch_score()`: added a new fallback tier — when the normal live/recent-final/upcoming-12h/next-game-within-window logic finds literally nothing (true off-season gap beyond the ~8-day scoreboard window), fetches `site.web.api.espn.com/.../teams/{abbr}` for `record.items[0].summary` + `nextEvent[0]` (opponent + date), returned as `{"ok":1, "mode":"record", "home":<abbr>, "away":<opp>, "record":"0-0", "st":"<date>"}`. Verified live: `NBA:LAL` (off-season in September) correctly returns `record":"0-0"` and next game vs SAC on 10/6.
+- Firmware: `ScoreInfo` struct gained `isRecord`/`record` fields, parsed from the `mode`/`record` JSON keys (both the single `score` and the `scores[]` array). `Display::score()` renders a distinct "record mode" layout (team abbr / record in cyan / "Next: OPP" / date) instead of a 0-0 score line when `isRecord` is true.
+- Frontend `src/services/espn.ts`: `getTeamScore()` now falls back to a new `getTeamRecordFallback()` (same `teams/{abbr}` endpoint + record/nextEvent extraction) whenever the scoreboard window has zero candidates, instead of returning `null`. `sports.tsx scoreText()` now appends the record (`· 1-1-0`) to any upcoming-game text, and shows `"Record X-X-X"` standalone if there's a record but no scheduled next game.
+- LIMITATION: the ESP32's direct-ESPN fallback (`DataServices.h teamGame()`, only used when no backend `serverUrl` configured) was NOT updated with this fallback tier — same pre-existing limitation noted for the earlier sports-card-windowing feature.
+- `Config.h` → `AURA_FW_VERSION` = `1.6.0`.
+
+### Action items for user
+1. Retry BLE connect — should now either connect normally or show a clear timeout error within 12s instead of hanging forever.
+2. Redeploy (Publish) to get the backend + app sports fallback live (no reflash needed for those two layers).
+3. Reflash to v1.6.0 to get the matrix's "record mode" score card rendering.
+

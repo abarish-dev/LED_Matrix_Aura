@@ -20,7 +20,7 @@
 namespace Data {
 
 struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; int altFt=0; int headingDeg=-1; String origin; String dest; };
-struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; String streak; };
+struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; String streak; bool isRecord=false; String record; };
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
 
 static double haversineMi(double la1, double lo1, double la2, double lo2) {
@@ -540,6 +540,8 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.score.hs = sc["hs"] | 0;
     r.score.as = sc["as"] | 0;
     r.score.status = String((const char*)(sc["st"] | ""));
+    r.score.isRecord = strcmp((const char*)(sc["mode"] | ""), "record") == 0;
+    r.score.record = String((const char*)(sc["record"] | ""));
   }
   // Parse the full per-team scores list (all followed teams that are playing)
   // so the matrix can cycle through EVERY game, not just one.
@@ -554,6 +556,8 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     si.hs = s["hs"] | 0;
     si.as = s["as"] | 0;
     si.status = String((const char*)(s["st"] | ""));
+    si.isRecord = strcmp((const char*)(s["mode"] | ""), "record") == 0;
+    si.record = String((const char*)(s["record"] | ""));
     r.scoreKeys[sn] = String((const char*)(s["key"] | ""));
     sn++;
   }

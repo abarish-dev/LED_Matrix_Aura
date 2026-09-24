@@ -95,7 +95,9 @@ function TeamBadge({
 function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
   if (!line) return "";
   if (line.state === "pre") {
-    return `${line.atHome ? "vs" : "@"} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}`;
+    const rec = line.record ? ` · ${line.record}` : "";
+    if (!line.oppAbbr) return line.record ? `Record ${line.record}` : "";
+    return `${line.atHome ? "vs" : "@"} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}${rec}`;
   }
   const ts = line.teamScore ?? 0;
   const os = line.oppScore ?? 0;

@@ -79,7 +79,7 @@ export async function getTeamScore(
   let data = await fetchJson(`${base}?dates=${start}-${end}&limit=100`);
   // Fall back to the plain scoreboard if the range query returns nothing.
   if (!data?.events?.length) data = await fetchJson(base);
-  if (!data?.events) return null;
+  if (!data?.events) return await getTeamRecordFallback(league, abbr);
 
   type Cand = { ev: any; comp: any; mine: any; opp: any; state: ScoreLine["state"]; dateMs: number };
   const cands: Cand[] = [];
@@ -98,7 +98,10 @@ export async function getTeamScore(
     const dateMs = ev.date ? new Date(ev.date).getTime() : now;
     cands.push({ ev, comp, mine, opp, state, dateMs });
   }
-  if (cands.length === 0) return null;
+  // No game within the +/-8ish day window at all — genuine off-season gap
+  // (e.g. before the season opener). Fall back to season record + next
+  // scheduled game however far out, so the team row is never just blank.
+  if (cands.length === 0) return await getTeamRecordFallback(league, abbr);
 
   // Prefer a live game; otherwise the game whose start time is closest to now.
   const live = cands.find((c) => c.state === "in");
@@ -124,6 +127,44 @@ export async function getTeamScore(
     startTime: ev.date ?? null,
     record,
     teamId: mine.team?.id != null ? String(mine.team.id) : null,
+  };
+}
+
+/** Off-season fallback: season record + next scheduled game (any distance
+ * out) from the team's profile endpoint, used when the scoreboard window
+ * has nothing at all (e.g. querying weeks before the season opener). */
+async function getTeamRecordFallback(league: League, abbr: string): Promise<ScoreLine | null> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/${PATHS[league]}/teams/${abbr.toLowerCase()}`;
+  const data = await fetchJson(url);
+  const team = data?.team;
+  if (!team) return null;
+  const recItems = team?.record?.items;
+  const record = Array.isArray(recItems) && recItems.length ? recItems[0]?.summary ?? null : null;
+  const ne = Array.isArray(team?.nextEvent) && team.nextEvent.length ? team.nextEvent[0] : null;
+  if (!ne && !record) return null;
+
+  let oppAbbr = "";
+  let atHome = true;
+  if (ne) {
+    const comp = ne?.competitions?.[0];
+    const competitors = comp?.competitors ?? [];
+    const mine = competitors.find(
+      (c: any) => (c?.team?.abbreviation ?? "").toUpperCase() === abbr.toUpperCase(),
+    );
+    const opp = competitors.find((c: any) => c !== mine);
+    oppAbbr = (opp?.team?.abbreviation ?? "").toUpperCase();
+    atHome = mine?.homeAway === "home";
+  }
+  return {
+    state: "pre",
+    detail: ne ? shortTime(ne.date) : "",
+    teamScore: null,
+    oppScore: null,
+    oppAbbr,
+    atHome,
+    startTime: ne?.date ?? null,
+    record,
+    teamId: team?.id != null ? String(team.id) : null,
   };
 }
 

@@ -1,0 +1,50 @@
+{
+  "summary": "Tested both backend and frontend for this session's two changes: (1) BLE 12s connect timeout in src/services/ble.ts, (2) off-season record+next-game fallback tier in _fetch_score (server.py) and its frontend mirror (getTeamRecordFallback in espn.ts / scoreText in sports.tsx). BACKEND: 40/40 pytest pass (24 pre-existing + 5 old sports-logic updated + 6 new record-fallback tests + regressions). Live-verified against real ESPN data at server time Sept 24 2026: NBA:LAL -> mode='record', record='0-0', st='10/6 2:00 AM UTC' (correct, NBA preseason not yet started). NHL:NJD -> mode='record', record='2-0-0', st='9/24 11:00 PM UTC'; NHL:TOR -> mode='record', record='2-1-1', st='9/29 11:00 PM UTC' -- both NHL teams have preseason games same-day/soon but ESPN's main scoreboard endpoint doesn't surface preseason fixtures, so they correctly land in the new record-fallback tier exactly as designed (the tier's whole purpose is to catch gaps the main scoreboard misses). NFL:BAL (in-season, upcoming game >12h out) correctly uses the OLD next-game fallback tier (no 'mode' key) -- no regression. flights=1+weather=1 alongside sports=1 on the same request still returns well-formed flight/temp/alert blocks (verified with live adsb.lol + open-meteo data). Updated the now-outdated 'NHL:NJD silently omitted' assertions in test_sports_card_logic.py to reflect the new expected behavior (record-fallback instead of omission), and added a new test_record_fallback.py (6 cases) targeting the new tier specifically. FRONTEND: navigated Sports tab on mobile viewport (375x667), selected NBA->Lakers (off-season) and NFL->Ravens (in-season) as followed teams. WallPreview mock card renders WITHOUT crashing for both (shows 'LAL 0 / OPP 0 / No live game' and 'BAL 0 / OPP 0 / No live game' respectively -- the safe default when the score fetch resolves null). Rotation-order rows for both teams fall back to plain 'NBA · LAL' / 'NFL · BAL' text rather than showing the new 'Record 0-0' / 'vs SAC · 10/6' text -- root cause is that espn.ts's getTeamScore/getTeamRecordFallback call site.api.espn.com directly from the browser, which is CORS-blocked on the web preview origin (confirmed via console: 'blocked by CORS policy: No Access-Control-Allow-Origin header'). This is a KNOWN, PRE-EXISTING, DOCUMENTED limitation of this exact web-preview environment going back to iteration_10/11/12/13 (ESPN + adsb.lol calls from the RN frontend always fail CORS on web; they work fine on native iOS/Android builds where fetch doesn't enforce CORS) -- NOT a new regression from this session's change, and consistent with the agent-to-agent context note. Code review of the new scoreText() branch (sports.tsx line 99: `if (!line.oppAbbr) return line.record ? 'Record ' + line.record : ''`) and getTeamRecordFallback() (espn.ts) confirms the logic correctly implements the spec (record + next-game opponent/date text) and will render correctly on a native device build where the ESPN fetch actually succeeds -- this could not be runtime-verified in web preview due to the CORS constraint. BLE: tsc --noEmit reports zero errors in ble.ts; code review of connectToMatrix/connectToKnownDevice confirms the 12s Promise.race timeout correctly wraps the connect+discoverServices+requestMTU chain, rejects with a clear BleError('CONNECT_TIMEOUT', ...) message, and cleans up via device.cancelConnection() if the real connect lands after the race is already lost -- no dangling connection. Actual BLE hardware pairing was NOT tested (no BLE hardware/native build available in this sandbox, as instructed).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Sports tab rotation row / WallPreview record-fallback text",
+        "issue": "espn.ts calls site.api.espn.com directly from the browser (not via the /api/matrix/feed backend proxy), which is CORS-blocked on the web preview origin. Result: getTeamScore/getTeamRecordFallback always resolve null on web, so rotation rows show the plain 'LEAGUE · ABBR' fallback instead of the new 'Record 0-0' / 'vs SAC · 10/6' text, and WallPreview shows 'OPP 0 / No live game' instead of the real record. This is a PRE-EXISTING, environment-only limitation documented since iteration_10 (ESPN fetch works fine on native iOS/Android builds where fetch doesn't enforce CORS) -- NOT a new bug introduced by this session's fallback-tier addition. Could not runtime-verify the exact new UI text on web; verified by code review instead (logic is correct).",
+        "affected_testIDs": []
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sports_card_logic.py (updated)",
+    "/app/backend/tests/test_record_fallback.py (new)",
+    "/app/backend/tests/test_matrix_feed.py",
+    "/app/backend/tests/test_flight_route_feed.py",
+    "/app/backend/tests/test_firmware_ota.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "No backend fixes required -- record-fallback tier verified correct against 3 different live off-season/preseason teams (NBA:LAL, NHL:NJD, NHL:TOR) plus in-season regression (NFL:BAL) and flights/weather regression.",
+    "Frontend record-fallback text (scoreText/getTeamRecordFallback) could not be visually confirmed in THIS web-preview sandbox due to ESPN CORS blocking client-side fetches -- this is expected/pre-existing, not new. If main agent wants a fully-verified frontend confirmation, it would need a native build (iOS/Android) or a device with BLE/no-CORS fetch; alternatively, consider routing espn.ts calls through the existing /api/matrix/feed backend proxy (which already has the same record-fallback logic and does NOT hit CORS) so the web preview (and any browser-based demo) also shows real data -- worth considering since the backend already solved this exact problem for the ESP32.",
+    "BLE timeout logic reviewed and looks correct; cannot be runtime-tested without physical hardware/native build in this sandbox, as expected."
+  ],
+  "critical_code_review_comments": [
+    "server.py _fetch_score record-fallback tier (lines ~254-291) is well-guarded with try/except and only triggers when both the scoreboard-window logic AND next_game are empty -- correctly additive, doesn't disturb earlier tiers (verified NFL:BAL still uses the old next_game tier, not the new one).",
+    "espn.ts getTeamRecordFallback() duplicates similar logic to the backend's record-fallback (profile endpoint + nextEvent parsing) but is called directly from the RN client -- for web this hits CORS; for native it will work, but this creates two independent implementations of the same fallback logic (backend for ESP32, frontend for the app) that could drift out of sync over time. Not a bug today, but a duplication/maintenance risk worth flagging.",
+    "ble.ts connectToMatrix/connectToKnownDevice: the Promise.race + cancelConnection() cleanup pattern (lines 161-219, 358-377) is correctly structured -- 'settled' flag guards against double-resolve in connectToMatrix's scan callback, and the timeout error message is actionable for end users."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sports_card_logic.py (updated 2 tests: off-season team now expects mode='record' fallback entry instead of silent omission)",
+    "/app/backend/tests/test_record_fallback.py (new -- 6 pytest cases for the new record-fallback tier)"
+  ],
+  "success_rate": {
+    "backend": "100% (40/40)",
+    "frontend": "Core flows pass (no crashes, no red screens, WallPreview safe for both in/off-season teams); the specific new record-fallback TEXT could not be visually confirmed on web due to pre-existing ESPN CORS limitation -- verified via code review instead"
+  },
+  "seed_data_creation": "None -- all endpoints tested are read-only (GET /api/matrix/feed).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Server clock at test time: Sept 24 2026 (not Jan 2026). NBA and NHL are both in a 'preseason not yet in main ESPN scoreboard' state right now, making NBA:LAL / NHL:NJD / NHL:TOR reliable real-world triggers for the new record-fallback tier (mode='record') -- re-verify season status if retesting later. NFL:BAL is in-season and correctly uses the old next-game fallback (no 'mode' key), confirming no regression. ESPN CORS-blocks all direct browser fetches from espn.ts in this web-preview sandbox (documented since iteration_10) -- do not report this as a new bug; it is a testing-environment constraint, not a functional defect, and does not affect native builds. BLE cannot be tested without real hardware -- code-reviewed only (tsc clean, logic correct).",
+  "rca_of_issue": "N/A for backend (all correct). For the frontend text-rendering gap: root cause is architectural -- espn.ts fetches ESPN directly from the RN client instead of via the backend's /api/matrix/feed proxy (which already solved CORS for the ESP32 use case). On native builds this is a non-issue since RN's fetch doesn't enforce CORS; it only manifests in the web/browser preview used for this sandbox testing."
+}
