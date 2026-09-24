@@ -70,7 +70,7 @@ inline void centerText(const char* s, int y, uint16_t color, uint8_t size = 1) {
 
 inline void boot() {
   clear();
-  centerText("AURA", 20, rgb(245, 158, 11), 2);
+  centerText("AURA", 20, rgb(56, 189, 248), 2);
   centerText("matrix online", 44, rgb(160, 160, 160), 1);
   flip();
 }
@@ -122,7 +122,7 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
   String texts[7]; uint16_t cols[7]; int nl = 0;
   char buf[28];
   if (tracked) { texts[nl] = "* TRACKED *"; cols[nl++] = rgb(16, 185, 129); }
-  texts[nl] = callsign;          cols[nl++] = rgb(245, 158, 11);
+  texts[nl] = callsign;          cols[nl++] = rgb(56, 189, 248);
   texts[nl] = airline;           cols[nl++] = rgb(230, 230, 230);
   if (origin.length() && dest.length()) {
     snprintf(buf, sizeof(buf), "%s>%s", origin.c_str(), dest.c_str());
@@ -148,7 +148,7 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
   if (startY < 1) startY = 1;
   for (int i = 0; i < nl; i++)
     centerText(texts[i].c_str(), startY + i * LH, cols[i], 1);
-  if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(245, 158, 11));
+  if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(56, 189, 248));
   flip();
 }
 
@@ -157,7 +157,7 @@ inline void landing(const String& callsign, bool landed) {
   clear();
   dma->fillRect(0, 0, MATRIX_W, 14, rgb(16, 185, 129));
   centerText(landed ? "LANDED" : "DESCENDING", 3, rgb(0, 0, 0), 1);
-  centerText(callsign.c_str(), 26, rgb(245, 158, 11), 1);
+  centerText(callsign.c_str(), 26, rgb(56, 189, 248), 1);
   centerText(landed ? "arrived" : "on approach", 46, rgb(200, 200, 200), 1);
   flip();
 }
@@ -221,17 +221,20 @@ inline void weatherScroll(const String& headline, uint16_t severityColor, int sc
 
 inline void message(const char* line1, const char* line2) {
   clear();
-  centerText(line1, 20, rgb(245, 158, 11), 1);
+  centerText(line1, 20, rgb(56, 189, 248), 1);
   if (line2) centerText(line2, 40, rgb(160, 160, 160), 1);
   flip();
 }
 
 // A small (~14px) weather symbol drawn at top-left (x,y) of the clock card.
 inline void wxIcon(int x, int y, int code, bool isDay) {
-  const uint16_t sun = rgb(255, 205, 45), sunCore = rgb(255, 235, 140),
+  // Sun/lightning use white instead of yellow/gold — R+G-mixed colors
+  // (yellow, orange) are the ones showing the color-split/bleed issue on
+  // this panel; white (and the blues/reds used elsewhere here) render solidly.
+  const uint16_t sun = rgb(255, 255, 255), sunCore = rgb(210, 225, 255),
                  cloudLo = rgb(120, 128, 145), cloudHi = rgb(215, 220, 232),
                  rain = rgb(70, 150, 255), snow = rgb(225, 245, 255),
-                 bolt = rgb(255, 225, 40), moon = rgb(225, 225, 190);
+                 bolt = rgb(255, 255, 255), moon = rgb(225, 225, 190);
   int cx = x + 7, cy = y + 6;
   // Cloud with a darker outline + lighter body + highlight so it reads as a
   // rounded cloud, not a flat blob.
@@ -301,7 +304,7 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
   int16_t x1, y1; uint16_t w, h;
   dma->getTextBounds(timeStr.c_str(), 0, 0, &x1, &y1, &w, &h);
   dma->setCursor((MATRIX_W - (int)w) / 2, 14);
-  dma->setTextColor(rgb(245, 158, 11));
+  dma->setTextColor(rgb(56, 189, 248));
   dma->print(timeStr);
   bool hasHiLo = (hiF > -999 && loF > -999);
   bool hasFeels = (feelsF > -999);

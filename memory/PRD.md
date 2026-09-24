@@ -512,3 +512,27 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 2. Reflash to v1.5.5 via USB.
 3. Report back whether either/both changed anything, and if possible send a full-panel photo showing top+bottom halves together.
 
+
+
+## Session Update — Pragmatic workaround: removed all orange/yellow colors (firmware v1.5.6)
+
+### Context
+- AI vision analysis of a full-panel photo on v1.5.5 (post ribbon-reseat) showed the color distortion is NOT a top/bottom-half split — it's a general R+G channel bleed/desaturation across the WHOLE panel (oranges split green/red, whites lean blue-purple, greens look washed out). This is consistent with either a marginal power supply (5V sag under load, worse at 100% brightness — noted in serial log) or a panel-level hardware issue, neither fixable purely by driver/clock config (already tried FM6126A removal in v1.5.4 and slower i2sspeed in v1.5.5, both inconclusive/no fix). Root-causing further needs the user to test at lower brightness and check PSU specs — deferred.
+- User's pragmatic ask: instead of chasing the hardware root cause further, just stop using colors that trigger this problem.
+
+### Fix (DONE, needs reflash)
+- Replaced every orange/yellow (R+G-mixed) color across the firmware UI with colors that render solidly on this panel (blues, purples, magentas, whites, reds — all confirmed OK):
+  - Primary accent (flight callsign, boot/message text, clock digits, direction arrow, landing text): `rgb(245,158,11)` orange → `rgb(56,189,248)` sky-blue/cyan.
+  - Weather icon sun + lightning bolt: gold/yellow → white (`rgb(255,255,255)` / pale blue-white core).
+  - Weather alert severity colors (`severityColor()` in main.cpp): severe (was orange) → magenta `rgb(219,39,119)`; moderate (was yellow) → purple `rgb(168,85,247)`; extreme (red) and default (blue) unchanged. Also fixed the hardcoded "SEVERE THUNDERSTORM WARNING" test preview to match.
+  - Rivalry-team score border highlight: orange → same new cyan accent.
+  - Holiday accent colors: New Year (was gold) → silver-blue; Halloween (was orange) → purple; Thanksgiving (was orange) → deep magenta/red. Winter, Valentine's, St. Patrick's, Independence Day were already red/green/blue and untouched.
+- `Config.h` → `AURA_FW_VERSION` = `1.5.6`.
+
+### Remaining open item (not blocking, lower priority now)
+- The underlying panel color-accuracy issue (whites/oranges bleeding) itself hasn't been root-caused (ribbon reseat + FM6126A removal + slower clock didn't fix it). Since the workaround avoids the affected color range in the app's own palette, this is much less urgent, but if the user wants to keep investigating: test at 50% brightness (currently defaults to up to 100%) to check if it's power-supply/voltage-sag related, and check the panel's power injection points/PSU rating.
+
+### Action items for user
+1. Reflash to v1.5.6 via USB (or OTA once uploaded).
+2. Confirm the flight callsign, clock digits, and weather sun icon now render as solid cyan/white without the green/red split.
+

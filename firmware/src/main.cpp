@@ -69,12 +69,12 @@ static uint16_t holidayAccent() {
   if (!getLocalTime(&t, 50)) return 0;
   int m = t.tm_mon + 1, d = t.tm_mday, md = m * 100 + d;
   if (md >= 1201 && md <= 1226) return Display::rgb(229, 72, 77);   // Winter (red)
-  if (md >= 1227 || md <= 102)  return Display::rgb(245, 217, 10);  // New Year (gold)
+  if (md >= 1227 || md <= 102)  return Display::rgb(200, 220, 255); // New Year (silver-blue, was gold)
   if (md >= 212 && md <= 215)   return Display::rgb(229, 72, 77);   // Valentine's
   if (md >= 315 && md <= 318)   return Display::rgb(48, 164, 108);  // St. Patrick's
   if (md >= 701 && md <= 705)   return Display::rgb(59, 130, 246);  // Independence
-  if (md >= 1024 && md <= 1031) return Display::rgb(247, 107, 21);  // Halloween
-  if (md >= 1120 && md <= 1130) return Display::rgb(247, 107, 21);  // Thanksgiving
+  if (md >= 1024 && md <= 1031) return Display::rgb(168, 85, 247);  // Halloween (purple, was orange)
+  if (md >= 1120 && md <= 1130) return Display::rgb(219, 39, 119);  // Thanksgiving (deep red/magenta, was orange)
   return 0;
 }
 
@@ -159,10 +159,12 @@ static void applyBrightnessForNow() {
 }
 
 static uint16_t severityColor(const String& s) {
-  if (s.equalsIgnoreCase("extreme"))  return Display::rgb(239, 68, 68);
-  if (s.equalsIgnoreCase("severe"))   return Display::rgb(249, 115, 22);
-  if (s.equalsIgnoreCase("moderate")) return Display::rgb(234, 179, 8);
-  return Display::rgb(14, 165, 233);
+  // Avoid orange/yellow (R+G mixed colors) — they're the ones that show the
+  // color-split/bleed on this panel. Red -> magenta -> purple -> blue instead.
+  if (s.equalsIgnoreCase("extreme"))  return Display::rgb(239, 68, 68);   // red
+  if (s.equalsIgnoreCase("severe"))   return Display::rgb(219, 39, 119);  // magenta
+  if (s.equalsIgnoreCase("moderate")) return Display::rgb(168, 85, 247);  // purple
+  return Display::rgb(14, 165, 233);                                     // blue
 }
 
 // ---- Persisted settings (NVS) ----------------------------------------------
@@ -557,7 +559,7 @@ static void drawCard(uint8_t t) {
     // Brighten border for a starred rivalry team, else use the holiday accent.
     uint16_t border = accent;
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
-      if (gSettings.sports.rivals[i] == key) { border = Display::rgb(245, 158, 11); break; }
+      if (gSettings.sports.rivals[i] == key) { border = Display::rgb(56, 189, 248); break; }
     Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak);
     int colon = key.indexOf(':');
     if (colon > 0) {
@@ -631,7 +633,7 @@ void loop() {
   // Weather preview (one-shot from the app).
   if (gWeatherTest) {
     gWeatherTest = false;
-    Display::weather("SEVERE THUNDERSTORM WARNING", Display::rgb(249, 115, 22));
+    Display::weather("SEVERE THUNDERSTORM WARNING", Display::rgb(219, 39, 119));
     delay(4000);
     lastCard = 0;
   }
