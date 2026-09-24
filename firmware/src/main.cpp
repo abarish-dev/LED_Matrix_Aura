@@ -611,11 +611,16 @@ void setup() {
       bool ok = wifiConnect();
       AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
       if (ok) {
-        // Distinct message so the panel doesn't sit on the stale "WI-FI /
-        // ssid" text while the (occasionally slow, self-retrying) first
-        // fetches run — makes clear the board is working, not frozen.
+        // Don't block setup() with the data fetch (sun-times + matrix feed +
+        // OTA check can chain into a multi-minute wait if the network is
+        // having a genuinely bad stretch — DNS/TLS failing repeatedly across
+        // every host, not just the usual one-retry-and-it's-fine hiccup).
+        // Show a quick "loading" message, then let loop()'s normal fetch
+        // timer + "waiting for data" fallback handle it — that keeps the
+        // board responsive (BLE, card rotation, brightness) the whole time
+        // instead of looking frozen on a single static message.
         Display::message("AURA", "loading data...");
-        applyBrightnessForNow(); refreshData(); lastFetch = millis();
+        lastFetch = millis() - FETCH_MS + 1000;   // fetch ~1s into the main loop
       }
     }
   } else {

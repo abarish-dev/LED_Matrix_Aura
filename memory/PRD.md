@@ -562,3 +562,19 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 2. Redeploy (Publish) to get the backend + app sports fallback live (no reflash needed for those two layers).
 3. Reflash to v1.6.0 to get the matrix's "record mode" score card rendering.
 
+
+
+## Session Update — Boot no longer blocks on a bad network stretch (firmware v1.6.1)
+
+### Context
+- User's serial log showed a GENUINE, sustained network outage (DNS failing for every different host queried: own backend, adsb.lol, open-meteo — 100% failure, not the usual "fails once, succeeds on retry" quirk). This is a real router/internet issue on the user's side, not fixable in firmware. However, it exposed a real UX weakness: `setup()`'s auto-reconnect path called `applyBrightnessForNow()` (which does a blocking sun-times fetch on day 1) + `refreshData()` (multi-host blocking fetch chain) SYNCHRONOUSLY before ever reaching `loop()`. During a bad network stretch this could block for minutes with the board frozen on a single static "AURA / loading data..." message — no BLE responsiveness, no card rotation, nothing.
+
+### Fix (DONE, needs reflash)
+- `setup()` no longer calls `applyBrightnessForNow()`/`refreshData()` synchronously after Wi-Fi connects. It shows "loading data..." once, then sets `lastFetch = millis() - FETCH_MS + 1000` so `loop()`'s existing periodic fetch timer fires almost immediately — but INSIDE the normal, already-responsive loop() cadence, using the existing "waiting for data" fallback message (refreshed every `CARD_MS`) instead of a single frozen message.
+- Net effect: the board is never blocked for longer than one `refreshData()` call at a time (same as normal steady-state operation), and stays responsive to BLE/card-rotation the whole time, even during a genuinely bad network stretch.
+- `Config.h` → `AURA_FW_VERSION` = `1.6.1`.
+
+### Action items for user
+1. Reflash to v1.6.1 (OTA or USB).
+2. The current network outage itself needs to be resolved on the user's end (router/ISP) — not a code fix.
+
