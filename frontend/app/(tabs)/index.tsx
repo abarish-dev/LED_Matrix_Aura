@@ -11,7 +11,7 @@ import { useMatrix } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { storage } from "@/src/utils/storage";
 import { nearbyPlanes, compass, airlineLogoUrl, type Plane } from "@/src/services/adsb";
-import { getTeamScore, getTeamStreak, type ScoreLine } from "@/src/services/espn";
+import { getTeamScore, getTeamStreak, getNextUfc, type ScoreLine, type UfcEvent } from "@/src/services/espn";
 import {
   activeAlerts,
   currentConditions,
@@ -57,6 +57,7 @@ export default function SummaryScreen() {
     key ? settings.sports.teams.find((t) => `${t.league}:${t.abbr}` === key) ?? null : null;
   const favTeam = teamByKey(settings.sports.favorites[0]) ?? settings.sports.teams[0] ?? null;
   const secondTeam = teamByKey(settings.sports.favorites[1]);
+  const thirdTeam = teamByKey(settings.sports.favorites[2]);
 
   const [planes, setPlanes] = useState<Plane[]>([]);
   const [planeIdx, setPlaneIdx] = useState(0);
@@ -65,6 +66,10 @@ export default function SummaryScreen() {
   const [scoreLoading, setScoreLoading] = useState(false);
   const [score2, setScore2] = useState<ScoreLine | null>(null);
   const [streak2, setStreak2] = useState<string | null>(null);
+  const [score3, setScore3] = useState<ScoreLine | null>(null);
+  const [streak3, setStreak3] = useState<string | null>(null);
+  const [ufc, setUfc] = useState<UfcEvent | null>(null);
+  const [ufcLoading, setUfcLoading] = useState(false);
   const [wx, setWx] = useState<CurrentWx | null>(null);
   const [wxLoading, setWxLoading] = useState(false);
   const [alert, setAlert] = useState<Alert | null>(null);
@@ -224,8 +229,37 @@ export default function SummaryScreen() {
       setScore2(null);
       setStreak2(null);
     }
+
+    if (thirdTeam) {
+      getTeamScore(thirdTeam.league, thirdTeam.abbr).then((line) => {
+        if (id === reqRef.current) setScore3(line);
+        if (line?.teamId) {
+          getTeamStreak(thirdTeam.league, line.teamId).then((s) => {
+            if (id === reqRef.current) setStreak3(s);
+          });
+        } else if (id === reqRef.current) {
+          setStreak3(null);
+        }
+      });
+    } else if (id === reqRef.current) {
+      setScore3(null);
+      setStreak3(null);
+    }
+
+    if (settings.sports.ufc) {
+      setUfcLoading(true);
+      getNextUfc().then((e) => {
+        if (id === reqRef.current) {
+          setUfc(e);
+          setUfcLoading(false);
+        }
+      });
+    } else if (id === reqRef.current) {
+      setUfc(null);
+      setUfcLoading(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, secondTeam?.league, secondTeam?.abbr, checkAutoTrack, checkLanding]);
+  }, [located, f.lat, f.lon, f.radiusMi, favTeam?.league, favTeam?.abbr, secondTeam?.league, secondTeam?.abbr, thirdTeam?.league, thirdTeam?.abbr, settings.sports.ufc, checkAutoTrack, checkLanding]);
 
   useEffect(() => {
     loadAll();
@@ -328,7 +362,10 @@ export default function SummaryScreen() {
   const secsToRefresh = Math.max(0, Math.ceil((nextRefreshRef.current - now) / 1000));
   const gameCountdown = score?.state === "pre" ? until(score.startTime, now) : null;
   const visibleOrder = order.filter((k) => !hidden.includes(k));
-  const extraCards = secondTeam && visibleOrder.includes("sports") ? 1 : 0;
+  const extraCards =
+    visibleOrder.includes("sports")
+      ? (secondTeam ? 1 : 0) + (thirdTeam ? 1 : 0) + (settings.sports.ufc ? 1 : 0)
+      : 0;
   const autoCompact = visibleOrder.length + extraCards > 3;
   const effCompact = compact || autoCompact;
 
@@ -404,6 +441,8 @@ export default function SummaryScreen() {
   const renderSports = (move: CardMove) => {
     const secondMeta = secondTeam ? findTeam(secondTeam.league, secondTeam.abbr) : undefined;
     const s2live = score2?.state === "in";
+    const thirdMeta = thirdTeam ? findTeam(thirdTeam.league, thirdTeam.abbr) : undefined;
+    const s3live = score3?.state === "in";
     return (
     <>
     <GlanceCard
@@ -538,6 +577,76 @@ export default function SummaryScreen() {
         )}
         <Text style={styles.miniStatus} numberOfLines={1}>
           {score2 ? (s2live ? "🔴 LIVE" : score2.detail) : "No game"}
+        </Text>
+      </Pressable>
+    )}
+    {thirdTeam && (
+      <Pressable
+        onPress={() => {
+          Haptics.selectionAsync();
+          router.push("/sports");
+        }}
+        style={({ pressed }) => [styles.miniRow, pressed && { opacity: 0.85 }]}
+      >
+        {thirdMeta && (
+          <View style={[styles.miniBadge, { backgroundColor: thirdMeta.color }]}>
+            <Text style={[styles.miniBadgeText, { color: readableOn(thirdMeta.color) }]}>
+              {thirdTeam.abbr}
+            </Text>
+            <Image
+              source={{ uri: teamLogoUrl(thirdTeam.league, thirdTeam.abbr) }}
+              style={[StyleSheet.absoluteFill, { padding: 3 }]}
+              contentFit="contain"
+              transition={200}
+              cachePolicy="memory-disk"
+            />
+          </View>
+        )}
+        <Text style={[styles.miniValue, s3live && { color: colors.brand }]} numberOfLines={1}>
+          {score3
+            ? score3.state === "pre"
+              ? `${score3.atHome ? "vs" : "@"} ${score3.oppAbbr}`
+              : `${thirdTeam.abbr} ${score3.teamScore ?? 0}–${score3.oppScore ?? 0} ${score3.oppAbbr}`
+            : `${thirdTeam.league} · ${thirdMeta?.name ?? thirdTeam.abbr}`}
+        </Text>
+        {streak3 && (
+          <View
+            style={[
+              styles.streakChip,
+              { backgroundColor: (streak3.startsWith("W") ? colors.success : colors.error) + "22" },
+            ]}
+          >
+            <Text
+              style={[
+                styles.streakChipText,
+                { color: streak3.startsWith("W") ? colors.success : colors.error },
+              ]}
+            >
+              {streak3}
+            </Text>
+          </View>
+        )}
+        <Text style={styles.miniStatus} numberOfLines={1}>
+          {score3 ? (s3live ? "🔴 LIVE" : score3.detail) : "No game"}
+        </Text>
+      </Pressable>
+    )}
+    {settings.sports.ufc && (
+      <Pressable
+        onPress={() => {
+          Haptics.selectionAsync();
+          router.push("/sports");
+        }}
+        style={({ pressed }) => [styles.miniRow, pressed && { opacity: 0.85 }]}
+      >
+        <View style={[styles.miniBadge, { backgroundColor: colors.surfaceTertiary }]}>
+          <Ionicons name="flame" size={14} color="#f97316" />
+        </View>
+        <Text style={styles.miniValue} numberOfLines={1}>
+          {ufcLoading ? "Loading UFC…" : ufc ? (ufc.shortName || ufc.name) : "No upcoming event"}
+        </Text>
+        <Text style={styles.miniStatus} numberOfLines={1}>
+          {ufc?.date || ""}
         </Text>
       </Pressable>
     )}

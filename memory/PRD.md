@@ -593,3 +593,56 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 ### Action items for user
 1. Reflash to v1.6.2 (OTA via the app's "Install update over Wi-Fi" once uploaded to the backend, or USB).
 2. No app or backend redeploy needed — this is a firmware-only visual change.
+
+
+## Session Update — Wi-Fi credentials not persisting + slow BLE ack (firmware v1.6.3)
+
+### Context
+- User reported: after a power cycle the matrix "isn't remembering the Wi-Fi password" and needs credentials re-sent from the app; sending Wi-Fi from the app "takes a long time to acknowledge"; and it sometimes seems to need a fresh BLE re-sync afterward. Serial log showed a genuinely flaky network stretch (many SSL/TLS `code=-1` retries against api.open-meteo.com and even the deployed backend) right after joining Wi-Fi.
+
+### Root cause (found in `loop()`'s `gWifiCredsChanged` handler)
+- When new Wi-Fi creds arrived over BLE, the firmware called `wifiConnect()` → `notifyWifi()` → then a **synchronous** `refreshData()` (multi-host HTTPS chain) — and only *after* that returned did it fall through to the debounced flash-save logic. On a bad network stretch `refreshData()` alone could block for a minute-plus (retry loops visible in the log). If the user power-cycled the board anytime in that window — very plausible right after seeing "joined" in the app — the Wi-Fi password never actually reached NVS flash, since the save hadn't run yet. Same blocking chain also explains the sluggish feel: the whole loop() (and any further BLE command handling) sat frozen inside that retry chain.
+
+### Fix (DONE, needs reflash)
+- `main.cpp`'s `gWifiCredsChanged` branch now calls `saveSettings()` **immediately** after `wifiConnect()`/`notifyWifi()` — before anything else — instead of relying on the debounced flush. Wi-Fi credential changes are rare, one-off events, so there's no reason to debounce this specific save.
+- The synchronous `refreshData()` call in that same branch was removed (mirrors the v1.6.1 async-boot fix, which only covered `setup()`, not this BLE-triggered reconnect path): it now just shows "loading data..." and lets `loop()`'s normal fetch timer pick it up, keeping BLE/display responsive instead of freezing for the length of a flaky-network retry chain.
+- `Config.h` → `AURA_FW_VERSION` = `1.6.3`.
+
+### Action items for user
+1. Reflash to v1.6.3 (OTA or USB), then re-send Wi-Fi once more from the app so the corrected save path actually captures it.
+2. No app or backend changes needed.
+
+### Boot screen branding — DONE (firmware v1.6.3)
+- User chose option 2: try real amber for the boot screen text (small risk, wanted to visually confirm). Implemented: `DisplayManager.h`'s `boot()` now uses `rgb(245, 158, 11)` (matches app's `colors.brand = "#f59e0b"`) for the "AURA" splash text. `message()` gained an optional `color1` param (default keeps the existing blue for plain status headers like "WI-FI"/"UPDATE") so the 4 other "AURA ..." status screens in `main.cpp` (reconnecting/loading data x2/waiting for data) could also be recolored to the same amber without affecting non-branded messages.
+
+## Session Update — Logo colors wrong on physical panel (firmware v1.6.4)
+
+### Context
+- User reported red missing from the Carolina Hurricanes and American Airlines logos (added in v1.6.2) after reflashing. Photos at normal viewing distance confirmed: areas that should be red rendered as blue instead (Hurricanes' red swirl showed blue/green; the AA logo's red tail showed blue with only a thin magenta sliver).
+
+### Diagnosis
+- Verified the embedded PROGMEM pixel data itself contains correct full-intensity red values (checked programmatically) — ruled out the Python logo generator.
+- Critical diagnostic: asked the user to run the app's existing "Flash test pattern" (solid fullscreen R/G/B/W fill via `fillScreen`) — solid red rendered correctly. Since `fillScreen`/`drawRect`/text all go through the same `color565()` → `drawPixel()` path and render red correctly, but the *logo bitmaps specifically* didn't, this ruled out a panel wiring/signal-integrity issue or a systemic color565 channel swap — it isolated the bug to `dma->drawRGBBitmap()` itself (only used for logos), which apparently mishandles some pixels reading a `PROGMEM uint16_t*` array on this setup.
+
+### Fix (DONE, needs reflash)
+- `DisplayManager.h`'s `drawLogo()` no longer calls `dma->drawRGBBitmap()`. It now blits each logo pixel individually via `dma->drawPixel(x, y, color)` — the exact same call path already proven correct by the flash test — skipping fully-black (transparent background) pixels. This sidesteps whatever `drawRGBBitmap`-specific bug existed without needing to reverse-engineer its internals.
+- `Config.h` → `AURA_FW_VERSION` = `1.6.4`.
+
+### Action items for user
+1. Reflash to v1.6.4 (OTA or USB), then check the Hurricanes/AA logos again from a normal (non-macro) viewing distance.
+2. If red is still wrong after this, take another normal-distance photo — that would point back toward a hardware signal issue specific to dense multi-color bitmap regions rather than software, and we'd escalate differently.
+
+
+## Session Update — Summary screen: 3 favorite teams + UFC (frontend only)
+
+### Context
+- User: "I also want to show up to 3 sports events plus ufc if that is selected (four total if showing UFC). currently I appear to be limited to two." Found the cap: `toggleFavorite` in `store/matrix.tsx` capped `sports.favorites` at 2, and the Home/Summary screen only rendered a main GlanceCard (favorites[0]) + one mini row (favorites[1]). The physical matrix itself was NOT the bottleneck — firmware already cycles through all followed teams (up to 8, no 2-cap) — and firmware has no UFC card at all today (UFC is app-only, ESPN-preview-only).
+
+### Fix (DONE, tested by testing_agent — frontend only, no reflash/redeploy needed)
+- `store/matrix.tsx`: `toggleFavorite` now allows up to 3 favorites (replaces the 3rd slot once full, same UX pattern as before).
+- `app/(tabs)/sports.tsx`: favorite badge labels now support SUMMARY / 2ND / 3RD; legend + footer copy updated from "up to 2" to "up to 3".
+- `app/(tabs)/index.tsx`: added `thirdTeam` (favorites[2]) with its own score/streak fetch + mini row, and a 4th mini row for UFC (flame icon + next event name/date from `getNextUfc()`) shown whenever `settings.sports.ufc` is enabled. `autoCompact` math updated to account for up to 3 extra mini rows.
+- Verified by testing_agent: star cap/replacement/relabeling, Summary render (GlanceCard + up to 3 mini rows + UFC row), auto-compact, legend/footer text, and no regressions on other tabs.
+
+### Not done (scope check, mentioned to user)
+- Did NOT add a UFC card to the physical LED matrix rotation (firmware) — that's a separate, larger change (new card type + backend feed support) not explicitly requested; user was told this is app-only for now.

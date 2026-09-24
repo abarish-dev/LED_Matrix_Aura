@@ -188,11 +188,12 @@ export default function SportsScreen() {
     // Rivalry game: the live opponent is another team you follow in this league.
     const rivalryGame = !!line && isFollowed(item.league, line.oppAbbr);
     const highlight = isRival || rivalryGame;
-    // Favorites (max 2): [0] leads the Summary glance, [1] shows as a mini row.
+    // Favorites (max 3): [0] leads the Summary glance, [1]/[2] show as mini rows.
     const favIndex = s.favorites.indexOf(key);
     const implicitPrimary = s.favorites.length === 0 && index === 0;
     const favActive = favIndex >= 0 || implicitPrimary;
-    const favLabel = favIndex === 1 ? "2ND" : favIndex === 0 || implicitPrimary ? "SUMMARY" : null;
+    const favLabel =
+      favIndex === 2 ? "3RD" : favIndex === 1 ? "2ND" : favIndex === 0 || implicitPrimary ? "SUMMARY" : null;
 
     return (
       <View
@@ -369,7 +370,7 @@ export default function SportsScreen() {
         <View style={styles.legend}>
           <View style={styles.legendItem}>
             <Ionicons name="star" size={14} color={colors.brand} />
-            <Text style={styles.legendText}>Show on Summary (up to 2 — 1st leads, 2nd is a mini row)</Text>
+            <Text style={styles.legendText}>Show on Summary (up to 3 — 1st leads, 2nd &amp; 3rd are mini rows)</Text>
           </View>
           <View style={styles.legendItem}>
             <Ionicons name="flame" size={14} color="#f97316" />
@@ -389,7 +390,7 @@ export default function SportsScreen() {
         <Text style={styles.footer}>
           {seg === "UFC"
             ? "The matrix pulls the next UFC card live from ESPN."
-            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ star up to 2 for the Summary (1st leads, 2nd shows a mini row) · 🔥 flags a rivalry · rows tint green when winning, red when losing.`}
+            : `Following ${s.teams.length} team${s.teams.length === 1 ? "" : "s"}. ★ star up to 3 for the Summary (1st leads, 2nd & 3rd show mini rows) · 🔥 flags a rivalry · rows tint green when winning, red when losing.`}
         </Text>
       </View>
     </ScrollView>

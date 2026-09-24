@@ -607,7 +607,7 @@ void setup() {
   if (loadSettings()) {
     Serial.println("[NVS] restored saved settings");
     if (!gSettings.wifiSsid.isEmpty()) {
-      Display::message("AURA", "reconnecting...");
+      Display::message("AURA", "reconnecting...", Display::rgb(245, 158, 11));
       bool ok = wifiConnect();
       AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
       if (ok) {
@@ -619,7 +619,7 @@ void setup() {
         // timer + "waiting for data" fallback handle it — that keeps the
         // board responsive (BLE, card rotation, brightness) the whole time
         // instead of looking frozen on a single static message.
-        Display::message("AURA", "loading data...");
+        Display::message("AURA", "loading data...", Display::rgb(245, 158, 11));
         lastFetch = millis() - FETCH_MS + 1000;   // fetch ~1s into the main loop
       }
     }
@@ -671,8 +671,27 @@ void loop() {
     gWifiCredsChanged = false;
     bool ok = wifiConnect();
     AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
-    if (ok) { applyBrightnessForNow(); refreshData(); lastFetch = millis(); }
-    gSettingsDirty = true;
+    // Save the new credentials to flash RIGHT NOW instead of letting the
+    // usual 4s-debounced flush (below) handle it. Previously this branch
+    // went straight into a synchronous refreshData() — which, on a flaky
+    // network, can chain into a minute-plus of retried HTTPS calls (see the
+    // [GET] retry logging) — with the *actual* NVS write only happening
+    // after that returned. If the board got power-cycled during that
+    // window (very plausible right after a fresh "it joined!" moment), the
+    // Wi-Fi password never made it to flash: exactly the "doesn't remember
+    // my Wi-Fi password after a restart" symptom.
+    saveSettings();
+    gLastSaveMs = millis();
+    gSettingsDirty = false;
+    if (ok) {
+      // Don't block here with a synchronous refreshData() either — same
+      // fix as the async-boot change in v1.6.1: show "loading data...",
+      // then let loop()'s normal fetch timer + fallback message pick it up
+      // so BLE stays responsive (and can ack further app commands quickly)
+      // even if the network is having a bad stretch right after joining.
+      Display::message("AURA", "loading data...", Display::rgb(245, 158, 11));
+      lastFetch = millis() - FETCH_MS + 1000;
+    }
   }
 
   uint32_t now = millis();
@@ -715,7 +734,7 @@ void loop() {
   }
 
   if (n == 0) {
-    if (now - lastCard >= CARD_MS) { lastCard = now; Display::message("AURA", "waiting for data"); }
+    if (now - lastCard >= CARD_MS) { lastCard = now; Display::message("AURA", "waiting for data", Display::rgb(245, 158, 11)); }
     delay(20);
     return;
   }

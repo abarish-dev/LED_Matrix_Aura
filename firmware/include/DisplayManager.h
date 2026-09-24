@@ -70,7 +70,12 @@ inline void centerText(const char* s, int y, uint16_t color, uint8_t size = 1) {
 
 inline void boot() {
   clear();
-  centerText("AURA", 20, rgb(56, 189, 248), 2);
+  // Matches the app's amber brand color (#f59e0b) for name recognition at a
+  // glance. NOTE: amber is R+G-mixed — the same family removed from the rest
+  // of the UI (v1.5.6) after it bled/split on this user's panel. This one
+  // spot is an intentional visual test; if it bleeds here too, swap back to
+  // rgb(56, 189, 248) (the blue used before).
+  centerText("AURA", 20, rgb(245, 158, 11), 2);
   centerText("matrix online", 44, rgb(160, 160, 160), 1);
   flip();
 }
@@ -232,9 +237,11 @@ inline void weatherScroll(const String& headline, uint16_t severityColor, int sc
   flip();
 }
 
-inline void message(const char* line1, const char* line2) {
+// `color1` lets specific callers brand line1 (e.g. "AURA" in the app's amber);
+// 0 keeps the default blue used for plain status headers ("WI-FI", "UPDATE").
+inline void message(const char* line1, const char* line2, uint16_t color1 = 0) {
   clear();
-  centerText(line1, 20, rgb(56, 189, 248), 1);
+  centerText(line1, 20, color1 ? color1 : rgb(56, 189, 248), 1);
   if (line2) centerText(line2, 40, rgb(160, 160, 160), 1);
   flip();
 }
@@ -338,9 +345,23 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
 }
 
 // Blit an RGB565 logo bitmap (see Logos.h) at (x,y).
+//
+// Deliberately NOT using dma->drawRGBBitmap() here: on this user's panel it
+// rendered red pixels as blue (and vice-versa) while every OTHER color path
+// (fillScreen, drawRect, text via color565()/drawPixel()) rendered pure red
+// correctly — confirmed with the app's "Flash test pattern". That isolates
+// the bug to drawRGBBitmap()'s own internal handling of a PROGMEM uint16_t
+// array, not a panel/wiring/signal-integrity problem. Blitting pixel-by-pixel
+// through the SAME drawPixel() path everything else already uses correctly
+// sidesteps it entirely, regardless of the exact internal cause.
 inline void drawLogo(const uint16_t* bitmap, int w, int h, int x, int y) {
   if (!bitmap) return;
-  dma->drawRGBBitmap(x, y, (uint16_t*)bitmap, w, h);
+  for (int row = 0; row < h; row++) {
+    for (int col = 0; col < w; col++) {
+      uint16_t c = bitmap[row * w + col];
+      if (c) dma->drawPixel(x + col, y + row, c);   // skip pure black (transparent bg)
+    }
+  }
 }
 
 } // namespace Display

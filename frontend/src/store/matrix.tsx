@@ -482,17 +482,17 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     [persist, livePush],
   );
 
-  // Toggle a team into the Summary favorites (max 2). favorites[0] leads the
-  // main Sports glance; favorites[1] shows as a second mini score row.
+  // Toggle a team into the Summary favorites (max 3). favorites[0] leads the
+  // main Sports glance; favorites[1] and favorites[2] show as extra mini
+  // score rows.
   const toggleFavorite = useCallback(
     (key: string) => {
       setSettings((prev) => {
         const cur = prev.sports.favorites;
         let favorites: string[];
         if (cur.includes(key)) favorites = cur.filter((k) => k !== key);
-        else if (cur.length === 0) favorites = [key];
-        else if (cur.length === 1) favorites = [cur[0], key];
-        else favorites = [cur[0], key]; // replace the second slot
+        else if (cur.length < 3) favorites = [...cur, key];
+        else favorites = [cur[0], cur[1], key]; // replace the 3rd slot once full
         const next = { ...prev, sports: { ...prev.sports, favorites } };
         persist(next);
         return next;
