@@ -490,3 +490,25 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 2. Verify: clock digits render solid orange (no green/red split), sun/cloud icons don't show stray colored fringing, and the earlier one-off blank/garbled clock render doesn't recur.
 3. If STILL split/garbled after removing FM6126A, the next thing to check would be `cfg.mux_pattern` / panel scan-rate config for the new panel model — will need the panel's spec sheet or another serial log.
 
+
+
+## Session Update — Color-split persists on v1.5.4, likely wiring/signal-integrity (firmware v1.5.5 test)
+
+### New evidence
+- After removing FM6126A (v1.5.4), the issue is unchanged: orange text (clock digits, flight callsign) shows green top edge + red/pink body; WHITE/gray text (flight airline name, distance) renders almost entirely BLUE; a thin green/yellow streak appears along the panel's top/left edge (the card border draw). Pure blue elements look fine. This affects multiple different cards/colors consistently — not content-specific.
+- Web research on this exact library confirms: R+G-channel corruption/splitting like this is a well-known symptom of (a) a loose/partially-seated HUB75 ribbon connector, or (b) marginal signal integrity at the default I2S clock speed for a given panel/cable (especially after swapping to a different physical panel), or (c) in rare cases an internally miswired R2/G2 line on a defective panel unit.
+
+### Action taken (software mitigation, v1.5.5 — needs reflash)
+- Added `cfg.i2sspeed = HUB75_I2S_CFG::HZ_8M;` (stepped down from the library default ~10-15MHz) as a non-destructive test for signal-integrity-related corruption. Comment left to step down further to `HZ_5M` if still glitchy.
+- Updated the driver-config comments to reflect that FM6126A was ruled out as the cause (v1.5.4 test).
+
+### PRIMARY recommended action (hardware, zero-cost, do this regardless of the software test)
+- Physically **reseat the HUB75 ribbon cable at BOTH ends** — the MatrixPortal S3's output header and the panel's input connector. Check for a bent pin, partially-inserted connector, or debris. This is the most likely root cause per the evidence (issue appeared with the replacement panel, is consistent across colors/cards, and firmware driver changes didn't help).
+- Also worth double-checking the panel's 5V power connection/supply is solid — voltage instability can cause similar color corruption.
+- If the split persists after BOTH ribbon-reseat AND the v1.5.5 slower clock, next diagnostic step is a full-panel photo (top half AND bottom half both visible together) to check if the color split differs between the two halves — this would confirm/deny an internal R2/G2 miswiring defect in the specific panel unit, which would need a targeted pin-remap fix (not a guess).
+
+### Action items for user
+1. Reseat the ribbon cable on both ends first (free, immediate).
+2. Reflash to v1.5.5 via USB.
+3. Report back whether either/both changed anything, and if possible send a full-panel photo showing top+bottom halves together.
+
