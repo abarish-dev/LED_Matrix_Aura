@@ -18,6 +18,9 @@ static uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
   return dma->color565(r, g, b);
 }
 
+// AURA amber (#F59E0B), using the same RGB565 conversion on every card.
+inline uint16_t brandAmber() { return rgb(245, 158, 11); }
+
 inline void begin() {
   HUB75_I2S_CFG::i2s_pins pins = { // MatrixPortal S3 default HUB75 pinout
       42, 41, 40, 38, 39, 37,      // R1,G1,B1,R2,G2,B2
@@ -94,7 +97,7 @@ inline void boot() {
   // of the UI (v1.5.6) after it bled/split on this user's panel. This one
   // spot is an intentional visual test; if it bleeds here too, swap back to
   // rgb(56, 189, 248) (the blue used before).
-  centerText("AURA", 20, rgb(245, 158, 11), 2);
+  centerText("AURA", 20, brandAmber(), 2);
   centerText("matrix online", 44, rgb(160, 160, 160), 1);
   flip();
 }
@@ -146,7 +149,7 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
   String texts[7]; uint16_t cols[7]; int nl = 0;
   char buf[28];
   if (tracked) { texts[nl] = "* TRACKED *"; cols[nl++] = rgb(16, 185, 129); }
-  texts[nl] = callsign;          cols[nl++] = rgb(56, 189, 248);
+  texts[nl] = callsign;          cols[nl++] = brandAmber();
   texts[nl] = airline;           cols[nl++] = rgb(230, 230, 230);
   if (origin.length() && dest.length()) {
     snprintf(buf, sizeof(buf), "%s>%s", origin.c_str(), dest.c_str());
@@ -181,7 +184,7 @@ inline void landing(const String& callsign, bool landed) {
   clear();
   dma->fillRect(0, 0, MATRIX_W, 14, rgb(16, 185, 129));
   centerText(landed ? "LANDED" : "DESCENDING", 3, rgb(0, 0, 0), 1);
-  centerText(callsign.c_str(), 26, rgb(56, 189, 248), 1);
+  centerText(callsign.c_str(), 26, brandAmber(), 1);
   centerText(landed ? "arrived" : "on approach", 46, rgb(200, 200, 200), 1);
   flip();
 }
@@ -197,7 +200,7 @@ inline void score(const String& home, int hs, const String& away, int as,
   if (border) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border);
   char l[24];
   if (isRecord) {
-    centerText(home.c_str(), 8, rgb(255, 255, 255), 1);
+    centerText(home.c_str(), 8, brandAmber(), 1);
     if (record.length()) centerText(record.c_str(), 24, rgb(56, 189, 248), 1);
     String nextLine = away.length() ? ("Next: " + away) : String("Next game");
     centerText(nextLine.c_str(), 40, rgb(200, 200, 200), 1);
@@ -206,9 +209,9 @@ inline void score(const String& home, int hs, const String& away, int as,
     return;
   }
   snprintf(l, sizeof(l), "%s %d", away.c_str(), as);
-  centerHeading(l, 20, rgb(255, 255, 255));
+  centerHeading(l, 20, brandAmber());
   snprintf(l, sizeof(l), "%s %d", home.c_str(), hs);
-  centerHeading(l, 40, rgb(255, 255, 255));
+  centerHeading(l, 40, brandAmber());
   centerText(status.c_str(), 46, rgb(16, 185, 129), 1);
   if (streak.length() > 0) {
     bool win = streak.charAt(0) == 'W';
@@ -269,10 +272,10 @@ inline void message(const char* line1, const char* line2, uint16_t color1 = 0) {
 // and stays left of the centered time. Open-Meteo codes: 0 clear, 1-3 cloud,
 // 45-48 fog, 51-67 drizzle/rain, 71-77 snow, 80-82 showers, 95+ storms.
 inline void wxIcon(int x, int y, int code, bool isDay) {
-  const uint16_t sun = rgb(255, 183, 52), moon = rgb(210, 200, 255),
+  const uint16_t sun = brandAmber(), moon = rgb(210, 200, 255),
                  cloud = rgb(150, 169, 191), highlight = rgb(230, 239, 250),
                  rain = rgb(48, 176, 255), snow = rgb(245, 250, 255),
-                 bolt = rgb(255, 214, 81), fog = rgb(126, 155, 178);
+                 bolt = brandAmber(), fog = rgb(126, 155, 178);
   const bool clear = code == 0;
   const bool partly = code == 1 || code == 2;
   const bool foggy = code == 45 || code == 48;
@@ -337,7 +340,7 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
   clear();
   if (accent) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, accent);
   if (wxCode >= 0) wxIcon(3, 2, wxCode, isDay);
-  centerHeading(timeStr.c_str(), 30, rgb(56, 189, 248));
+  centerHeading(timeStr.c_str(), 30, brandAmber());
   bool hasHiLo = (hiF > -999 && loF > -999);
   bool hasFeels = (feelsF > -999);
   bool hasSecondary = hasHiLo || hasFeels;
@@ -386,6 +389,7 @@ inline void flashLogoTest(const uint16_t* bitmap, int w, int h) {
   dma->fillRect(5, 7, 12, 12, rgb(255, 0, 0));
   dma->fillRect(5, 26, 12, 12, rgb(0, 255, 0));
   dma->fillRect(5, 45, 12, 12, rgb(0, 0, 255));
+  dma->fillRect(MATRIX_W - 17, 26, 12, 12, brandAmber());
   drawLogo(bitmap, w, h, (MATRIX_W - w) / 2, (MATRIX_H - h) / 2);
   centerText("RGB565 LOGO", 53, rgb(255, 255, 255), 1);
   flip();
