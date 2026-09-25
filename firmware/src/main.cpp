@@ -135,11 +135,20 @@ static void applyBrightnessForNow() {
     struct tm t;
     if (getLocalTime(&t, 50)) {
       if (gSettings.night.useSunset) {
-        // Dim from local sunset to sunrise; sun times cached per day.
+        // Cache sunrise/sunset per day. A failed HTTPS lookup must not run
+        // again on every card: retry at most once per hour when online.
         static int cachedYday = -1, srMin = -1, ssMin = -1;
-        if (t.tm_yday != cachedYday || srMin < 0 || ssMin < 0) {
-          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, srMin, ssMin);
-          if (srMin >= 0 && ssMin >= 0) cachedYday = t.tm_yday;
+        static uint32_t lastSunAttempt = 0;
+        bool needsSun = t.tm_yday != cachedYday || srMin < 0 || ssMin < 0;
+        uint32_t currentMs = millis();
+        if (needsSun && WiFi.status() == WL_CONNECTED &&
+            (lastSunAttempt == 0 || currentMs - lastSunAttempt >= 3600000UL)) {
+          lastSunAttempt = currentMs;
+          int sunrise = -1, sunset = -1;
+          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, sunrise, sunset);
+          if (sunrise >= 0 && sunset >= 0) {
+            srMin = sunrise; ssMin = sunset; cachedYday = t.tm_yday;
+          }
         }
         if (srMin >= 0 && ssMin >= 0) {
           int nowMin = t.tm_hour * 60 + t.tm_min;
