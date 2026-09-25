@@ -639,7 +639,13 @@ void setup() {
 
 void loop() {
   // Flash test (one-shot from the app).
-  if (gFlashTest) { gFlashTest = false; Display::flashTest(); lastCard = 0; }
+  if (gFlashTest) {
+    gFlashTest = false;
+    Display::flashTest();
+    const LogoAsset* sample = airlineLogo("AAL");
+    if (sample) Display::flashLogoTest(sample->data, sample->w, sample->h);
+    lastCard = 0;
+  }
 
   // OTA firmware update (one-shot from the app's "Install update" button).
   if (gOtaRequested) { gOtaRequested = false; otaCheck(); lastCard = 0; }
