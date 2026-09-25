@@ -224,12 +224,9 @@ inline void score(const String& home, int hs, const String& away, int as,
   if (isRecord) {
     if (homeLogo) drawLogo(homeLogo->data, homeLogo->w, homeLogo->h, 2, 1);
     centerText(home.c_str(), 8, brandAmber(), 1);
-    // Keep the record centered across the entire panel, below the logo.
-    // Centering it inside the right-hand logo column visibly offsets CAR.
-    if (record.length()) {
-      String recordLine = home + " " + record;
-      centerText(recordLine.c_str(), 27, rgb(56, 189, 248), 1);
-    }
+    // Center both lines across the panel; put the record below the logo so
+    // its text never overlaps the graphic at the upper left.
+    if (record.length()) centerText(record.c_str(), 27, rgb(56, 189, 248), 1);
     String nextLine = away.length() ? ("Next: " + away) : String("Next game");
     centerText(nextLine.c_str(), 40, rgb(200, 200, 200), 1);
     centerText(status.c_str(), 52, rgb(16, 185, 129), 1);
