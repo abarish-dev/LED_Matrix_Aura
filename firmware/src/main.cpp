@@ -103,9 +103,9 @@ static void pollWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     gWifiJoining = false;
     Data::resetDnsCache();
-    Serial.printf("[NET] ip=%s gw=%s dns=%s\n",
+    Serial.printf("[NET] ip=%s gw=%s dns=%s wifiRssi=%d dBm\n",
                   WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
-                  WiFi.dnsIP(0).toString().c_str());
+                  WiFi.dnsIP(0).toString().c_str(), WiFi.RSSI());
     #ifndef TZ_INFO
     #define TZ_INFO "EST5EDT,M3.2.0,M11.1.0"
     #endif
