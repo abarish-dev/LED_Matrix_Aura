@@ -75,7 +75,7 @@ inline void centerText(const char* s, int y, uint16_t color, uint8_t size = 1) {
 }
 
 
- // Proportional type for short headings. Adafruit GFX custom fonts use a
+// Proportional type for short headings. Adafruit GFX custom fonts use a
  // baseline cursor; bounds provide the exact pixel width for centering.
 inline void centerHeading(const char* value, int baseline, uint16_t color,
                           const GFXfont* font = &FreeSansBold9pt7b) {
@@ -92,11 +92,7 @@ inline void centerHeading(const char* value, int baseline, uint16_t color,
 
 inline void boot() {
   clear();
-  // Matches the app's amber brand color (#f59e0b) for name recognition at a
-  // glance. NOTE: amber is R+G-mixed — the same family removed from the rest
-  // of the UI (v1.5.6) after it bled/split on this user's panel. This one
-  // spot is an intentional visual test; if it bleeds here too, swap back to
-  // rgb(56, 189, 248) (the blue used before).
+  // The same amber is used for short card headings and weather highlights.
   centerText("AURA", 20, brandAmber(), 2);
   centerText("matrix online", 44, rgb(160, 160, 160), 1);
   flip();
