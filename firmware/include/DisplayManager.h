@@ -336,7 +336,7 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
   clear();
   if (accent) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, accent);
   if (wxCode >= 0) wxIcon(3, 2, wxCode, isDay);
-  centerHeading(timeStr.c_str(), 30, brandAmber(), &FreeMono9pt7b);
+  centerHeading(timeStr.c_str(), 30, brandAmber(), &FreeSansBold9pt7b);
   bool hasHiLo = (hiF > -999 && loF > -999);
   bool hasFeels = (feelsF > -999);
   bool hasSecondary = hasHiLo || hasFeels;
