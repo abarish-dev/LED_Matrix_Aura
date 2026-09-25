@@ -6,7 +6,6 @@
 #pragma once
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <Fonts/FreeSansBold9pt7b.h>
-#include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeMono9pt7b.h>
 #include "Config.h"
 
