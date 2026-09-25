@@ -85,6 +85,7 @@ static uint32_t gWifiRetryAfterMs = 0;
 // Keep BLE and the display responsive while Wi-Fi joins.
 static void startWifiConnect() {
   if (gSettings.wifiSsid.isEmpty()) return;
+  Data::resetDnsCache();
   WiFi.mode(WIFI_STA);
   WiFi.begin(gSettings.wifiSsid.c_str(), gSettings.wifiPass.c_str());
   gWifiJoining = true;
@@ -101,6 +102,7 @@ static void pollWifi() {
   }
   if (WiFi.status() == WL_CONNECTED) {
     gWifiJoining = false;
+    Data::resetDnsCache();
     Serial.printf("[NET] ip=%s gw=%s dns=%s\n",
                   WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
                   WiFi.dnsIP(0).toString().c_str());
