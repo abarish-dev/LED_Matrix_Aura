@@ -69,6 +69,26 @@ def to_rgb565_array(img):
         out.append(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
     return out
 
+
+def clean_delta_widget(pixels):
+    """Keep the 24px Delta widget crisp on an RGB LED panel.
+
+    The tiny Google Flights PNG contributes almost-black antialiasing and an
+    isolated baseline. Quantize its red silhouette to two opaque reds and
+    leave the dark gaps transparent. This retains the widget's proportions.
+    """
+    bright_red = (29 << 11) | (7 << 5) | 7
+    shaded_red = (19 << 11) | (6 << 5) | 6
+    cleaned = []
+    for index, pixel in enumerate(pixels):
+        x, y = index % SIZE, index // SIZE
+        red = (pixel >> 11) & 31
+        if red < 12 or y >= SIZE - 2:
+            cleaned.append(0)
+        else:
+            cleaned.append(bright_red if x < SIZE // 2 else shaded_red)
+    return cleaned
+
 def fetch(url):
     try:
         r = session.get(url, timeout=15)
@@ -114,7 +134,10 @@ def main():
             skip += 1
             continue
         name = f"A_{icao}"
-        arrays.append(emit_array(name, to_rgb565_array(img)))
+        pixels = to_rgb565_array(img)
+        if icao == "DAL":
+            pixels = clean_delta_widget(pixels)
+        arrays.append(emit_array(name, pixels))
         air_tbl.append(f'  {{ "{icao}", {name}, {SIZE}, {SIZE} }},')
         ok += 1
 
