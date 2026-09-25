@@ -55,16 +55,22 @@ static String airlineFromCallsign(const String& cs) {
 
 // Tiny per-host DNS cache. Cheap routers rate-limit / ban a client that sends
 // too many DNS queries; resolving each host once and reusing the result keeps
-// our query volume minimal (public DNS is also pinned in wifiConnect()).
+// our query volume minimal. DHCP supplies the DNS server.
 struct DnsEntry { String host; IPAddress ip; };
 static DnsEntry gDnsCache[8];
 static int gDnsCacheN = 0;
+static uint32_t gDnsRetryAfterMs = 0;  // one failed router lookup pauses all hosts
 
 static bool resolveCached(const String& host, IPAddress& out) {
+  if ((int32_t)(millis() - gDnsRetryAfterMs) < 0) return false;
   for (int i = 0; i < gDnsCacheN; i++)
     if (gDnsCache[i].host == host) { out = gDnsCache[i].ip; return true; }
   IPAddress ip;
-  if (!WiFi.hostByName(host.c_str(), ip)) return false;
+  if (!WiFi.hostByName(host.c_str(), ip)) {
+    gDnsRetryAfterMs = millis() + 60000;
+    Serial.println("[DNS] lookup failed; backing off for 60s");
+    return false;
+  }
   if (gDnsCacheN < 8) { gDnsCache[gDnsCacheN] = { host, ip }; gDnsCacheN++; }
   out = ip;
   return true;
@@ -109,7 +115,7 @@ static String httpGet(const String& url, const char* userAgent = nullptr) {
                   attempt, heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                   ESP.getFreePsram(), host.c_str(),
                   ok ? rip.toString().c_str() : "FAIL", url.c_str());
-    if (!ok) { delay(500); continue; }   // DNS starved -> back off and retry
+    if (!ok) return "";   // one failed DNS lookup already costs ~7s; skip this cycle
 
     WiFiClientSecure client; client.setInsecure();
     HTTPClient http;
@@ -148,7 +154,7 @@ static bool httpGetToDoc(const String& url, JsonDocument& doc, JsonDocument& fil
 
   for (int attempt = 1; attempt <= 3; attempt++) {
     IPAddress rip;
-    if (!resolveCached(host, rip)) { delay(500); continue; }
+    if (!resolveCached(host, rip)) return false;
 
     WiFiClientSecure client; client.setInsecure();
     HTTPClient http;
