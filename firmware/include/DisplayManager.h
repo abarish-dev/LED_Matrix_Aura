@@ -151,15 +151,15 @@ inline void drawArrow(int cx, int cy, int deg, int len, uint16_t color) {
 // A single flight "card": callsign, airline, route, distance, altitude + ETA.
 // Lines are vertically centered as a block on the 64px panel. When `tracked`
 // is true (this plane matches the app's "Track a specific flight" setting),
-// a green "TRACKED" label is added and the border is expected to already be
-// tinted (see caller) so it stands out from the normal overhead cycle.
+// a green "TRACKED" label and border distinguish it from nearby flights.
 inline void flight(const String& callsign, int distanceMi, const String& airline,
                    int altFt = 0, int headingDeg = -1,
                    uint16_t border = 0, int etaMin = -1,
                    const String& origin = "", const String& dest = "",
                    bool tracked = false, const LogoAsset* logo = nullptr) {
   clear();
-  dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border ? border : rgb(60, 40, 5));
+  if (tracked) dma->drawRect(0, 0, MATRIX_W, MATRIX_H,
+                             border ? border : rgb(16, 185, 129));
   String texts[7]; uint16_t cols[7]; int nl = 0;
   char buf[28];
   if (tracked) { texts[nl] = "* TRACKED *"; cols[nl++] = rgb(16, 185, 129); }
