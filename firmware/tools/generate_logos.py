@@ -3,7 +3,7 @@
 Generate embedded RGB565 logo bitmaps for the Aura matrix firmware.
 
 Downloads team logos from ESPN's CDN and airline logos from Google Flights,
-resizes them to 16x16, composites transparency over black, converts to RGB565,
+fits them inside a 24x24 canvas without distortion, composites over black, converts to RGB565,
 and writes C arrays + registry tables to include/logos/generated_logos.h.
 
 Run:  python3 tools/generate_logos.py
@@ -13,12 +13,10 @@ import io
 import os
 import sys
 import requests
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image
 
-# Bumped from 16 -> 24: at 16px the fine curves on detailed logos (e.g. the
-# Carolina Hurricanes swirl) blurred into an unrecognizable blob. 24px still
-# fits cleanly in the corner of a score/flight card with no text overlap
-# (centered card text never reaches inside x=2..26 on the 128-wide panel).
+# The existing flight/score card layout reserves a 24x24 corner for logos.
+# Enlarging this also requires moving card text and the heading arrow.
 SIZE = 24
 OUT = os.path.join(os.path.dirname(__file__), "..", "include", "logos", "generated_logos.h")
 
@@ -49,38 +47,27 @@ session.headers.update({"User-Agent": "Mozilla/5.0 AuraLogoGen"})
 
 
 def to_rgb565_array(img):
-    # Sharpen the source BEFORE downscaling so fine details (thin outlines,
-    # curved wordmarks) survive the resize instead of blurring into mush.
+    """Fit artwork within the reserved square and blend edge pixels over black.
+
+    Keep RGB565 output and the existing 24x24 asset shape compatible with the
+    firmware. Transparent padding preserves each logo's original proportions.
+    """
     img = img.convert("RGBA")
-    r, g, b, a = img.split()
-    rgb = Image.merge("RGB", (r, g, b)).filter(
-        ImageFilter.UnsharpMask(radius=2, percent=150, threshold=2)
-    )
-    img = Image.merge("RGBA", (*rgb.split(), a))
+    img.thumbnail((SIZE, SIZE), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    canvas.alpha_composite(img, ((SIZE - img.width) // 2,
+                                 (SIZE - img.height) // 2))
 
-    # High quality resize, then a contrast bump so the few pixels each shape
-    # gets at this size stay bold/legible instead of washing out to gray.
-    img = img.resize((SIZE, SIZE), Image.LANCZOS)
-    r, g, b, a = img.split()
-    rgb = ImageEnhance.Contrast(Image.merge("RGB", (r, g, b))).enhance(1.3)
-    img = Image.merge("RGBA", (*rgb.split(), a))
-
-    px = img.load()
     out = []
-    for y in range(SIZE):
-        for x in range(SIZE):
-            r, g, b, a = px[x, y]
-            if a < 96:                       # drop faint anti-aliased edges
-                r = g = b = 0
-            else:                            # composite opaque-ish pixel over black
-                r = r * a // 255
-                g = g * a // 255
-                b = b * a // 255
-                if max(r, g, b) < 24:        # kill muddy near-black specks
-                    r = g = b = 0
-            out.append(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
+    for r, g, b, a in canvas.getdata():
+        # Alpha is coverage. Blend in linear light to keep small curved edges
+        # visible after the final RGB565 quantization.
+        coverage = a / 255.0
+        r = round(255 * ((r / 255.0) ** 2.2 * coverage) ** (1 / 2.2))
+        g = round(255 * ((g / 255.0) ** 2.2 * coverage) ** (1 / 2.2))
+        b = round(255 * ((b / 255.0) ** 2.2 * coverage) ** (1 / 2.2))
+        out.append(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
     return out
-
 
 def fetch(url):
     try:
