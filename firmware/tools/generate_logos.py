@@ -89,6 +89,23 @@ def clean_delta_widget(pixels):
             cleaned.append(bright_red if x < SIZE // 2 else shaded_red)
     return cleaned
 
+
+def clean_american_red(pixels):
+    """Keep the red half of the American mark red on the LED panel.
+
+    The source PNG mixes some blue and green into its red antialiasing. Preserve
+    each pixel's red intensity while dropping those channels in red-dominant
+    pixels; leave its blue and white portions untouched.
+    """
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = (pixel >> 11) & 31, (pixel >> 5) & 63, pixel & 31
+        if red >= 6 and red > green and 5 * red > 8 * blue:
+            cleaned.append(red << 11)
+        else:
+            cleaned.append(pixel)
+    return cleaned
+
 def fetch(url):
     try:
         r = session.get(url, timeout=15)
@@ -135,7 +152,9 @@ def main():
             continue
         name = f"A_{icao}"
         pixels = to_rgb565_array(img)
-        if icao == "DAL":
+        if icao == "AAL":
+            pixels = clean_american_red(pixels)
+        elif icao == "DAL":
             pixels = clean_delta_widget(pixels)
         arrays.append(emit_array(name, pixels))
         air_tbl.append(f'  {{ "{icao}", {name}, {SIZE}, {SIZE} }},')
