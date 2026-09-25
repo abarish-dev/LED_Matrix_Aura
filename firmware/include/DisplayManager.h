@@ -8,6 +8,7 @@
 #include <Fonts/FreeSansBold9pt7b.h>
 #include <Fonts/FreeMono9pt7b.h>
 #include "Config.h"
+#include "Logos.h"
 
 namespace Display {
 
@@ -64,6 +65,22 @@ inline void begin() {
 inline void clear() { dma->clearScreen(); }
 inline void flip()  { dma->flipDMABuffer(); }
 
+inline void drawLogo(const uint16_t* bitmap, int w, int h, int x, int y);
+
+// Center small text inside a reserved area, shortening long labels to fit.
+inline void areaText(const String& value, int x, int width, int y, uint16_t color) {
+  const int capacity = width / 6;
+  String text = value;
+  if ((int)text.length() > capacity)
+    text = text.substring(0, capacity - 2) + "..";
+  dma->setFont(nullptr);
+  dma->setTextSize(1);
+  dma->setTextWrap(false);
+  dma->setTextColor(color);
+  dma->setCursor(x + (width - (int)text.length() * 6) / 2, y);
+  dma->print(text);
+}
+
 inline void centerText(const char* s, int y, uint16_t color, uint8_t size = 1) {
   int16_t x1, y1; uint16_t w, h;
   dma->setFont(nullptr);
@@ -78,13 +95,14 @@ inline void centerText(const char* s, int y, uint16_t color, uint8_t size = 1) {
 // Proportional type for short headings. Adafruit GFX custom fonts use a
  // baseline cursor; bounds provide the exact pixel width for centering.
 inline void centerHeading(const char* value, int baseline, uint16_t color,
-                          const GFXfont* font = &FreeSansBold9pt7b) {
+                          const GFXfont* font = &FreeSansBold9pt7b,
+                          int left = 0, int width = MATRIX_W) {
   int16_t x1, y1; uint16_t w, h;
   dma->setFont(font);
   dma->setTextSize(1);
   dma->setTextWrap(false);
   dma->getTextBounds(value, 0, baseline, &x1, &y1, &w, &h);
-  dma->setCursor((MATRIX_W - (int)w) / 2 - x1, baseline);
+  dma->setCursor(left + (width - (int)w) / 2 - x1, baseline);
   dma->setTextColor(color);
   dma->print(value);
   dma->setFont(nullptr);
@@ -139,7 +157,7 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
                    int altFt = 0, int headingDeg = -1,
                    uint16_t border = 0, int etaMin = -1,
                    const String& origin = "", const String& dest = "",
-                   bool tracked = false) {
+                   bool tracked = false, const LogoAsset* logo = nullptr) {
   clear();
   dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border ? border : rgb(60, 40, 5));
   String texts[7]; uint16_t cols[7]; int nl = 0;
@@ -169,9 +187,16 @@ inline void flight(const String& callsign, int distanceMi, const String& airline
   int total = nl * LH - (LH - 8);        // block height (8px glyph, no trailing gap)
   int startY = (MATRIX_H - total) / 2;
   if (startY < 1) startY = 1;
-  for (int i = 0; i < nl; i++)
-    centerText(texts[i].c_str(), startY + i * LH, cols[i], 1);
-  if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(56, 189, 248));
+  if (logo) {
+    drawLogo(logo->data, logo->w, logo->h, 2, (MATRIX_H - logo->h) / 2);
+    for (int i = 0; i < nl; i++)
+      areaText(texts[i], 30, MATRIX_W - 32, startY + i * LH, cols[i]);
+    if (headingDeg >= 0) drawArrow(14, 53, headingDeg, 6, rgb(56, 189, 248));
+  } else {
+    for (int i = 0; i < nl; i++)
+      centerText(texts[i].c_str(), startY + i * LH, cols[i], 1);
+    if (headingDeg >= 0) drawArrow(MATRIX_W - 12, 12, headingDeg, 7, rgb(56, 189, 248));
+  }
   flip();
 }
 
@@ -191,24 +216,36 @@ inline void landing(const String& callsign, bool landed) {
 // and next-game date instead.
 inline void score(const String& home, int hs, const String& away, int as,
                    const String& status, uint16_t border = 0, const String& streak = "",
-                   bool isRecord = false, const String& record = "") {
+                   bool isRecord = false, const String& record = "",
+                   const LogoAsset* homeLogo = nullptr, const LogoAsset* awayLogo = nullptr) {
   clear();
   if (border) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, border);
   char l[24];
   if (isRecord) {
-    centerText(home.c_str(), 8, brandAmber(), 1);
-    if (record.length()) centerText(record.c_str(), 24, rgb(56, 189, 248), 1);
+    if (homeLogo) {
+      drawLogo(homeLogo->data, homeLogo->w, homeLogo->h, 2, 5);
+      areaText(home, 30, MATRIX_W - 32, 8, brandAmber());
+      if (record.length()) areaText(record, 30, MATRIX_W - 32, 24, rgb(56, 189, 248));
+    } else {
+      centerText(home.c_str(), 8, brandAmber(), 1);
+      if (record.length()) centerText(record.c_str(), 24, rgb(56, 189, 248), 1);
+    }
     String nextLine = away.length() ? ("Next: " + away) : String("Next game");
     centerText(nextLine.c_str(), 40, rgb(200, 200, 200), 1);
     centerText(status.c_str(), 52, rgb(16, 185, 129), 1);
     flip();
     return;
   }
+  const bool hasLogos = homeLogo || awayLogo;
+  const int textLeft = hasLogos ? 30 : 0;
+  const int textWidth = hasLogos ? MATRIX_W - 32 : MATRIX_W;
+  if (awayLogo) drawLogo(awayLogo->data, awayLogo->w, awayLogo->h, 2, 1);
+  if (homeLogo) drawLogo(homeLogo->data, homeLogo->w, homeLogo->h, 2, 26);
   snprintf(l, sizeof(l), "%s %d", away.c_str(), as);
-  centerHeading(l, 20, brandAmber(), &FreeMono9pt7b);
+  centerHeading(l, 20, brandAmber(), &FreeMono9pt7b, textLeft, textWidth);
   snprintf(l, sizeof(l), "%s %d", home.c_str(), hs);
-  centerHeading(l, 40, brandAmber(), &FreeMono9pt7b);
-  centerText(status.c_str(), 46, rgb(16, 185, 129), 1);
+  centerHeading(l, hasLogos ? 45 : 40, brandAmber(), &FreeMono9pt7b, textLeft, textWidth);
+  centerText(status.c_str(), hasLogos ? 54 : 46, rgb(16, 185, 129), 1);
   if (streak.length() > 0) {
     bool win = streak.charAt(0) == 'W';
     dma->setTextSize(1);
@@ -357,14 +394,10 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
 
 // Blit an RGB565 logo bitmap (see Logos.h) at (x,y).
 //
-// Deliberately NOT using dma->drawRGBBitmap() here: on this user's panel it
-// rendered red pixels as blue (and vice-versa) while every OTHER color path
-// (fillScreen, drawRect, text via color565()/drawPixel()) rendered pure red
-// correctly — confirmed with the app's "Flash test pattern". That isolates
-// the bug to drawRGBBitmap()'s own internal handling of a PROGMEM uint16_t
-// array, not a panel/wiring/signal-integrity problem. Blitting pixel-by-pixel
-// through the SAME drawPixel() path everything else already uses correctly
-// sidesteps it entirely, regardless of the exact internal cause.
+// Use the same per-pixel RGB565 path exercised by flashLogoTest. The old
+// hardware showed color artifacts through multiple drawing paths; the new
+// panel/controller completed the logo test on its dedicated 5V supply.
+// Do not swap channels or recolor the source assets based on camera footage.
 inline void drawLogo(const uint16_t* bitmap, int w, int h, int x, int y) {
   if (!bitmap) return;
   for (int row = 0; row < h; row++) {
