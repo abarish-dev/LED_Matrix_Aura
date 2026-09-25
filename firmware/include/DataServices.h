@@ -62,9 +62,9 @@ static int gDnsCacheN = 0;
 static uint32_t gDnsRetryAfterMs = 0;  // one failed router lookup pauses all hosts
 
 static bool resolveCached(const String& host, IPAddress& out) {
-  if ((int32_t)(millis() - gDnsRetryAfterMs) < 0) return false;
   for (int i = 0; i < gDnsCacheN; i++)
     if (gDnsCache[i].host == host) { out = gDnsCache[i].ip; return true; }
+  if ((int32_t)(millis() - gDnsRetryAfterMs) < 0) return false;
   IPAddress ip;
   if (!WiFi.hostByName(host.c_str(), ip)) {
     gDnsRetryAfterMs = millis() + 60000;
