@@ -77,8 +77,8 @@ def clean_delta_widget(pixels):
     isolated baseline. Quantize its red silhouette to two opaque reds and
     leave the dark gaps transparent. This retains the widget's proportions.
     """
-    bright_red = (29 << 11) | (7 << 5) | 7
-    shaded_red = (19 << 11) | (6 << 5) | 6
+    bright_red = 29 << 11
+    shaded_red = 19 << 11
     cleaned = []
     for index, pixel in enumerate(pixels):
         x, y = index % SIZE, index // SIZE
@@ -87,6 +87,26 @@ def clean_delta_widget(pixels):
             cleaned.append(0)
         else:
             cleaned.append(bright_red if x < SIZE // 2 else shaded_red)
+    return cleaned
+
+
+def clean_hurricanes_logo(pixels):
+    """Reduce the Hurricanes mark to opaque red, white and black.
+
+    Tiny translucent fringe pixels from the source turn into colored speckles
+    on the LED panel. Keep the hurricane silhouette and its white rings.
+    """
+    cleaned = []
+    for pixel in pixels:
+        red = ((pixel >> 11) & 31) * 255 // 31
+        green = ((pixel >> 5) & 63) * 255 // 63
+        blue = (pixel & 31) * 255 // 31
+        if red >= 85 and 4 * red > 5 * green and 4 * red > 5 * blue:
+            cleaned.append(0xD800)
+        elif max(red, green, blue) >= 130 and min(red, green, blue) >= 35:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0)
     return cleaned
 
 
@@ -139,7 +159,10 @@ def main():
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            arrays.append(emit_array(name, to_rgb565_array(img)))
+            pixels = to_rgb565_array(img)
+            if league == "NHL" and abbr == "CAR":
+                pixels = clean_hurricanes_logo(pixels)
+            arrays.append(emit_array(name, pixels))
             teams_tbl.append(f'  {{ "{league}:{abbr}", {name}, {SIZE}, {SIZE} }},')
             ok += 1
 
