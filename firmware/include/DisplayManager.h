@@ -364,4 +364,22 @@ inline void drawLogo(const uint16_t* bitmap, int w, int h, int x, int y) {
   }
 }
 
+ 
+// The app's flash test also exercises the exact RGB565 bitmap drawing path.
+// A solid-color fill alone cannot confirm that a logo array has the right
+// channel order. Show one known airline asset between RGB reference squares.
+inline void flashLogoTest(const uint16_t* bitmap, int w, int h) {
+  if (!bitmap) return;
+  clear();
+  dma->fillRect(5, 7, 12, 12, rgb(255, 0, 0));
+  dma->fillRect(5, 26, 12, 12, rgb(0, 255, 0));
+  dma->fillRect(5, 45, 12, 12, rgb(0, 0, 255));
+  drawLogo(bitmap, w, h, (MATRIX_W - w) / 2, (MATRIX_H - h) / 2);
+  centerText("RGB565 LOGO", 53, rgb(255, 255, 255), 1);
+  flip();
+  delay(2500);
+  clear();
+  flip();
+}
+
 } // namespace Display
