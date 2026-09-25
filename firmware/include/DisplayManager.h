@@ -205,9 +205,9 @@ inline void score(const String& home, int hs, const String& away, int as,
     return;
   }
   snprintf(l, sizeof(l), "%s %d", away.c_str(), as);
-  centerHeading(l, 20, brandAmber());
+  centerHeading(l, 20, brandAmber(), &FreeMono9pt7b);
   snprintf(l, sizeof(l), "%s %d", home.c_str(), hs);
-  centerHeading(l, 40, brandAmber());
+  centerHeading(l, 40, brandAmber(), &FreeMono9pt7b);
   centerText(status.c_str(), 46, rgb(16, 185, 129), 1);
   if (streak.length() > 0) {
     bool win = streak.charAt(0) == 'W';
