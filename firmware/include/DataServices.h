@@ -59,7 +59,12 @@ static String airlineFromCallsign(const String& cs) {
 struct DnsEntry { String host; IPAddress ip; };
 static DnsEntry gDnsCache[8];
 static int gDnsCacheN = 0;
-static uint32_t gDnsRetryAfterMs = 0;  // one failed router lookup pauses all hosts
+static uint32_t gDnsRetryAfterMs = 0;  // one failed router lookup pauses uncached hosts
+
+inline void resetDnsCache() {
+  gDnsCacheN = 0;
+  gDnsRetryAfterMs = 0;
+}
 
 static bool resolveCached(const String& host, IPAddress& out) {
   for (int i = 0; i < gDnsCacheN; i++)
