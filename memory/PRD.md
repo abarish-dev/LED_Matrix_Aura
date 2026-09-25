@@ -646,3 +646,20 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 
 ### Not done (scope check, mentioned to user)
 - Did NOT add a UFC card to the physical LED matrix rotation (firmware) — that's a separate, larger change (new card type + backend feed support) not explicitly requested; user was told this is app-only for now.
+
+
+## Session Update — Bitmap logos removed; misc firmware cleanup (v1.6.5)
+
+### Context
+- v1.6.4's fix (drawRGBBitmap → per-pixel drawPixel) did NOT resolve the missing-red issue on the Hurricanes/AA logos after user reflashed and re-photographed. The JetBlue logo was also separately reported as illegible/"sloppy" (its source PNG has a solid-color background that doesn't downscale cleanly at 24x24, unrelated to the red bug).
+- Two independent software fixes failing, plus a second unrelated logo-quality problem, pointed to a genuine hardware limitation on this specific panel with dense/rapidly-color-changing bitmap regions (same family as the earlier orange/yellow bleed issue, just manifesting on fine per-pixel detail instead of large blocks) rather than a fixable code bug.
+- User asked whether switching LLM models would help — clarified this is a deterministic hardware/firmware rendering issue (RGB565 packing + HUB75 DMA library + physical panel signal behavior), not something an LLM "reasons" about differently; model choice doesn't affect physical LED signal integrity.
+
+### Fix (DONE, needs reflash)
+- `main.cpp`: both `Display::drawLogo(...)` call sites (airline logo on flight cards, team logo on score cards) commented out with an explanation. Cards are now text-only (callsign/airline/route on flights; team abbreviations/score on sports) — every photo the user sent confirmed this text already renders perfectly. Logo asset generation (`tools/generate_logos.py`, `generated_logos.h`, `Logos.h`) left intact/dormant in case this gets revisited later — nothing calls it now, so it's dead weight but harmless and reversible.
+- `platformio.ini`: removed the unused `fastled/FastLED` dependency (zero references anywhere in the code) — this was the source of the `esp_memory_utils.h ... parallel clockless i2s driver` compiler warning the user saw in VS Code. Unrelated to the color issue; just build-warning noise from a leftover dependency.
+- `Config.h` → `AURA_FW_VERSION` = `1.6.5`.
+
+### Action items for user
+1. Reflash to v1.6.5 (OTA or USB) — logos gone, cards text-only, no more FastLED warning.
+2. No further logo debugging planned unless the user wants to revisit with a fundamentally different approach later (e.g., a 2-color flat badge instead of a photographic logo, or accepting a smaller solid-color square as a team-color accent instead of a detailed bitmap).

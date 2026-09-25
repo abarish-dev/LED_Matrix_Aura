@@ -545,10 +545,16 @@ static void drawCard(uint8_t t) {
     Display::flight(fp->callsign, fp->distanceMi, fp->airline,
                     fp->altFt, fp->headingDeg, cardAccent, tracked ? gEtaMin : -1,
                     fp->origin, fp->dest, tracked);
-    // Overlay the airline logo if one has been added to Logos.h.
-    String icao = fp->callsign.substring(0, 3);
-    const LogoAsset* lg = airlineLogo(icao);
-    if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
+    // Bitmap logo overlay disabled: on this panel, dense multi-color logo
+    // bitmaps rendered with missing/wrong red (confirmed persisting across
+    // two different draw-path fixes — drawRGBBitmap AND per-pixel
+    // drawPixel), and some source logos (e.g. JetBlue's solid-background
+    // wordmark) didn't downscale legibly at 24x24 either way. The callsign/
+    // airline text already carries all the info cleanly, so we're keeping
+    // cards text-only rather than shipping a logo that renders wrong.
+    // String icao = fp->callsign.substring(0, 3);
+    // const LogoAsset* lg = airlineLogo(icao);
+    // if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
   } else if (t == 1) {
     // Cycle through every followed team's game, one each time the sports card
     // comes up (mirrors the flight card + the app).
@@ -561,11 +567,14 @@ static void drawCard(uint8_t t) {
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
       if (gSettings.sports.rivals[i] == key) { border = Display::rgb(56, 189, 248); break; }
     Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record);
-    int colon = key.indexOf(':');
-    if (colon > 0) {
-      const LogoAsset* lg = teamLogo(key.substring(0, colon), key.substring(colon + 1));
-      if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
-    }
+    // Team logo overlay disabled — same red-rendering issue as the airline
+    // logo above (see comment there). Team abbreviation text already shown
+    // by Display::score() above.
+    // int colon = key.indexOf(':');
+    // if (colon > 0) {
+    //   const LogoAsset* lg = teamLogo(key.substring(0, colon), key.substring(colon + 1));
+    //   if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
+    // }
     if (gScoreCount > 1) gScoreShown++;
   }
 }
