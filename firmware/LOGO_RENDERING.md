@@ -3,19 +3,18 @@
 The panel configuration is a single native 128×64 HUB75 module. The firmware
 currently draws flight and score cards as text; both logo overlay calls in
 `src/main.cpp` are commented out because red and blue appeared wrong even
-when individual pixels were drawn. A new asset generator alone does not turn
-logos back on, and it does not update existing generated bitmaps.
+when individual pixels were drawn. The asset generator and checked-in bitmaps are updated; ordinary flight and
+score cards still do not show logos.
 
 `tools/generate_logos.py` now fits each source within the existing 24×24
 layout without stretching it, blends translucent edges over black, and keeps
-the same RGB565 format. The checked-in `include/logos/generated_logos.h` is
-still the old output. Regenerate it in an environment that can reach ESPN and
-Google Flights, inspect the resulting logos, and commit it before flashing.
-The script reports skipped downloads; check that count before accepting output.
+the same RGB565 format. The checked-in `include/logos/generated_logos.h` was regenerated with all
+135 assets present and zero skipped downloads.
 
-Before enabling overlays, flash the firmware with a regulated 5V supply and
-use the existing app's flash test pattern. Verify red, green, blue, and white
-in each half of the panel, including mixed-color text. If red/blue separation
+Flash firmware version 1.6.6 with a regulated 5V supply, then run the
+existing app's flash test. It now shows the usual solid colors followed by
+a 2.5-second AA logo beside red/green/blue reference squares. Verify the
+logo's red and blue channels match the reference squares. If red/blue separation
 persists, investigate the panel scan mapping, ribbon seating, and supply
 under load. Art changes cannot repair a color-channel fault.
 
