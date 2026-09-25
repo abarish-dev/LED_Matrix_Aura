@@ -5,6 +5,8 @@
 // ============================================================================
 #pragma once
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <Fonts/FreeSansBold9pt7b.h>
+#include <Fonts/FreeSans9pt7b.h>
 #include "Config.h"
 
 namespace Display {
@@ -61,11 +63,28 @@ inline void flip()  { dma->flipDMABuffer(); }
 
 inline void centerText(const char* s, int y, uint16_t color, uint8_t size = 1) {
   int16_t x1, y1; uint16_t w, h;
+  dma->setFont(nullptr);
   dma->setTextSize(size);
   dma->getTextBounds(s, 0, y, &x1, &y1, &w, &h);
   dma->setCursor((MATRIX_W - (int)w) / 2, y);
   dma->setTextColor(color);
   dma->print(s);
+}
+
+
+ // Proportional type for short headings. Adafruit GFX custom fonts use a
+ // baseline cursor; bounds provide the exact pixel width for centering.
+inline void centerHeading(const char* value, int baseline, uint16_t color,
+                          const GFXfont* font = &FreeSansBold9pt7b) {
+  int16_t x1, y1; uint16_t w, h;
+  dma->setFont(font);
+  dma->setTextSize(1);
+  dma->setTextWrap(false);
+  dma->getTextBounds(value, 0, baseline, &x1, &y1, &w, &h);
+  dma->setCursor((MATRIX_W - (int)w) / 2 - x1, baseline);
+  dma->setTextColor(color);
+  dma->print(value);
+  dma->setFont(nullptr);
 }
 
 inline void boot() {
@@ -187,9 +206,9 @@ inline void score(const String& home, int hs, const String& away, int as,
     return;
   }
   snprintf(l, sizeof(l), "%s %d", away.c_str(), as);
-  centerText(l, 8, rgb(255, 255, 255), 1);
+  centerHeading(l, 20, rgb(255, 255, 255));
   snprintf(l, sizeof(l), "%s %d", home.c_str(), hs);
-  centerText(l, 26, rgb(255, 255, 255), 1);
+  centerHeading(l, 40, rgb(255, 255, 255));
   centerText(status.c_str(), 46, rgb(16, 185, 129), 1);
   if (streak.length() > 0) {
     bool win = streak.charAt(0) == 'W';
@@ -246,70 +265,68 @@ inline void message(const char* line1, const char* line2, uint16_t color1 = 0) {
   flip();
 }
 
-// A small (~14px) weather symbol drawn at top-left (x,y) of the clock card.
+// 20x20 weather symbols on the clock card. All drawing is local to (x,y)
+// and stays left of the centered time. Open-Meteo codes: 0 clear, 1-3 cloud,
+// 45-48 fog, 51-67 drizzle/rain, 71-77 snow, 80-82 showers, 95+ storms.
 inline void wxIcon(int x, int y, int code, bool isDay) {
-  // Sun/lightning use white instead of yellow/gold — R+G-mixed colors
-  // (yellow, orange) are the ones showing the color-split/bleed issue on
-  // this panel; white (and the blues/reds used elsewhere here) render solidly.
-  const uint16_t sun = rgb(255, 255, 255), sunCore = rgb(210, 225, 255),
-                 cloudLo = rgb(120, 128, 145), cloudHi = rgb(215, 220, 232),
-                 rain = rgb(70, 150, 255), snow = rgb(225, 245, 255),
-                 bolt = rgb(255, 255, 255), moon = rgb(225, 225, 190);
-  int cx = x + 7, cy = y + 6;
-  // Cloud with a darker outline + lighter body + highlight so it reads as a
-  // rounded cloud, not a flat blob.
-  auto drawCloud = [&](int ox, int oy) {
-    int bx = cx + ox, by = cy + oy;
-    dma->fillCircle(bx - 3, by + 1, 3, cloudLo);
-    dma->fillCircle(bx + 3, by + 1, 3, cloudLo);
-    dma->fillCircle(bx, by - 2, 4, cloudLo);
-    dma->fillRect(bx - 6, by + 1, 13, 4, cloudLo);
-    dma->fillCircle(bx - 3, by, 2, cloudHi);
-    dma->fillCircle(bx + 3, by, 2, cloudHi);
-    dma->fillCircle(bx, by - 2, 3, cloudHi);
-    dma->fillRect(bx - 5, by, 10, 3, cloudHi);
-    dma->fillCircle(bx - 1, by - 3, 1, rgb(245, 248, 255)); // highlight
-  };
-  auto drawSun = [&](int ox, int oy, int rad) {
-    int sx = cx + ox, sy = cy + oy;
-    for (int a = 0; a < 8; a++) {
-      float r = a * PI / 4.0;
-      dma->drawLine(sx + cos(r) * (rad + 1.5), sy + sin(r) * (rad + 1.5),
-                    sx + cos(r) * (rad + 3), sy + sin(r) * (rad + 3), sun);
+  const uint16_t sun = rgb(255, 183, 52), moon = rgb(210, 200, 255),
+                 cloud = rgb(150, 169, 191), highlight = rgb(230, 239, 250),
+                 rain = rgb(48, 176, 255), snow = rgb(245, 250, 255),
+                 bolt = rgb(255, 214, 81), fog = rgb(126, 155, 178);
+  const bool clear = code == 0;
+  const bool partly = code == 1 || code == 2;
+  const bool foggy = code == 45 || code == 48;
+  const bool wet = (code >= 51 && code <= 67) || (code >= 80 && code <= 82);
+  const bool snowy = (code >= 71 && code <= 77) || code == 85 || code == 86;
+  const bool storm = code >= 95;
+
+  auto sky = [&](int cx, int cy, bool small) {
+    if (isDay) {
+      int r = small ? 3 : 4;
+      dma->fillCircle(cx, cy, r, sun);
+      for (int i = 0; i < 8; ++i) {
+        float theta = i * PI / 4.0f;
+        dma->drawPixel(cx + round(cos(theta) * (r + 3)),
+                       cy + round(sin(theta) * (r + 3)), sun);
+      }
+    } else {
+      dma->fillCircle(cx, cy, small ? 4 : 6, moon);
+      dma->fillCircle(cx + 2, cy - 2, small ? 4 : 6, rgb(0, 0, 0));
     }
-    dma->fillCircle(sx, sy, rad, sun);
-    dma->fillCircle(sx, sy, rad - 1, sunCore);
   };
-  bool clear = (code == 0);
-  bool partly = (code == 1 || code == 2);
-  bool rainy = ((code >= 51 && code <= 67) || (code >= 80 && code <= 82));
-  bool snowy = ((code >= 71 && code <= 77) || code == 85 || code == 86);
-  bool storm = (code >= 95);
+  auto clouds = [&](int offsetY) {
+    dma->fillRoundRect(x + 2, y + offsetY + 8, 17, 7, 3, cloud);
+    dma->fillCircle(x + 8, y + offsetY + 8, 5, cloud);
+    dma->fillCircle(x + 14, y + offsetY + 8, 4, cloud);
+    dma->drawFastHLine(x + 4, y + offsetY + 13, 13, highlight);
+    dma->drawPixel(x + 7, y + offsetY + 5, highlight);
+    dma->drawPixel(x + 8, y + offsetY + 4, highlight);
+  };
   if (clear) {
-    if (isDay) drawSun(0, 0, 3);
-    else { dma->fillCircle(cx, cy, 4, moon); dma->fillCircle(cx + 2, cy - 1, 4, rgb(0, 0, 0)); }
+    sky(x + 10, y + 10, false);
   } else if (partly) {
-    if (isDay) drawSun(-3, -3, 2); else { dma->fillCircle(cx - 3, cy - 3, 3, moon); dma->fillCircle(cx - 1, cy - 4, 3, rgb(0, 0, 0)); }
-    drawCloud(1, 2);
+    sky(x + 7, y + 7, true);
+    clouds(1);
   } else if (storm) {
-    drawCloud(0, -1);
-    dma->fillTriangle(cx - 1, cy + 3, cx + 3, cy + 3, cx, cy + 7, bolt);
-    dma->fillTriangle(cx, cy + 6, cx + 2, cy + 6, cx - 1, cy + 11, bolt);
-  } else if (rainy) {
-    drawCloud(0, -1);
-    for (int i = -3; i <= 3; i += 3)
-      dma->drawLine(cx + i, cy + 4, cx + i - 1, cy + 9, rain);
+    clouds(-2);
+    dma->fillTriangle(x + 11, y + 12, x + 16, y + 12, x + 12, y + 18, bolt);
+    dma->drawLine(x + 12, y + 18, x + 9, y + 19, bolt);
+  } else if (wet) {
+    clouds(-3);
+    for (int i = 5; i <= 17; i += 6)
+      dma->drawLine(x + i, y + 14, x + i - 2, y + 18, rain);
   } else if (snowy) {
-    drawCloud(0, -1);
-    for (int i = -3; i <= 3; i += 3) {
-      dma->drawPixel(cx + i, cy + 6, snow);
-      dma->drawPixel(cx + i, cy + 8, snow);
-      dma->drawPixel(cx + i - 1, cy + 7, snow);
-      dma->drawPixel(cx + i + 1, cy + 7, snow);
+    clouds(-3);
+    for (int i = 5; i <= 17; i += 6) {
+      dma->drawPixel(x + i, y + 15, snow);
+      dma->drawPixel(x + i - 1, y + 17, snow);
     }
+  } else if (foggy) {
+    clouds(-3);
+    dma->drawFastHLine(x + 2, y + 16, 16, fog);
+    dma->drawFastHLine(x + 5, y + 19, 12, fog);
   } else {
-    drawCloud(0, 0); // overcast / fog
-    dma->fillCircle(cx + 3, cy - 3, 2, cloudLo); // second puff = overcast
+    clouds(0);
   }
 }
 
@@ -320,19 +337,14 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
   clear();
   if (accent) dma->drawRect(0, 0, MATRIX_W, MATRIX_H, accent);
   if (wxCode >= 0) wxIcon(3, 2, wxCode, isDay);
-  dma->setTextSize(2);
-  int16_t x1, y1; uint16_t w, h;
-  dma->getTextBounds(timeStr.c_str(), 0, 0, &x1, &y1, &w, &h);
-  dma->setCursor((MATRIX_W - (int)w) / 2, 14);
-  dma->setTextColor(rgb(56, 189, 248));
-  dma->print(timeStr);
+  centerHeading(timeStr.c_str(), 30, rgb(56, 189, 248));
   bool hasHiLo = (hiF > -999 && loF > -999);
   bool hasFeels = (feelsF > -999);
   bool hasSecondary = hasHiLo || hasFeels;
   if (tempF > -999) {
     char buf[12];
-    snprintf(buf, sizeof(buf), "%d\xF7""F", tempF); // ÷ used as degree glyph fallback
-    centerText(buf, hasSecondary ? 36 : 42, rgb(120, 170, 255), 1);
+    snprintf(buf, sizeof(buf), "%d F", tempF);
+    centerHeading(buf, hasSecondary ? 46 : 51, rgb(120, 170, 255), &FreeSans9pt7b);
   }
   if (hasSecondary) {
     String sec;
