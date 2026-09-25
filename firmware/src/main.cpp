@@ -564,7 +564,7 @@ static void drawCard(uint8_t t) {
       fp = &gFlightList[0]; shownIdx = 0;
     }
     bool tracked = (gTrackedIdx >= 0 && shownIdx == gTrackedIdx);
-    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : accent;
+    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : 0;
     Display::flight(fp->callsign, fp->distanceMi, fp->airline,
                     fp->altFt, fp->headingDeg, cardAccent, tracked ? gEtaMin : -1,
                     fp->origin, fp->dest, tracked, airlineLogo(fp->callsign.substring(0, 3)));
