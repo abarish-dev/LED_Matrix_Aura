@@ -110,6 +110,67 @@ def clean_hurricanes_logo(pixels):
     return cleaned
 
 
+def logo_rgb(pixel):
+    """Expand RGB565 channels for stable, palette-based pixel decisions."""
+    return ((pixel >> 11 & 31) * 255 // 31,
+            (pixel >> 5 & 63) * 255 // 63,
+            (pixel & 31) * 255 // 31)
+
+
+def clean_cowboys_logo(pixels):
+    """Keep the white star and blue outline, dropping dim color fringes."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 38:
+            cleaned.append(0)
+        elif min(red, green, blue) > 87 and max(red, green, blue) - min(red, green, blue) < 85:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0x0018)
+    return cleaned
+
+
+def clean_ravens_logo(pixels):
+    """Keep the bird's purple, gold and white details at 24px."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 52:
+            cleaned.append(0)
+        elif min(red, green, blue) > 113 and max(red, green, blue) - min(red, green, blue) < 70:
+            cleaned.append(0xFFFF)
+        elif red > 82 and green > 41 and red > blue * 1.25:
+            cleaned.append(0xFDE0)
+        elif red > 40 or blue > 42:
+            cleaned.append(0x4814)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def clean_southwest_heart(pixels):
+    """Keep the heart's red, blue, yellow and white regions distinct."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 62:
+            cleaned.append(0)
+        elif red > 90 and green > 70 and red > blue * 1.4 and green > blue * 1.3:
+            cleaned.append(0xFDE0)
+        elif red > 80 and red > green * 1.45 and red > blue * 1.2:
+            cleaned.append(0xE000)
+        elif blue > 70 and blue > red * .9:
+            cleaned.append(0x001E)
+        elif min(red, green, blue) > 92:
+            cleaned.append(0xFFFF)
+        elif red > blue * 1.35:
+            cleaned.append(0xE000)
+        else:
+            cleaned.append(0x001E)
+    return cleaned
+
+
 def clean_american_red(pixels):
     """Keep the red half of the American mark red on the LED panel.
 
@@ -162,6 +223,10 @@ def main():
             pixels = to_rgb565_array(img)
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
+            elif league == "NFL" and abbr == "DAL":
+                pixels = clean_cowboys_logo(pixels)
+            elif league == "NFL" and abbr == "BAL":
+                pixels = clean_ravens_logo(pixels)
             arrays.append(emit_array(name, pixels))
             teams_tbl.append(f'  {{ "{league}:{abbr}", {name}, {SIZE}, {SIZE} }},')
             ok += 1
@@ -179,6 +244,8 @@ def main():
             pixels = clean_american_red(pixels)
         elif icao == "DAL":
             pixels = clean_delta_widget(pixels)
+        elif icao == "SWA":
+            pixels = clean_southwest_heart(pixels)
         arrays.append(emit_array(name, pixels))
         air_tbl.append(f'  {{ "{icao}", {name}, {SIZE}, {SIZE} }},')
         ok += 1
