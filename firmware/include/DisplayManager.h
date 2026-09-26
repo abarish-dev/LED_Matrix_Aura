@@ -218,6 +218,18 @@ inline void weather(const String& headline, uint16_t severityColor) {
   flip();
 }
 
+// Next UFC event "card" (text-only — no fighter photos/logos, consistent
+// with the rest of the UI after the bitmap-logo removal).
+inline void ufc(const String& name, const String& date, const String& headline) {
+  clear();
+  dma->fillRect(0, 0, MATRIX_W, 12, rgb(239, 68, 68));
+  centerText("UFC FIGHT NIGHT", 2, rgb(0, 0, 0), 1);
+  centerText(name.c_str(), 24, rgb(255, 255, 255), 1);
+  if (headline.length()) centerText(headline.c_str(), 40, rgb(200, 200, 200), 1);
+  centerText(date.c_str(), 54, rgb(239, 68, 68), 1);
+  flip();
+}
+
 // A scrolling ("marquee") weather-alert card for long headlines. Pass an
 // increasing scrollX each frame; short headlines are centered instead.
 inline void weatherScroll(const String& headline, uint16_t severityColor, int scrollX) {

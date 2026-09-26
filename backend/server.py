@@ -320,6 +320,47 @@ async def _fetch_alert(cx, lat, lon, min_sev):
         return out
 
 
+async def _fetch_ufc(cx):
+    """Next (or in-progress) UFC event summary, mirroring the app's
+    getNextUfc() in espn.ts so the matrix + app show the same thing."""
+    out = {"ok": 0}
+    try:
+        url = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"
+        r = await cx.get(url, headers={"User-Agent": _BROWSER_UA})
+        if r.status_code != 200:
+            return out
+        events = (r.json() or {}).get("events") or []
+        if not events:
+            return out
+        ev = next(
+            (e for e in events
+             if (((e.get("competitions") or [{}])[0].get("status") or {}).get("type") or {}).get("state") != "post"),
+            events[0],
+        )
+        comp = (ev.get("competitions") or [{}])[0]
+        comps = comp.get("competitors") or []
+        headline = ""
+        if len(comps) >= 2:
+            a = (comps[0].get("athlete") or {}).get("displayName") or (comps[0].get("team") or {}).get("displayName") or "TBD"
+            b = (comps[1].get("athlete") or {}).get("displayName") or (comps[1].get("team") or {}).get("displayName") or "TBD"
+            headline = f"{a} vs {b}"
+        date_str = ""
+        try:
+            dt = datetime.fromisoformat((ev.get("date") or "").replace("Z", "+00:00"))
+            date_str = dt.strftime("%a %b %d").replace(" 0", " ")
+        except Exception:
+            date_str = ""
+        return {
+            "ok": 1,
+            "name": (ev.get("shortName") or ev.get("name") or "UFC")[:24],
+            "date": date_str,
+            "headline": headline[:40],
+        }
+    except Exception as e:
+        logger.info(f"[feed] ufc error: {e}")
+        return out
+
+
 async def _fetch_temp(cx, lat, lon):
     out = {"ok": 0}
     key = f"{lat:.4f},{lon:.4f}"
@@ -353,15 +394,15 @@ async def _fetch_temp(cx, lat, lon):
 @api_router.get("/matrix/feed")
 async def matrix_feed(lat: float, lon: float, radius: int = 40,
                       team: str = "", severity: str = "severe",
-                      flights: int = 1, sports: int = 1, weather: int = 1):
+                      flights: int = 1, sports: int = 1, weather: int = 1, ufc: int = 0):
     """One-shot aggregated feed for the LED matrix so the ESP32 makes a single
     small HTTPS call instead of 4+ heavy ones. Cached ~20s per param set."""
-    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}"
+    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}"
     hit = _feed_cache.get(key)
     if hit and hit[0] > _time.time():
         return hit[1]
 
-    payload = {"flight": {"ok": 0}, "score": {"ok": 0}, "scores": [], "alert": {"ok": 0}, "temp": {"ok": 0}}
+    payload = {"flight": {"ok": 0}, "score": {"ok": 0}, "scores": [], "alert": {"ok": 0}, "temp": {"ok": 0}, "ufc": {"ok": 0}}
     # `team` may be a comma-separated list of "LEAGUE:ABBR" so we can return a
     # game for EVERY followed team (the matrix then cycles through them all).
     team_list = [t.strip() for t in (team or "").split(",") if t.strip()][:8]
@@ -372,6 +413,8 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
             tasks["flight"] = _fetch_flight(cx, lat, lon, radius)
         if weather:
             tasks["alert"] = _fetch_alert(cx, lat, lon, severity)
+        if ufc:
+            tasks["ufc"] = _fetch_ufc(cx)
         tasks["temp"] = _fetch_temp(cx, lat, lon)
         score_tasks = [_fetch_score(cx, t) for t in team_list] if sports else []
         results = await asyncio.gather(*tasks.values(), *score_tasks, return_exceptions=True)

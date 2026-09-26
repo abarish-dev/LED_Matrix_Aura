@@ -52,6 +52,7 @@ static String            gScoreKeysArr[8];
 static uint8_t           gScoreCount = 0;
 static uint8_t           gScoreShown = 0; // rotating index for on-wall cycling
 static Data::WeatherInfo gWeather;
+static Data::UfcInfo     gUfc;
 static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
 static int               gEtaMin = -1;      // rough arrival ETA for tracked flight
@@ -388,7 +389,8 @@ static void refreshData() {
         gSettings.serverUrl, gSettings.flights.lat, gSettings.flights.lon,
         gSettings.flights.radiusMi, gSettings.weather.severity,
         gSettings.flights.enabled, gSettings.weather.enabled,
-        entry, gSettings.sports.enabled && entry.length() > 0);
+        entry, gSettings.sports.enabled && entry.length() > 0,
+        gSettings.sports.enabled && gSettings.sports.ufc);
     if (fr.ok) {
       if (gSettings.flights.enabled) {
         gFlight = fr.flight; proxyFlight = true;
@@ -397,6 +399,7 @@ static void refreshData() {
         if (gFlightShown >= gFlightCount) gFlightShown = 0;
       }
       if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
+      if (gSettings.sports.enabled && gSettings.sports.ufc) gUfc = fr.ufc;
       if (entry.length() > 0 && fr.scoreCount > 0) {
         gScoreCount = fr.scoreCount;
         for (uint8_t i = 0; i < fr.scoreCount; i++) {
@@ -501,9 +504,13 @@ static void refreshData() {
   }
 }
 
-// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert.
+// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert, 4=ufc.
 static void drawCard(uint8_t t) {
   uint16_t accent = holidayAccent();
+  if (t == 4) {
+    Display::ufc(gUfc.name, gUfc.date, gUfc.headline);
+    return;
+  }
   if (t == 3) {
     // Initial alert frame; the marquee scroll is animated from loop().
     Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), 0);
@@ -585,6 +592,7 @@ static uint8_t buildSeq(uint8_t* seq) {
   if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
   if (gSettings.flights.enabled && gFlightCount > 0) seq[n++] = 0;
   if (gSettings.sports.enabled  && gScoreCount > 0) seq[n++] = 1;
+  if (gSettings.sports.enabled  && gSettings.sports.ufc && gUfc.ok) seq[n++] = 4;
   // Clock shows when enabled OR as a fallback so the panel is never blank.
   if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
   return n;
@@ -730,14 +738,15 @@ void loop() {
   static int alertScrollX = 0;
   static uint32_t lastScroll = 0;
 
-  uint8_t seq[4];
+  uint8_t seq[5];
   uint8_t n = buildSeq(seq);
   static int lastN = -1;
   if ((int)n != lastN) {
-    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d clock=%d\n", n,
+    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d ufc=%d clock=%d\n", n,
                   (gSettings.weather.enabled && gWeather.ok),
                   (gSettings.flights.enabled && gFlightCount > 0),
                   (gSettings.sports.enabled && gScoreCount > 0),
+                  (gSettings.sports.enabled && gSettings.sports.ufc && gUfc.ok),
                   gSettings.weather.showClock);
     lastN = n;
   }

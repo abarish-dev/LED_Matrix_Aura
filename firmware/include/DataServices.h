@@ -22,6 +22,7 @@ namespace Data {
 struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String airline; int altFt=0; int headingDeg=-1; String origin; String dest; };
 struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; String streak; bool isRecord=false; String record; };
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
+struct UfcInfo    { bool ok=false; String name; String date; String headline; };
 
 static double haversineMi(double la1, double lo1, double la2, double lo2) {
   const double R = 3958.8; // miles
@@ -474,12 +475,13 @@ struct FeedResult {
   bool haveScore = false;
   bool haveTemp = false;
   int tempF = -999, feelsF = -999, wxCode = -1, isDay = 1, hiF = -999, loF = -999;
+  UfcInfo ufc;
 };
 
 inline FeedResult matrixFeed(const String& base, double lat, double lon,
                              int radiusMi, const String& severity,
                              bool wantFlights, bool wantWeather,
-                             const String& team, bool wantSports) {
+                             const String& team, bool wantSports, bool wantUfc = false) {
   FeedResult r;
   if (base.isEmpty()) return r;
   String url = base;
@@ -488,7 +490,8 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
          "&radius=" + String(radiusMi) + "&severity=" + severity +
          "&flights=" + (wantFlights ? "1" : "0") +
          "&sports=" + (wantSports ? "1" : "0") +
-         "&weather=" + (wantWeather ? "1" : "0");
+         "&weather=" + (wantWeather ? "1" : "0") +
+         "&ufc=" + (wantUfc ? "1" : "0");
   if (wantSports && team.length()) url += "&team=" + team;
   String body = httpGet(url, "AuraMatrix/1.0");
   if (body.isEmpty()) return r;
@@ -577,6 +580,13 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.isDay = t["day"] | 1;
     r.hiF = t["hi"] | -999;
     r.loF = t["lo"] | -999;
+  }
+  JsonObjectConst u = doc["ufc"];
+  if (u["ok"].as<int>() == 1) {
+    r.ufc.ok = true;
+    r.ufc.name = String((const char*)(u["name"] | ""));
+    r.ufc.date = String((const char*)(u["date"] | ""));
+    r.ufc.headline = String((const char*)(u["headline"] | ""));
   }
   return r;
 }
