@@ -701,3 +701,19 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.6.23 for the unique-name + boot-ID-display change.
 2. No backend changes this round — no redeploy needed for this feature.
 3. If you actually have 2+ boards to test with, this is fully wired up and ready — first connect to each once so the app learns their names, then the picker (or direct reconnect) should behave correctly going forward.
+
+
+## Session Update — Pulled newer Codex logo refinements (firmware v1.6.24)
+
+### Context
+- User made further logo tweaks via ChatGPT on the same GitHub branch (`codex/display-type-weather-icons`) and asked to pull them in again.
+
+### Actions (DONE)
+- Re-cloned the repo (still public), diffed against the exact commit previously pulled (`cc9a0f8`, v1.6.21) to isolate only what changed since: `generated_logos.h` (Nashville Predators, Giants/Patriots/Jaguars NFL logos simplified/re-quantized), `generate_logos.py`, and a 1-line `DataServices.h` addition recognizing `ACA` callsigns as "Air Canada" text (no bitmap logo shipped for it at the branch tip, despite an earlier commit message mentioning one — likely reverted/superseded upstream; only kept what's actually present at the tip).
+- Applied the `ACA` text-recognition line directly into my current `DataServices.h` (didn't overwrite the whole file, to avoid clobbering the UFC/other additions built on top this session). Copied `generated_logos.h`/`generate_logos.py` wholesale (self-contained, no conflicts with my BLE/UFC work — confirmed `Logos.h`/`BleProvisioning.h` are untouched upstream, byte-identical).
+- **Verified visually** (rendered a few logos from the updated data): Carolina Hurricanes now shows a proper black/white/**red** swirl (red is finally rendering correctly, consistent with the power-supply fix), American Airlines shows a crisp blue/white/red stripe, Nashville Predators is clean gold/navy/white, NY Giants is crisp navy "NY". JetBlue is improved but still somewhat blurry (its logo is a thin cursive wordmark — a genuinely hard case at 24x24, not a bug).
+- `AURA_FW_VERSION` = `1.6.24`.
+
+### Action items for user
+1. Reflash to v1.6.24.
+2. No backend/redeploy needed — firmware-only.
