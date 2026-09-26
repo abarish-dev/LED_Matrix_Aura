@@ -685,3 +685,19 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.6.22 (pull `/app/firmware`, recompile, OTA or USB).
 2. You can now set the repo back to private on GitHub if you'd like — this environment already has what it needs.
 3. Redeploy the backend (Publish) so the ESP32 can actually reach the fixed `/api/matrix/feed?ufc=1` endpoint in production.
+
+
+## Session Update — Multi-display BLE support: unique names + picker (firmware v1.6.23)
+
+### Context
+- User asked: with multiple LED matrix boards in the same area, how does the app know which one to talk to? Traced the actual code and found a real gap: every board advertised the identical hardcoded BLE name `"AuraMatrix"` (`Config.h`), and the app's connect flow (`connectToMatrix` in `ble.ts`) auto-connected to whichever board answered the scan first — no picker, no way to choose.
+
+### Fix (DONE)
+- **Firmware** (`BleProvisioning.h`): each board now advertises a unique name, e.g. `"AuraMatrix-3F2A"`, derived from the last 16 bits of its factory-burned MAC (`ESP.getEfuseMac()` — no Wi-Fi/BT needed to read it). `Display::boot()` now also shows the ID suffix briefly on the physical screen during startup, so during setup you can visually match "AuraMatrix-3F2A" in the app to the physical board in front of you instead of guessing by signal strength alone. `AURA_FW_VERSION` = `1.6.23`.
+- **Frontend**: `ble.ts`'s `scanForDevices()` now also captures RSSI per device and sorts strongest-first; removed the old auto-connect-to-first-match `connectToMatrix`. `store/matrix.tsx`'s `connect()` now: (1) tries the last successfully-connected device ID directly (saved in AsyncStorage) — skips scanning entirely on repeat opens; (2) falls back to a fresh scan; (3) auto-connects if exactly one board answers; (4) if 2+ answer, populates `pickerDevices` instead of guessing, and the Device tab shows a bottom-sheet listing every found board with a signal-bar indicator to pick from (`connectToPicked`/`dismissPicker`). The Home/Summary tab's own quick-connect redirects to `/device` when the picker is needed (that sheet only lives on the Device tab).
+- Tested by testing_agent: no regressions across all tabs, graceful BLE-unavailable behavior preserved in web preview (actual multi-device scanning needs real hardware, out of scope for this sandbox).
+
+### Action items for user
+1. Reflash to v1.6.23 for the unique-name + boot-ID-display change.
+2. No backend changes this round — no redeploy needed for this feature.
+3. If you actually have 2+ boards to test with, this is fully wired up and ready — first connect to each once so the app learns their names, then the picker (or direct reconnect) should behave correctly going forward.

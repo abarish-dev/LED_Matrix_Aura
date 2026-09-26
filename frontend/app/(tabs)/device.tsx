@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Slider from "@react-native-community/slider";
@@ -73,6 +73,9 @@ export default function DeviceScreen() {
     rssi,
     bleSupported,
     connect,
+    connectToPicked,
+    dismissPicker,
+    pickerDevices,
     disconnect,
     flashTest,
     wifiStatus,
@@ -97,6 +100,7 @@ export default function DeviceScreen() {
   const [bright, setBright] = useState(settings.brightness);
   const [aboutTaps, setAboutTaps] = useState(0);
   const [showAbout, setShowAbout] = useState(false);
+  const [pickingId, setPickingId] = useState<string | null>(null);
   const [fwLatest, setFwLatest] = useState<{ version: string; update: boolean } | null>(null);
 
   // When the hidden About panel opens, ask the backend what the latest firmware
@@ -128,12 +132,27 @@ export default function DeviceScreen() {
       return;
     }
     try {
-      const { name } = await connect();
+      const { name, picker } = await connect();
+      if (picker) return; // multiple displays found — the picker sheet handles the rest
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.show(`Connected to ${name}.`, "success");
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       toast.show(e?.message ?? "Could not connect.", "error");
+    }
+  };
+
+  const onPickDevice = async (deviceId: string) => {
+    setPickingId(deviceId);
+    try {
+      const { name } = await connectToPicked(deviceId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      toast.show(`Connected to ${name}.`, "success");
+    } catch (e: any) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      toast.show(e?.message ?? "Could not connect.", "error");
+    } finally {
+      setPickingId(null);
     }
   };
 
@@ -161,6 +180,7 @@ export default function DeviceScreen() {
   const bars = rssiBars(rssi);
 
   return (
+    <>
     <KeyboardAwareScrollView
       style={styles.screen}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 190 }]}
@@ -529,6 +549,56 @@ export default function DeviceScreen() {
         )}
       </View>
     </KeyboardAwareScrollView>
+
+    <Modal
+      visible={!!pickerDevices && pickerDevices.length > 0}
+      transparent
+      animationType="fade"
+      onRequestClose={dismissPicker}
+    >
+      <Pressable style={styles.modalBackdrop} onPress={dismissPicker}>
+        <Pressable style={styles.pickerSheet} onPress={() => {}}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.pickerTitle}>Multiple displays found</Text>
+          <Text style={styles.pickerSubtitle}>
+            Pick the one you want to connect to — each board shows its own ID on its
+            screen while it&apos;s booting or waiting for Wi-Fi.
+          </Text>
+          {(pickerDevices ?? []).map((d) => {
+            const isPicking = pickingId === d.id;
+            return (
+              <Pressable
+                key={d.id}
+                onPress={() => onPickDevice(d.id)}
+                disabled={!!pickingId}
+                style={({ pressed }) => [
+                  styles.pickerRow,
+                  pressed && { opacity: 0.85 },
+                  isPicking && { opacity: 0.6 },
+                ]}
+              >
+                <Ionicons name="hardware-chip" size={20} color={colors.brand} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pickerRowName}>{d.name}</Text>
+                  <Text style={styles.pickerRowSignal}>
+                    {d.rssi != null ? `${rssiBars(d.rssi)}/4 signal bars` : "signal unknown"}
+                  </Text>
+                </View>
+                {isPicking ? (
+                  <ActivityIndicator color={colors.brand} />
+                ) : (
+                  <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceTertiary} />
+                )}
+              </Pressable>
+            );
+          })}
+          <Pressable style={styles.pickerCancel} onPress={dismissPicker}>
+            <Text style={styles.pickerCancelText}>Cancel</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+    </>
   );
 }
 
@@ -774,5 +844,70 @@ const styles = StyleSheet.create({
     fontFamily: fonts.textMedium,
     fontSize: fontSize.sm,
     color: colors.onSurface,
+  },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  pickerSheet: {
+    backgroundColor: colors.surfaceSecondary,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderBottomWidth: 0,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderStrong,
+    marginBottom: spacing.sm,
+  },
+  pickerTitle: {
+    fontFamily: fonts.textSemiBold,
+    fontSize: fontSize.lg,
+    color: colors.onSurface,
+    textAlign: "center",
+  },
+  pickerSubtitle: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    color: colors.onSurfaceSecondary,
+    textAlign: "center",
+    marginBottom: spacing.sm,
+  },
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    minHeight: 56,
+  },
+  pickerRowName: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.md,
+    color: colors.onSurface,
+  },
+  pickerRowSignal: {
+    fontFamily: fonts.text,
+    fontSize: fontSize.xs,
+    color: colors.onSurfaceTertiary,
+    marginTop: 2,
+  },
+  pickerCancel: {
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    marginTop: spacing.xs,
+  },
+  pickerCancelText: {
+    fontFamily: fonts.textMedium,
+    fontSize: fontSize.md,
+    color: colors.onSurfaceSecondary,
   },
 });

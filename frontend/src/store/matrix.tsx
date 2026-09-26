@@ -12,7 +12,8 @@ import React, {
 } from "react";
 import { storage } from "@/src/utils/storage";
 import {
-  connectToMatrix,
+  connectToKnownDevice,
+  scanForDevices,
   disconnect as bleDisconnect,
   writeLive,
   flashTest as bleFlashTest,
@@ -25,6 +26,7 @@ import {
 import type { League } from "@/src/data/teams";
 
 const SETTINGS_KEY = "aura_settings_v1";
+const LAST_DEVICE_KEY = "aura_last_device_id";
 
 export type Severity = "minor" | "moderate" | "severe" | "extreme";
 export type SavedTeam = { league: League; abbr: string };
@@ -127,6 +129,8 @@ type MatrixContextValue = {
   deviceName: string | null;
   rssi: number | null;
   bleSupported: boolean;
+  // Populated when a scan finds 2+ nearby Aura displays; null otherwise.
+  pickerDevices: { id: string; name: string; rssi: number | null }[] | null;
 
   // Wi-Fi provisioning status (read-back from matrix)
   wifiStatus: WifiStatus;
@@ -153,7 +157,9 @@ type MatrixContextValue = {
   updateWeekend: (patch: Partial<Settings["nightMode"]["weekend"]>) => void;
 
   // BLE actions (throw BleError on failure)
-  connect: () => Promise<{ name: string }>;
+  connect: () => Promise<{ name: string; picker?: boolean }>;
+  connectToPicked: (deviceId: string) => Promise<{ name: string }>;
+  dismissPicker: () => void;
   disconnect: () => Promise<void>;
   syncAll: () => Promise<{ confirmed: boolean }>;
   sendWifi: (ssid: string, pass: string) => Promise<void>;
@@ -257,6 +263,12 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [rssi, setRssi] = useState<number | null>(null);
   const bleSupported = isBleSupported();
+
+  // Populated when a scan finds 2+ nearby Aura displays, so the Device
+  // screen can show a picker instead of connecting to whichever answers first.
+  const [pickerDevices, setPickerDevices] = useState<
+    { id: string; name: string; rssi: number | null }[] | null
+  >(null);
 
   const [wifiStatus, setWifiStatus] = useState<WifiStatus>("idle");
   const [wifiIp, setWifiIp] = useState<string | null>(null);
@@ -556,19 +568,20 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ---- BLE actions ----------------------------------------------------------
-  const connect = useCallback(async () => {
-    const info = await connectToMatrix(
-      (s) => setBleStatus(s),
-      () => {
-        setBleStatus("disconnected");
-        setDeviceName(null);
-        setRssi(null);
-        setWifiStatus("idle");
-      },
-    );
+  const onBleDisconnected = useCallback(() => {
+    setBleStatus("disconnected");
+    setDeviceName(null);
+    setRssi(null);
+    setWifiStatus("idle");
+  }, []);
+
+  // Shared post-connect wiring, regardless of which path found the device
+  // (last-known reconnect, auto-connect to the only match, or a picker pick).
+  const finishConnect = useCallback((info: { id: string; name: string; rssi: number | null }) => {
     setDeviceName(info.name);
     setRssi(info.rssi);
     setFirmwareVersion(null);
+    storage.setItem(LAST_DEVICE_KEY, info.id);
     // Listen for async status pushes (Wi-Fi join result + firmware version).
     monitorMatrix((obj) => {
       if (typeof obj?.fw === "string") setFirmwareVersion(obj.fw);
@@ -584,8 +597,69 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     // Auto-push the full config (as per-section commands) so a freshly
     // connected matrix is in sync.
     pushAllSections(buildFullPayload(settingsRef.current)).catch(() => {});
-    return { name: info.name };
   }, []);
+
+  const connect = useCallback(async () => {
+    setPickerDevices(null);
+
+    // 1) If we've connected to a specific board before, try it directly —
+    // skips the scan entirely on the common "same display as last time" path.
+    const savedId = await storage.getItem<string | null>(LAST_DEVICE_KEY, null);
+    if (savedId) {
+      try {
+        const info = await connectToKnownDevice(savedId, setBleStatus, onBleDisconnected);
+        finishConnect(info);
+        return { name: info.name };
+      } catch {
+        // Saved board not reachable (off, out of range, or replaced) — fall
+        // through to a fresh scan instead of failing outright.
+      }
+    }
+
+    // 2) Scan for every nearby Aura display.
+    setBleStatus("scanning");
+    let found: { id: string; name: string; rssi: number | null }[];
+    try {
+      found = await scanForDevices();
+    } catch (e) {
+      setBleStatus("disconnected");
+      throw e;
+    }
+
+    if (found.length === 0) {
+      setBleStatus("disconnected");
+      throw new BleError(
+        "NOT_FOUND",
+        "No matrix found nearby. Make sure it's powered on and in range.",
+      );
+    }
+
+    if (found.length === 1) {
+      const info = await connectToKnownDevice(found[0].id, setBleStatus, onBleDisconnected);
+      finishConnect(info);
+      return { name: info.name };
+    }
+
+    // 3) Multiple displays answered — hand off to the picker instead of
+    // guessing. bleStatus goes back to "disconnected" so the UI doesn't look
+    // stuck on "Connecting…" while the picker sheet is up.
+    setBleStatus("disconnected");
+    setPickerDevices(found);
+    return { name: "", picker: true as const };
+  }, [finishConnect, onBleDisconnected]);
+
+  // Connect to a specific device the user picked from the multi-display list.
+  const connectToPicked = useCallback(
+    async (deviceId: string) => {
+      const info = await connectToKnownDevice(deviceId, setBleStatus, onBleDisconnected);
+      finishConnect(info);
+      setPickerDevices(null);
+      return { name: info.name };
+    },
+    [finishConnect, onBleDisconnected],
+  );
+
+  const dismissPicker = useCallback(() => setPickerDevices(null), []);
 
   const disconnect = useCallback(async () => {
     await bleDisconnect();
@@ -639,6 +713,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     deviceName,
     rssi,
     bleSupported,
+    pickerDevices,
     wifiStatus,
     wifiIp,
     lastSsid,
@@ -658,6 +733,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     updateNightMode,
     updateWeekend,
     connect,
+    connectToPicked,
+    dismissPicker,
     disconnect,
     syncAll,
     sendWifi,

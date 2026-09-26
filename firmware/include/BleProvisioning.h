@@ -159,8 +159,26 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   }
 };
 
+// Every board otherwise advertises the exact same "AuraMatrix" name, so with
+// 2+ boards in range there was no way to tell them apart in a BLE scan. This
+// appends a short, stable-per-chip suffix from the factory-burned MAC (via
+// efuse — doesn't need Wi-Fi/BT to already be up) so each board shows up as
+// e.g. "AuraMatrix-3F2A" and the app can offer a proper picker.
+static String gBleDeviceName;
+
+inline const char* deviceName() {
+  if (gBleDeviceName.isEmpty()) {
+    uint64_t mac = ESP.getEfuseMac();
+    char suffix[6];
+    snprintf(suffix, sizeof(suffix), "%04X", (unsigned)(mac & 0xFFFF));
+    gBleDeviceName = String(AURA_DEVICE_NAME) + "-" + suffix;
+  }
+  return gBleDeviceName.c_str();
+}
+
 inline void begin() {
-  NimBLEDevice::init(AURA_DEVICE_NAME);
+  const char* name = deviceName();
+  NimBLEDevice::init(name);
   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
   NimBLEDevice::setMTU(512);   // allow larger single writes (config payloads)
 
@@ -178,7 +196,7 @@ inline void begin() {
 
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->addServiceUUID(AURA_SERVICE_UUID);
-  adv->setName(AURA_DEVICE_NAME);
+  adv->setName(name);
   adv->start();
 }
 

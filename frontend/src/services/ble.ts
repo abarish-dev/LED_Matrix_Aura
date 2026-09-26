@@ -85,144 +85,6 @@ export class BleError extends Error {
 }
 
 /**
- * Scan for a device advertising SERVICE_UUID, connect, and discover services.
- * onStatus reports scanning -> connecting -> connected transitions.
- */
-export async function connectToMatrix(
-  onStatus: (s: BleStatus) => void,
-  onDisconnect?: () => void,
-): Promise<{ id: string; name: string; rssi: number | null }> {
-  if (!isBleSupported()) {
-    throw new BleError(
-      "BLE_UNAVAILABLE",
-      "Bluetooth needs a real device build. It doesn't run in Expo Go or web preview.",
-    );
-  }
-
-  const hasPerms = await requestAndroidPermissions();
-  if (!hasPerms) {
-    throw new BleError(
-      "PERMISSION_DENIED",
-      "Bluetooth permission was denied. Enable it in Settings to connect.",
-    );
-  }
-
-  const bleManager = getManager();
-
-  // Ensure the adapter is powered on.
-  const state = await bleManager.state();
-  if (state !== "PoweredOn") {
-    throw new BleError(
-      "BLUETOOTH_OFF",
-      "Bluetooth is turned off. Please turn it on and try again.",
-    );
-  }
-
-  onStatus("scanning");
-
-  return new Promise((resolve, reject) => {
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      bleManager.stopDeviceScan();
-      reject(
-        new BleError(
-          "NOT_FOUND",
-          "No matrix found nearby. Make sure it's powered on and in range.",
-        ),
-      );
-    }, 15000);
-
-    bleManager.startDeviceScan(
-      [SERVICE_UUID],
-      null,
-      async (error: any, device: any) => {
-        if (settled) return;
-        if (error) {
-          settled = true;
-          clearTimeout(timeout);
-          bleManager.stopDeviceScan();
-          reject(new BleError("SCAN_ERROR", error.message ?? "Scan failed."));
-          return;
-        }
-        if (!device) return;
-
-        // Match Aura* name prefix (in addition to the service UUID).
-        const nm = device.name ?? device.localName ?? "";
-        if (!nm.startsWith("Aura")) return;
-
-        settled = true;
-        clearTimeout(timeout);
-        bleManager.stopDeviceScan();
-        onStatus("connecting");
-
-        try {
-          // The scan found the device fine, but the actual GATT connect +
-          // service discovery can hang indefinitely on some phones/ESP32
-          // BLE stack states (e.g. a stale connection slot left over from a
-          // previous session) with no native error ever firing — leaving the
-          // UI stuck on "Connecting…" forever. Race it against a timeout so
-          // the user always gets a clear, actionable message instead.
-          const d = await Promise.race([
-            (async () => {
-              const dev = await device.connect();
-              await dev.discoverAllServicesAndCharacteristics();
-              // Bump the ATT MTU so multi-hundred-byte config writes don't fail.
-              try { await dev.requestMTU(512); } catch { /* iOS auto-negotiates */ }
-              return dev;
-            })(),
-            new Promise<never>((_, rej) =>
-              setTimeout(
-                () =>
-                  rej(
-                    new BleError(
-                      "CONNECT_TIMEOUT",
-                      "Connection timed out. Try toggling Bluetooth off/on, or power-cycle the matrix, then tap Connect again.",
-                    ),
-                  ),
-                12000,
-              ),
-            ),
-          ]);
-          connectedDevice = d;
-
-          d.onDisconnected(() => {
-            connectedDevice = null;
-            onDisconnect?.();
-          });
-
-          let rssi: number | null = null;
-          try {
-            const withRssi = await d.readRSSI();
-            rssi = withRssi?.rssi ?? null;
-          } catch {
-            rssi = null;
-          }
-
-          onStatus("connected");
-          resolve({ id: d.id, name: d.name ?? "LED Matrix", rssi });
-        } catch (e: any) {
-          connectedDevice = null;
-          // If the connect actually lands moments after we gave up on it,
-          // don't leave a dangling half-open connection behind.
-          try { await device.cancelConnection(); } catch { /* ignore */ }
-          reject(
-            e instanceof BleError
-              ? e
-              : new BleError(
-                  "CONNECT_ERROR",
-                  e?.message ?? "Failed to connect to the matrix.",
-                ),
-          );
-        }
-      },
-    );
-  });
-}
-
-/**
  * Serialize the settings object to JSON, base64 encode it, and write it to the
  * characteristic. Falls back to write-without-response if needed.
  */
@@ -301,10 +163,12 @@ export async function flashTest(): Promise<void> {
   }
 }
 
-/** Scan for all nearby Aura matrix devices for a fixed duration. */
+/** Scan for all nearby Aura matrix devices for a fixed duration (used for the
+ * multi-display picker: with only one board in range this list will have a
+ * single entry and callers can just auto-connect to it). */
 export async function scanForDevices(
-  durationMs = 4000,
-): Promise<{ id: string; name: string }[]> {
+  durationMs = 6000,
+): Promise<{ id: string; name: string; rssi: number | null }[]> {
   if (!isBleSupported()) {
     throw new BleError(
       "BLE_UNAVAILABLE",
@@ -321,7 +185,7 @@ export async function scanForDevices(
     throw new BleError("BLUETOOTH_OFF", "Bluetooth is off.");
   }
   return new Promise((resolve, reject) => {
-    const found = new Map<string, { id: string; name: string }>();
+    const found = new Map<string, { id: string; name: string; rssi: number | null }>();
     m.startDeviceScan([SERVICE_UUID], null, (err: any, device: any) => {
       if (err) {
         m.stopDeviceScan();
@@ -331,11 +195,13 @@ export async function scanForDevices(
       if (!device) return;
       const nm = device.name ?? device.localName ?? "";
       if (!nm.startsWith("Aura")) return;
-      found.set(device.id, { id: device.id, name: nm });
+      found.set(device.id, { id: device.id, name: nm, rssi: device.rssi ?? null });
     });
     setTimeout(() => {
       m.stopDeviceScan();
-      resolve([...found.values()]);
+      // Strongest signal first — the nearest/most-likely-intended board leads
+      // the picker list.
+      resolve([...found.values()].sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999)));
     }, durationMs);
   });
 }
@@ -348,6 +214,10 @@ export async function connectToKnownDevice(
 ): Promise<{ id: string; name: string; rssi: number | null }> {
   if (!isBleSupported()) {
     throw new BleError("BLE_UNAVAILABLE", "Bluetooth not available.");
+  }
+  const hasPerms = await requestAndroidPermissions();
+  if (!hasPerms) {
+    throw new BleError("PERMISSION_DENIED", "Bluetooth permission was denied.");
   }
   const bleManager = getManager();
   const state = await bleManager.state();

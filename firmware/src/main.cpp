@@ -620,10 +620,10 @@ void setup() {
   bool restored = loadSettings();
   Serial.println(restored ? "[NVS] restored saved settings" : "[NVS] no saved settings");
   AuraBLE::begin();
-  Serial.println("[BLE] advertising as AuraMatrix");
+  Serial.printf("[BLE] advertising as %s\n", AuraBLE::deviceName());
   Display::begin();
   Display::setBrightness(gSettings.brightness);
-  Display::boot();
+  Display::boot(String(AuraBLE::deviceName()).substring(strlen(AURA_DEVICE_NAME) + 1));
   Serial.println("[DISP] panel init done");
   if (restored && !gSettings.wifiSsid.isEmpty()) startWifiConnect();
   lastCard = millis() - CARD_MS;  // draw the fallback card immediately

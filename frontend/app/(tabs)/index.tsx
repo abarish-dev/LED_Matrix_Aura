@@ -302,7 +302,12 @@ export default function SummaryScreen() {
       return;
     }
     try {
-      const { name } = await connect();
+      const { name, picker } = await connect();
+      if (picker) {
+        // Multiple displays found — hand off to the Device tab's picker sheet.
+        router.push("/device");
+        return;
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       toast.show(`Connected to ${name}.`, "success");
     } catch (e: any) {

@@ -108,11 +108,16 @@ inline void centerHeading(const char* value, int baseline, uint16_t color,
   dma->setFont(nullptr);
 }
 
-inline void boot() {
+inline void boot(const String& idSuffix = "") {
   clear();
   // The same amber is used for short card headings and weather highlights.
   centerText("AURA", 20, brandAmber(), 2);
   centerText("matrix online", 44, rgb(160, 160, 160), 1);
+  // Shown briefly so that with multiple boards, whoever's setting up Wi-Fi
+  // can visually match "AuraMatrix-XXXX" in the app's device picker to the
+  // physical board sitting in front of them, instead of guessing by signal
+  // strength alone.
+  if (idSuffix.length()) centerText(("ID: " + idSuffix).c_str(), 54, rgb(120, 120, 120), 1);
   flip();
 }
 
