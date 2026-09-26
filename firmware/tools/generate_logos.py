@@ -171,20 +171,23 @@ def clean_southwest_heart(pixels):
     return cleaned
 
 
-def clean_american_red(pixels):
-    """Keep the red half of the American mark red on the LED panel.
-
-    The source PNG mixes some blue and green into its red antialiasing. Preserve
-    each pixel's red intensity while dropping those channels in red-dominant
-    pixels; leave its blue and white portions untouched.
-    """
+def clean_american_logo(pixels):
+    """Keep American's blue, white and red bands distinct at 24px."""
     cleaned = []
     for pixel in pixels:
-        red, green, blue = (pixel >> 11) & 31, (pixel >> 5) & 63, pixel & 31
-        if red >= 6 and red > green and 5 * red > 8 * blue:
-            cleaned.append(red << 11)
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 58:
+            cleaned.append(0)
+        elif red > 78 and red > green * 1.4 and red > blue * 1.35:
+            cleaned.append(0xE000)
+        elif min(red, green, blue) > 110 and max(red, green, blue) - min(red, green, blue) < 90:
+            cleaned.append(0xFFFF)
+        elif blue > 60 and blue > red * 1.15:
+            cleaned.append(0x001B)
+        elif red > blue * 1.2:
+            cleaned.append(0xE000)
         else:
-            cleaned.append(pixel)
+            cleaned.append(0xFFFF)
     return cleaned
 
 def fetch(url):
@@ -241,7 +244,7 @@ def main():
         name = f"A_{icao}"
         pixels = to_rgb565_array(img)
         if icao == "AAL":
-            pixels = clean_american_red(pixels)
+            pixels = clean_american_logo(pixels)
         elif icao == "DAL":
             pixels = clean_delta_widget(pixels)
         elif icao == "SWA":
