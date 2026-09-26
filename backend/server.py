@@ -325,7 +325,10 @@ async def _fetch_ufc(cx):
     getNextUfc() in espn.ts so the matrix + app show the same thing."""
     out = {"ok": 0}
     try:
-        url = "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"
+        # site.web.api.espn.com is NOT Akamai-blocked from datacenter IPs
+        # (site.api.espn.com returns 403 here — confirmed the hard way), and
+        # serves the same MMA scoreboard data. Same fix as _fetch_score/_fetch_streak.
+        url = "https://site.web.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"
         r = await cx.get(url, headers={"User-Agent": _BROWSER_UA})
         if r.status_code != 200:
             return out

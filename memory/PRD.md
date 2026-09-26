@@ -663,3 +663,25 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 ### Action items for user
 1. Reflash to v1.6.5 (OTA or USB) — logos gone, cards text-only, no more FastLED warning.
 2. No further logo debugging planned unless the user wants to revisit with a fundamentally different approach later (e.g., a 2-color flat badge instead of a photographic logo, or accepting a smaller solid-color square as a team-color accent instead of a detailed bitmap).
+
+
+## Session Update — Adopted external Codex branch (firmware v1.6.21 baseline) + UFC card feature (v1.6.22)
+
+### Context
+- User used ChatGPT/Codex (outside this session) to iterate on firmware directly, pushing 50+ commits to a GitHub branch (`codex/display-type-weather-icons`, built on top of `codex/improve-matrix-logo-assets`) that took firmware to v1.6.21. That work: reworked the entire logo system with per-team hand-tuned color quantization (e.g. "Constrain American logo to red/blue/white"), and per `firmware/LOGO_RENDERING.md` history, ultimately traced the long-running red-channel/color-bleed saga to a **power supply issue** — fixed by giving the panel its own regulated 5V supply, not more software tweaking. Logos are now re-enabled in `score()`/`flight()` with proper layout (text shifts right when a logo is present). Also reworked Wi-Fi to a fully non-blocking `pollWifi()` state machine (immediate `saveSettings()` on new creds, no blocking `WiFi.begin()` wait) and various other refinements (DNS retry bounding, typography, RSSI logging).
+- Repo (`github.com/abarish-dev/LED_Matrix_Aura`) was private; user made it public temporarily so this environment could clone it directly (no remote was configured here otherwise).
+- User confirmed: adopt that branch's firmware files as the new baseline, discarding this session's smaller, now-superseded firmware fixes (wifi timing fix, logo removal, boot amber, FastLED cleanup — all effectively superseded or reintroduced better upstream).
+- Also, independently, user pointed out the app's own Sports tab copy claims "The matrix pulls the next UFC card live from ESPN" — which was never actually implemented in firmware (UFC toggle only affected the phone app's Summary screen). Confirmed to build this for real.
+
+### Actions (DONE)
+1. Cloned `codex/display-type-weather-icons` and copied `firmware/include/{Config.h, DataServices.h, DisplayManager.h, Logos.h, BleProvisioning.h, logos/generated_logos.h}`, `firmware/src/main.cpp`, `firmware/tools/generate_logos.py` (+ test), and the `LOGO_RENDERING.md`/`RESTART_PERSISTENCE.md` docs into `/app/firmware`, replacing this session's versions.
+2. Re-applied the UFC card feature on top of the new baseline (not present upstream):
+   - **Backend** (`server.py`, untouched by the Codex branch): `_fetch_ufc()` fetches the next/live UFC event; `GET /api/matrix/feed` gained a `ufc=1` param. **Found + fixed a real bug during testing**: initially called `site.api.espn.com` (Akamai-blocked for datacenter IPs — confirmed 403), switched to `site.web.api.espn.com` matching the existing `_fetch_score`/`_fetch_streak` workaround already in this file. Verified live: returns real event data (e.g. "UFC Fight Night" / "Vanessa Demopoulos vs Yazmin Jauregui").
+   - **Firmware**: added `Data::UfcInfo` (DataServices.h) + `matrixFeed(..., wantUfc)` param/parsing; added `Display::ufc()` card (DisplayManager.h, text-only, red accent bar matching the weather-alert style); wired into `main.cpp` — new global `gUfc`, `refreshData()` passes `sports.ufc` through and stores the result, `buildSeq()` adds card type 4 when enabled+available, `drawCard()` renders it. **Found + fixed a real bug**: `uint8_t seq[4]` was one slot too small for 5 possible card types (alert+flight+sports+ufc+clock) — bumped to `seq[5]` to avoid a stack buffer overflow.
+   - `AURA_FW_VERSION` = `1.6.22`.
+3. Backend tested by testing_agent: 6/6 pytest cases pass (`/app/backend/tests/test_matrix_feed_ufc.py`), including the real ESPN data path after the domain fix. Firmware not testable here (no physical hardware).
+
+### Action items for user
+1. Reflash to v1.6.22 (pull `/app/firmware`, recompile, OTA or USB).
+2. You can now set the repo back to private on GitHub if you'd like — this environment already has what it needs.
+3. Redeploy the backend (Publish) so the ESP32 can actually reach the fixed `/api/matrix/feed?ufc=1` endpoint in production.

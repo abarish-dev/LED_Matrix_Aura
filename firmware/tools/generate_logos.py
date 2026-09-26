@@ -3,7 +3,7 @@
 Generate embedded RGB565 logo bitmaps for the Aura matrix firmware.
 
 Downloads team logos from ESPN's CDN and airline logos from Google Flights,
-resizes them to 16x16, composites transparency over black, converts to RGB565,
+fits them inside a 24x24 canvas without distortion, composites over black, converts to RGB565,
 and writes C arrays + registry tables to include/logos/generated_logos.h.
 
 Run:  python3 tools/generate_logos.py
@@ -13,12 +13,10 @@ import io
 import os
 import sys
 import requests
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image
 
-# Bumped from 16 -> 24: at 16px the fine curves on detailed logos (e.g. the
-# Carolina Hurricanes swirl) blurred into an unrecognizable blob. 24px still
-# fits cleanly in the corner of a score/flight card with no text overlap
-# (centered card text never reaches inside x=2..26 on the 128-wide panel).
+# The existing flight/score card layout reserves a 24x24 corner for logos.
+# Enlarging this also requires moving card text and the heading arrow.
 SIZE = 24
 OUT = os.path.join(os.path.dirname(__file__), "..", "include", "logos", "generated_logos.h")
 
@@ -49,38 +47,208 @@ session.headers.update({"User-Agent": "Mozilla/5.0 AuraLogoGen"})
 
 
 def to_rgb565_array(img):
-    # Sharpen the source BEFORE downscaling so fine details (thin outlines,
-    # curved wordmarks) survive the resize instead of blurring into mush.
+    """Fit artwork within the reserved square and blend edge pixels over black.
+
+    Keep RGB565 output and the existing 24x24 asset shape compatible with the
+    firmware. Transparent padding preserves each logo's original proportions.
+    """
     img = img.convert("RGBA")
-    r, g, b, a = img.split()
-    rgb = Image.merge("RGB", (r, g, b)).filter(
-        ImageFilter.UnsharpMask(radius=2, percent=150, threshold=2)
-    )
-    img = Image.merge("RGBA", (*rgb.split(), a))
+    img.thumbnail((SIZE, SIZE), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
+    canvas.alpha_composite(img, ((SIZE - img.width) // 2,
+                                 (SIZE - img.height) // 2))
 
-    # High quality resize, then a contrast bump so the few pixels each shape
-    # gets at this size stay bold/legible instead of washing out to gray.
-    img = img.resize((SIZE, SIZE), Image.LANCZOS)
-    r, g, b, a = img.split()
-    rgb = ImageEnhance.Contrast(Image.merge("RGB", (r, g, b))).enhance(1.3)
-    img = Image.merge("RGBA", (*rgb.split(), a))
-
-    px = img.load()
     out = []
-    for y in range(SIZE):
-        for x in range(SIZE):
-            r, g, b, a = px[x, y]
-            if a < 96:                       # drop faint anti-aliased edges
-                r = g = b = 0
-            else:                            # composite opaque-ish pixel over black
-                r = r * a // 255
-                g = g * a // 255
-                b = b * a // 255
-                if max(r, g, b) < 24:        # kill muddy near-black specks
-                    r = g = b = 0
-            out.append(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
+    for r, g, b, a in canvas.getdata():
+        # Alpha is coverage. Blend in linear light to keep small curved edges
+        # visible after the final RGB565 quantization.
+        coverage = a / 255.0
+        r = round(255 * ((r / 255.0) ** 2.2 * coverage) ** (1 / 2.2))
+        g = round(255 * ((g / 255.0) ** 2.2 * coverage) ** (1 / 2.2))
+        b = round(255 * ((b / 255.0) ** 2.2 * coverage) ** (1 / 2.2))
+        out.append(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
     return out
 
+
+def clean_delta_widget(pixels):
+    """Keep the 24px Delta widget crisp on an RGB LED panel.
+
+    The tiny Google Flights PNG contributes almost-black antialiasing and an
+    isolated baseline. Quantize its red silhouette to two opaque reds and
+    leave the dark gaps transparent. This retains the widget's proportions.
+    """
+    bright_red = 29 << 11
+    shaded_red = 19 << 11
+    cleaned = []
+    for index, pixel in enumerate(pixels):
+        x, y = index % SIZE, index // SIZE
+        red = (pixel >> 11) & 31
+        if red < 12 or y >= SIZE - 2:
+            cleaned.append(0)
+        else:
+            cleaned.append(bright_red if x < SIZE // 2 else shaded_red)
+    return cleaned
+
+
+def clean_hurricanes_logo(pixels):
+    """Reduce the Hurricanes mark to opaque red, white and black.
+
+    Tiny translucent fringe pixels from the source turn into colored speckles
+    on the LED panel. Keep the hurricane silhouette and its white rings.
+    """
+    cleaned = []
+    for pixel in pixels:
+        red = ((pixel >> 11) & 31) * 255 // 31
+        green = ((pixel >> 5) & 63) * 255 // 63
+        blue = (pixel & 31) * 255 // 31
+        if red >= 85 and 4 * red > 5 * green and 4 * red > 5 * blue:
+            cleaned.append(0xD800)
+        elif max(red, green, blue) >= 130 and min(red, green, blue) >= 35:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def logo_rgb(pixel):
+    """Expand RGB565 channels for stable, palette-based pixel decisions."""
+    return ((pixel >> 11 & 31) * 255 // 31,
+            (pixel >> 5 & 63) * 255 // 63,
+            (pixel & 31) * 255 // 31)
+
+
+def clean_predators_logo(pixels):
+    """Keep Nashville's saber-toothed cat legible in gold, navy and white."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        maximum, minimum = max(red, green, blue), min(red, green, blue)
+        if maximum < 46:
+            cleaned.append(0)
+        elif minimum > 130 and maximum - minimum < 85:
+            cleaned.append(0xFFFF)
+        elif red > 95 and green > 55 and red > blue * 1.35 and green > blue * .95:
+            cleaned.append(0xFDA0)
+        elif blue > 55 and blue > red * 1.03:
+            cleaned.append(0x00B0)
+        elif minimum > 95:
+            cleaned.append(0xFFFF)
+        elif red > 80 and green > 45 and red > blue * 1.25:
+            cleaned.append(0xFDA0)
+        elif blue > 43:
+            cleaned.append(0x00B0)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def clean_cowboys_logo(pixels):
+    """Keep the white star and blue outline, dropping dim color fringes."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 38:
+            cleaned.append(0)
+        elif min(red, green, blue) > 87 and max(red, green, blue) - min(red, green, blue) < 85:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0x0018)
+    return cleaned
+
+
+def clean_ravens_logo(pixels):
+    """Keep the bird's purple, gold and white details at 24px."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 52:
+            cleaned.append(0)
+        elif min(red, green, blue) > 113 and max(red, green, blue) - min(red, green, blue) < 70:
+            cleaned.append(0xFFFF)
+        elif red > 82 and green > 41 and red > blue * 1.25:
+            cleaned.append(0xFDE0)
+        elif red > 40 or blue > 42:
+            cleaned.append(0x4814)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def clean_southwest_heart(pixels):
+    """Keep the heart's red, blue, yellow and white regions distinct."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 62:
+            cleaned.append(0)
+        elif red > 90 and green > 70 and red > blue * 1.4 and green > blue * 1.3:
+            cleaned.append(0xFDE0)
+        elif red > 80 and red > green * 1.45 and red > blue * 1.2:
+            cleaned.append(0xE000)
+        elif blue > 70 and blue > red * .9:
+            cleaned.append(0x001E)
+        elif min(red, green, blue) > 92:
+            cleaned.append(0xFFFF)
+        elif red > blue * 1.35:
+            cleaned.append(0xE000)
+        else:
+            cleaned.append(0x001E)
+    return cleaned
+
+
+def clean_united_globe(pixels):
+    """Keep the white globe lines on a solid blue 24px field."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if min(red, green, blue) > 90 and max(red, green, blue) - min(red, green, blue) < 110:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0x0018 if max(red, green, blue) >= 55 else 0)
+    return cleaned
+
+
+def clean_yankees_logo(pixels):
+    """Brighten the thin navy NY mark without colored antialiasing."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        cleaned.append(0x0018 if blue >= 24 and blue > red * 1.4 else 0)
+    return cleaned
+
+
+def clean_orioles_logo(pixels):
+    """Keep the orange bird, white details, and black unlit gaps."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if min(red, green, blue) > 125 and max(red, green, blue) - min(red, green, blue) < 100:
+            cleaned.append(0xFFFF)
+        elif red > 92 and red > green * 1.4 and red > blue * 1.5:
+            cleaned.append(0xFBC0)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def clean_american_logo(pixels):
+    """Keep American's blue, white and red bands distinct at 24px."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 58:
+            cleaned.append(0)
+        elif red > 78 and red > green * 1.4 and red > blue * 1.35:
+            cleaned.append(0xE000)
+        elif min(red, green, blue) > 110 and max(red, green, blue) - min(red, green, blue) < 90:
+            cleaned.append(0xFFFF)
+        elif blue > 60 and blue > red * 1.15:
+            cleaned.append(0x001B)
+        elif red > blue * 1.2:
+            cleaned.append(0xE000)
+        else:
+            cleaned.append(0xFFFF)
+    return cleaned
 
 def fetch(url):
     try:
@@ -115,7 +283,20 @@ def main():
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            arrays.append(emit_array(name, to_rgb565_array(img)))
+            pixels = to_rgb565_array(img)
+            if league == "NHL" and abbr == "CAR":
+                pixels = clean_hurricanes_logo(pixels)
+            elif league == "NHL" and abbr == "NSH":
+                pixels = clean_predators_logo(pixels)
+            elif league == "NFL" and abbr == "DAL":
+                pixels = clean_cowboys_logo(pixels)
+            elif league == "NFL" and abbr == "BAL":
+                pixels = clean_ravens_logo(pixels)
+            elif league == "MLB" and abbr == "NYY":
+                pixels = clean_yankees_logo(pixels)
+            elif league == "MLB" and abbr == "BAL":
+                pixels = clean_orioles_logo(pixels)
+            arrays.append(emit_array(name, pixels))
             teams_tbl.append(f'  {{ "{league}:{abbr}", {name}, {SIZE}, {SIZE} }},')
             ok += 1
 
@@ -127,7 +308,16 @@ def main():
             skip += 1
             continue
         name = f"A_{icao}"
-        arrays.append(emit_array(name, to_rgb565_array(img)))
+        pixels = to_rgb565_array(img)
+        if icao == "AAL":
+            pixels = clean_american_logo(pixels)
+        elif icao == "DAL":
+            pixels = clean_delta_widget(pixels)
+        elif icao == "SWA":
+            pixels = clean_southwest_heart(pixels)
+        elif icao == "UAL":
+            pixels = clean_united_globe(pixels)
+        arrays.append(emit_array(name, pixels))
         air_tbl.append(f'  {{ "{icao}", {name}, {SIZE}, {SIZE} }},')
         ok += 1
 

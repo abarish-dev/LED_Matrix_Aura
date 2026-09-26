@@ -1,0 +1,27 @@
+{
+  "summary": "Backend-only test of new GET /api/matrix/feed?ufc=1 param (UFC card support). Created /app/backend/tests/test_matrix_feed_ufc.py with 6 pytest cases covering: ufc=1 returns top-level 'ufc' key, ufc=0/omitted returns {ok:0}, no regression on flight/score/scores/alert/temp keys when combined with flights=1&sports=1&weather=1&ufc=1, no 500 errors, and cache key differentiation between ufc=0 and ufc=1 requests. All 6 tests passed (100%).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_matrix_feed_ufc.py", "/app/test_reports/pytest/pytest_ufc_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_fetch_ufc and matrix_feed correctly handle non-200 ESPN responses and exceptions by returning {ok:0}, satisfying the 'graceful failure, no 500' requirement.",
+    "Cache key in matrix_feed (f\"{lat},{lon},{radius},{team},{severity},{flights}{sports}{weather}{ufc}\") correctly includes ufc as a distinguishing digit, so ufc=0 vs ufc=1 requests are cached separately - verified empirically (no stale cross-contamination observed).",
+    "NOTE: Could not verify the ok:1 / real-data path for _fetch_ufc in this sandbox: direct curl to https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard from this environment returns HTTP 403 'Access Denied' (Akamai edge block, likely datacenter/proxy IP block by ESPN), so both direct curl and the backend's own httpx call receive non-200 and correctly fall back to {ok:0}. This is an ESPN-side network restriction in this sandbox, not a backend code bug - the fallback behavior is exactly what the spec requires for that case. Could not confirm the ok:1 shape (name/date/headline non-empty) against a live real event because of this outbound restriction; code review of the ok:1 branch (name/date/headline construction) looks correct and matches the required response shape."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (6/6 tests passed)", "frontend": "not tested (out of scope this round)"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New ufc=1 param on /api/matrix/feed fully tested and passing. ESPN MMA scoreboard endpoint is blocked (403) from this sandbox's outbound network, so only the graceful-failure {ok:0} path was empirically exercised; the ok:1/real-data branch was validated by code review only, not live data. If a future session needs to confirm the ok:1 shape with real ESPN data, it will need to be tested from an environment where ESPN's site.api.espn.com is reachable (e.g. production deploy), not this preview sandbox.",
+  "rca_of_issue": "N/A - no bugs found. Observed 403 from ESPN is an external network/IP-block issue in the test sandbox, unrelated to the backend implementation."
+}

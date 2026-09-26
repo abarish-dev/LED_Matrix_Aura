@@ -1,0 +1,21 @@
+{
+  "summary": "Regression re-test of the one-line domain fix in _fetch_ufc (server.py): switched ESPN URL from site.api.espn.com (Akamai-blocked, 403) to site.web.api.espn.com to match _fetch_score/_fetch_streak. Confirmed fix works: ESPN endpoint now returns 200 and the real-data ok:1 path is reachable. Re-ran all 6 existing tests in test_matrix_feed_ufc.py - all pass, no regressions.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {},
+  "test_report_links": ["/app/backend/tests/test_matrix_feed_ufc.py", "/app/test_reports/pytest/pytest_ufc_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix confirmed correct: _fetch_ufc now uses https://site.web.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard, matching the working pattern in _fetch_score/_fetch_streak. Direct curl to that URL from this sandbox returns HTTP 200 (previously the old site.api.espn.com endpoint returned 403).",
+    "Manual GET /api/matrix/feed?lat=35.5563&lon=-80.8714&radius=40&severity=severe&flights=0&sports=0&weather=0&ufc=1 returned ufc: {ok:1, name:'UFC Fight Night', date:'Sat Sep 26', headline:'Vanessa Demopoulos vs Yazmin Jauregui'} - all fields are sane, non-garbage strings. Note: the date reflects the most recent event in ESPN's scoreboard response at query time (fallback to events[0] when no non-'post' state event exists); this is expected behavior per the existing selection logic, not a bug."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A - backend only test requested"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The _fetch_ufc ESPN domain fix (site.api.espn.com -> site.web.api.espn.com) is verified working. ok:1 real-data path is now reachable from this sandbox and returns sane data. All 6 tests in /app/backend/tests/test_matrix_feed_ufc.py pass (6/6). No further action needed for this specific fix.",
+  "rca_of_issue": "N/A - this iteration was a verification of an already-applied fix, not a new RCA. Original RCA: site.api.espn.com is Akamai-blocked for datacenter/sandbox IPs (403), while site.web.api.espn.com serves the same scoreboard data without that block."
+}

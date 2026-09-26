@@ -79,35 +79,47 @@ static uint16_t holidayAccent() {
   return 0;
 }
 
-static bool wifiConnect() {
-  if (gSettings.wifiSsid.isEmpty()) return false;
-  Display::message("WI-FI", gSettings.wifiSsid.c_str());
+static bool gWifiJoining = false;
+static uint32_t gWifiStartedMs = 0;
+static uint32_t gWifiRetryAfterMs = 0;
+
+// Keep BLE and the display responsive while Wi-Fi joins.
+static void startWifiConnect() {
+  if (gSettings.wifiSsid.isEmpty()) return;
+  Data::resetDnsCache();
   WiFi.mode(WIFI_STA);
   WiFi.begin(gSettings.wifiSsid.c_str(), gSettings.wifiPass.c_str());
-  uint32_t start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) delay(250);
+  gWifiJoining = true;
+  gWifiStartedMs = millis();
+  Serial.printf("[NET] joining SSID=%s\n", gSettings.wifiSsid.c_str());
+}
+
+static void pollWifi() {
+  if (gSettings.wifiSsid.isEmpty()) return;
+  if (!gWifiJoining) {
+    if (WiFi.status() != WL_CONNECTED &&
+        (int32_t)(millis() - gWifiRetryAfterMs) >= 0) startWifiConnect();
+    return;
+  }
   if (WiFi.status() == WL_CONNECTED) {
-    // Use the router's DHCP-provided DNS (calling WiFi.config() post-connect to
-    // force public DNS proved unreliable — it can break the resolver, and some
-    // routers block clients from using external DNS). The DNS cache in
-    // DataServices keeps our query volume low so the router doesn't rate-limit.
-    Serial.printf("[NET] ip=%s gw=%s dns=%s\n",
+    gWifiJoining = false;
+    Data::resetDnsCache();
+    Serial.printf("[NET] ip=%s gw=%s dns=%s wifiRssi=%d dBm\n",
                   WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
-                  WiFi.dnsIP(0).toString().c_str());
-    // NOTE: do NOT disable Wi-Fi modem sleep here — ESP-IDF *requires* modem
-    // sleep to stay enabled when Wi-Fi and BLE run together (disabling it
-    // aborts with "Should enable WiFi modem sleep..."). Coexistence airtime is
-    // instead reclaimed by relaxing the BLE connection params (see
-    // BleProvisioning ServerCallbacks) + retrying transient fetch failures.
-    // NTP for the Night Dimming schedule. Change TZ_INFO to your timezone
-    // (POSIX TZ string). Default is US Eastern.
+                  WiFi.dnsIP(0).toString().c_str(), WiFi.RSSI());
     #ifndef TZ_INFO
     #define TZ_INFO "EST5EDT,M3.2.0,M11.1.0"
     #endif
     configTzTime(TZ_INFO, "pool.ntp.org", "time.nist.gov");
-    return true;
+    AuraBLE::notifyWifi(true, WiFi.localIP().toString());
+    lastFetch = millis() - FETCH_MS + 1000;
+  } else if (millis() - gWifiStartedMs >= 15000) {
+    gWifiJoining = false;
+    WiFi.disconnect();
+    gWifiRetryAfterMs = millis() + 30000;
+    AuraBLE::notifyWifi(false, "");
+    Serial.println("[NET] join timed out; retrying in 30s");
   }
-  return false;
 }
 
 // Is hour `h` inside the [start,end) night window (may wrap past midnight)?
@@ -124,11 +136,20 @@ static void applyBrightnessForNow() {
     struct tm t;
     if (getLocalTime(&t, 50)) {
       if (gSettings.night.useSunset) {
-        // Dim from local sunset to sunrise; sun times cached per day.
+        // Cache sunrise/sunset per day. A failed HTTPS lookup must not run
+        // again on every card: retry at most once per hour when online.
         static int cachedYday = -1, srMin = -1, ssMin = -1;
-        if (t.tm_yday != cachedYday || srMin < 0 || ssMin < 0) {
-          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, srMin, ssMin);
-          if (srMin >= 0 && ssMin >= 0) cachedYday = t.tm_yday;
+        static uint32_t lastSunAttempt = 0;
+        bool needsSun = t.tm_yday != cachedYday || srMin < 0 || ssMin < 0;
+        uint32_t currentMs = millis();
+        if (needsSun && WiFi.status() == WL_CONNECTED &&
+            (lastSunAttempt == 0 || currentMs - lastSunAttempt >= 3600000UL)) {
+          lastSunAttempt = currentMs;
+          int sunrise = -1, sunset = -1;
+          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, sunrise, sunset);
+          if (sunrise >= 0 && sunset >= 0) {
+            srMin = sunrise; ssMin = sunset; cachedYday = t.tm_yday;
+          }
         }
         if (srMin >= 0 && ssMin >= 0) {
           int nowMin = t.tm_hour * 60 + t.tm_min;
@@ -176,7 +197,7 @@ static Preferences gPrefs;
 static bool         gSettingsDirty = false;
 static uint32_t     gLastSaveMs = 0;
 
-static void saveSettings() {
+static bool saveSettings() {
   JsonDocument doc;
   doc["ssid"] = gSettings.wifiSsid;
   doc["pass"] = gSettings.wifiPass;
@@ -220,20 +241,22 @@ static void saveSettings() {
 
   String out;
   serializeJson(doc, out);
-  gPrefs.begin("aura", false);
-  gPrefs.putString("cfg", out);
+  if (!gPrefs.begin("aura", false)) { Serial.println("[NVS] open failed"); return false; }
+  size_t written = gPrefs.putString("cfg", out);
   gPrefs.end();
+  if (written != out.length()) { Serial.println("[NVS] write failed"); return false; }
   Serial.printf("[NVS] saved config (%d bytes)\n", (int)out.length());
+  return true;
 }
 
 // Returns true if a saved config was found and applied to gSettings.
 static bool loadSettings() {
-  gPrefs.begin("aura", true);
+  if (!gPrefs.begin("aura", true)) { Serial.println("[NVS] read open failed"); return false; }
   String raw = gPrefs.getString("cfg", "");
   gPrefs.end();
   if (raw.isEmpty()) return false;
   JsonDocument doc;
-  if (deserializeJson(doc, raw)) return false;
+  if (deserializeJson(doc, raw)) { Serial.println("[NVS] saved JSON invalid"); return false; }
 
   gSettings.wifiSsid  = String((const char*)(doc["ssid"] | ""));
   gSettings.wifiPass  = String((const char*)(doc["pass"] | ""));
@@ -548,20 +571,10 @@ static void drawCard(uint8_t t) {
       fp = &gFlightList[0]; shownIdx = 0;
     }
     bool tracked = (gTrackedIdx >= 0 && shownIdx == gTrackedIdx);
-    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : accent;
+    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : 0;
     Display::flight(fp->callsign, fp->distanceMi, fp->airline,
                     fp->altFt, fp->headingDeg, cardAccent, tracked ? gEtaMin : -1,
-                    fp->origin, fp->dest, tracked);
-    // Bitmap logo overlay disabled: on this panel, dense multi-color logo
-    // bitmaps rendered with missing/wrong red (confirmed persisting across
-    // two different draw-path fixes — drawRGBBitmap AND per-pixel
-    // drawPixel), and some source logos (e.g. JetBlue's solid-background
-    // wordmark) didn't downscale legibly at 24x24 either way. The callsign/
-    // airline text already carries all the info cleanly, so we're keeping
-    // cards text-only rather than shipping a logo that renders wrong.
-    // String icao = fp->callsign.substring(0, 3);
-    // const LogoAsset* lg = airlineLogo(icao);
-    // if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
+                    fp->origin, fp->dest, tracked, airlineLogo(fp->callsign.substring(0, 3)));
   } else if (t == 1) {
     // Cycle through every followed team's game, one each time the sports card
     // comes up (mirrors the flight card + the app).
@@ -573,15 +586,10 @@ static void drawCard(uint8_t t) {
     uint16_t border = accent;
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
       if (gSettings.sports.rivals[i] == key) { border = Display::rgb(56, 189, 248); break; }
-    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record);
-    // Team logo overlay disabled — same red-rendering issue as the airline
-    // logo above (see comment there). Team abbreviation text already shown
-    // by Display::score() above.
-    // int colon = key.indexOf(':');
-    // if (colon > 0) {
-    //   const LogoAsset* lg = teamLogo(key.substring(0, colon), key.substring(colon + 1));
-    //   if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
-    // }
+    int colon = key.indexOf(':');
+    String league = colon > 0 ? key.substring(0, colon) : String("");
+    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record,
+                   teamLogo(league, s.home), teamLogo(league, s.away));
     if (gScoreCount > 1) gScoreShown++;
   }
 }
@@ -607,47 +615,31 @@ void setup() {
   Serial.printf("[MEM] internal free=%u  total heap=%u  psram free=%u\n",
                 heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                 ESP.getFreeHeap(), ESP.getFreePsram());
-  // Start BLE advertising FIRST so the phone app can always connect, even if
-  // the HUB75 panel init below ever stalls. Provisioning must never depend on
-  // the display coming up cleanly.
+  // Load device settings before BLE starts: the app can sync as soon as
+  // it connects and must not race NVS restoration.
+  bool restored = loadSettings();
+  Serial.println(restored ? "[NVS] restored saved settings" : "[NVS] no saved settings");
   AuraBLE::begin();
   Serial.println("[BLE] advertising as AuraMatrix");
   Display::begin();
   Display::setBrightness(gSettings.brightness);
   Display::boot();
   Serial.println("[DISP] panel init done");
-  delay(1500);
+  if (restored && !gSettings.wifiSsid.isEmpty()) startWifiConnect();
+  lastCard = millis() - CARD_MS;  // draw the fallback card immediately
+  lastFetch = millis();
 
-  // Auto-reconnect using settings saved from the last successful session, so
-  // the matrix keeps working after a power cut without needing the phone app
-  // to re-pair over BLE and resend Wi-Fi credentials.
-  if (loadSettings()) {
-    Serial.println("[NVS] restored saved settings");
-    if (!gSettings.wifiSsid.isEmpty()) {
-      Display::message("AURA", "reconnecting...", Display::rgb(245, 158, 11));
-      bool ok = wifiConnect();
-      AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
-      if (ok) {
-        // Don't block setup() with the data fetch (sun-times + matrix feed +
-        // OTA check can chain into a multi-minute wait if the network is
-        // having a genuinely bad stretch — DNS/TLS failing repeatedly across
-        // every host, not just the usual one-retry-and-it's-fine hiccup).
-        // Show a quick "loading" message, then let loop()'s normal fetch
-        // timer + "waiting for data" fallback handle it — that keeps the
-        // board responsive (BLE, card rotation, brightness) the whole time
-        // instead of looking frozen on a single static message.
-        Display::message("AURA", "loading data...", Display::rgb(245, 158, 11));
-        lastFetch = millis() - FETCH_MS + 1000;   // fetch ~1s into the main loop
-      }
-    }
-  } else {
-    Serial.println("[NVS] no saved settings yet");
-  }
 }
 
 void loop() {
   // Flash test (one-shot from the app).
-  if (gFlashTest) { gFlashTest = false; Display::flashTest(); lastCard = 0; }
+  if (gFlashTest) {
+    gFlashTest = false;
+    Display::flashTest();
+    const LogoAsset* sample = airlineLogo("AAL");
+    if (sample) Display::flashLogoTest(sample->data, sample->w, sample->h);
+    lastCard = 0;
+  }
 
   // OTA firmware update (one-shot from the app's "Install update" button).
   if (gOtaRequested) { gOtaRequested = false; otaCheck(); lastCard = 0; }
@@ -683,33 +675,18 @@ void loop() {
     lastCard = 0; // redraw on next tick
   }
 
-  // New Wi-Fi credentials -> (re)connect and report result to the app.
+  // Save new credentials before any connection or HTTPS wait.
   if (gWifiCredsChanged) {
     gWifiCredsChanged = false;
-    bool ok = wifiConnect();
-    AuraBLE::notifyWifi(ok, ok ? WiFi.localIP().toString() : String(""));
-    // Save the new credentials to flash RIGHT NOW instead of letting the
-    // usual 4s-debounced flush (below) handle it. Previously this branch
-    // went straight into a synchronous refreshData() — which, on a flaky
-    // network, can chain into a minute-plus of retried HTTPS calls (see the
-    // [GET] retry logging) — with the *actual* NVS write only happening
-    // after that returned. If the board got power-cycled during that
-    // window (very plausible right after a fresh "it joined!" moment), the
-    // Wi-Fi password never made it to flash: exactly the "doesn't remember
-    // my Wi-Fi password after a restart" symptom.
-    saveSettings();
+    gSettingsDirty = !saveSettings();
     gLastSaveMs = millis();
-    gSettingsDirty = false;
-    if (ok) {
-      // Don't block here with a synchronous refreshData() either — same
-      // fix as the async-boot change in v1.6.1: show "loading data...",
-      // then let loop()'s normal fetch timer + fallback message pick it up
-      // so BLE stays responsive (and can ack further app commands quickly)
-      // even if the network is having a bad stretch right after joining.
-      Display::message("AURA", "loading data...", Display::rgb(245, 158, 11));
-      lastFetch = millis() - FETCH_MS + 1000;
-    }
+    WiFi.disconnect();
+    gWifiJoining = false;
+    gWifiRetryAfterMs = millis();
+    startWifiConnect();
   }
+
+  pollWifi();
 
   uint32_t now = millis();
 
@@ -717,23 +694,17 @@ void loop() {
   // successive edits (e.g. dragging a slider) don't hammer the flash.
   if (gSettingsDirty && now - gLastSaveMs > 4000) {
     gLastSaveMs = now;
-    gSettingsDirty = false;
-    saveSettings();
+    gSettingsDirty = !saveSettings();
   }
 
-  // Auto OTA check once after the panel has shown real data (so a slow/flaky
-  // first connection can't block the very first card from ever rendering —
-  // this check alone can take 30s+ when the fresh Wi-Fi/TLS session needs a
-  // couple of retries, see [GET] retry comments above).
-  static bool otaBootChecked = false;
-  if (!otaBootChecked && gFirstCardShown && now > 15000 && WiFi.status() == WL_CONNECTED &&
-      !gSettings.serverUrl.isEmpty()) {
-    otaBootChecked = true;
-    otaCheck();
-    lastCard = 0;
+  // Automatic OTA checks can stall the first card; the app's Install
+  // update command still performs an OTA check on demand.
+  // Save pending settings before any potentially slow HTTPS fetch.
+  if (!gSettingsDirty && WiFi.status() == WL_CONNECTED &&
+      now - lastFetch >= FETCH_MS) {
+    lastFetch = now;
+    refreshData();
   }
-
-  if (now - lastFetch >= FETCH_MS) { lastFetch = now; refreshData(); }
 
   static int alertScrollX = 0;
   static uint32_t lastScroll = 0;
