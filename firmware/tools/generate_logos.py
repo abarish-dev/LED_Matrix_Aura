@@ -142,6 +142,31 @@ def clean_predators_logo(pixels):
     return cleaned
 
 
+def jetblue_wordmark():
+    """Draw a crisp two-line jetBlue mark without the source's solid navy tile.
+
+    The downloaded 70px wordmark becomes illegible at 24px and its background
+    fills the entire logo slot. Use 5x7 glyphs with unlit surrounding pixels.
+    """
+    glyphs = {
+        "j": ("00100", "00000", "00100", "00100", "00100", "10100", "01100"),
+        "e": ("00000", "00000", "01110", "10001", "11111", "10000", "01111"),
+        "t": ("00100", "00100", "11111", "00100", "00100", "00101", "00010"),
+        "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
+        "l": ("10000", "10000", "10000", "10000", "10000", "10000", "11100"),
+        "u": ("00000", "00000", "10001", "10001", "10001", "10011", "01101"),
+    }
+    pixels = [0] * (SIZE * SIZE)
+    for word, x0, y0, color in (("jet", 3, 3, 0xFFFF),
+                                ("Blue", 0, 13, 0x001F)):
+        for index, char in enumerate(word):
+            for y, row in enumerate(glyphs[char]):
+                for x, bit in enumerate(row):
+                    if bit == "1":
+                        pixels[(y0 + y) * SIZE + x0 + 6 * index + x] = color
+    return pixels
+
+
 def air_canada_roundel():
     """Draw a red maple leaf and its open circle at native matrix resolution.
 
@@ -380,12 +405,13 @@ def main():
     print("[airlines]")
     for icao, iata in AIRLINES.items():
         url = f"https://www.gstatic.com/flights/airline_logos/70px/{iata}.png"
-        img = fetch(url) if icao != "ACA" else None
-        if img is None and icao != "ACA":
+        img = fetch(url) if icao not in ("ACA", "JBU") else None
+        if img is None and icao not in ("ACA", "JBU"):
             skip += 1
             continue
         name = f"A_{icao}"
-        pixels = air_canada_roundel() if icao == "ACA" else to_rgb565_array(img)
+        pixels = (air_canada_roundel() if icao == "ACA" else
+                  jetblue_wordmark() if icao == "JBU" else to_rgb565_array(img))
         if icao == "AAL":
             pixels = clean_american_logo(pixels)
         elif icao == "DAL":
