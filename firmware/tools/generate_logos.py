@@ -13,7 +13,7 @@ import io
 import os
 import sys
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # The existing flight/score card layout reserves a 24x24 corner for logos.
 # Enlarging this also requires moving card text and the heading arrow.
@@ -39,7 +39,7 @@ TEAMS = {
 AIRLINES = {
     "AAL": "AA", "DAL": "DL", "UAL": "UA", "SWA": "WN", "JBU": "B6",
     "NKS": "NK", "FFT": "F9", "SKW": "OO", "ASA": "AS", "HAL": "HA",
-    "AAY": "G4", "SCX": "SY",
+    "AAY": "G4", "SCX": "SY", "ACA": "AC",
 }
 
 session = requests.Session()
@@ -142,6 +142,24 @@ def clean_predators_logo(pixels):
     return cleaned
 
 
+def air_canada_roundel():
+    """Draw a red maple leaf and its open circle at native matrix resolution.
+
+    The tiny Google airline mark can lose the leaf when resized. Use a fixed
+    pixel silhouette so regenerating the logo table keeps the same icon.
+    """
+    canvas = Image.new("1", (SIZE, SIZE))
+    draw = ImageDraw.Draw(canvas)
+    draw.ellipse((1, 1, 22, 22), outline=1, width=2)
+    draw.rectangle((10, 20, 13, 23), fill=0)  # circle opens at the stem
+    leaf = [(11, 4), (9, 8), (7, 7), (8, 10), (6, 9), (7, 12),
+            (5, 13), (10, 14), (9, 16), (11, 15), (11, 20),
+            (12, 20), (12, 15), (14, 16), (13, 14), (18, 13),
+            (16, 12), (17, 9), (15, 10), (16, 7), (13, 8), (12, 4)]
+    draw.polygon(leaf, fill=1)
+    return [0xE000 if lit else 0 for lit in canvas.getdata()]
+
+
 def clean_cowboys_logo(pixels):
     """Keep the white star and blue outline, dropping dim color fringes."""
     cleaned = []
@@ -169,6 +187,59 @@ def clean_ravens_logo(pixels):
             cleaned.append(0xFDE0)
         elif red > 40 or blue > 42:
             cleaned.append(0x4814)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def clean_giants_logo(pixels):
+    """Render the dark Giants lettering in one visible blue."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        cleaned.append(0x0018 if blue >= 25 and blue > red * 1.3 else 0)
+    return cleaned
+
+
+def clean_patriots_logo(pixels):
+    """Keep the flying head's blue, red and white regions separate."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        maximum, minimum = max(red, green, blue), min(red, green, blue)
+        if maximum < 54:
+            cleaned.append(0)
+        elif red > 105 and red > green * 1.3 and red > blue * 1.14:
+            cleaned.append(0xE000)
+        elif minimum > 125 and maximum - minimum < 100:
+            cleaned.append(0xFFFF)
+        elif blue > 50 and blue > red * .95:
+            cleaned.append(0x0016)
+        elif minimum > 93:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
+def clean_jaguars_logo(pixels):
+    """Separate the jaguar's gold coat, white details and teal accents."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        maximum, minimum = max(red, green, blue), min(red, green, blue)
+        if maximum < 52:
+            cleaned.append(0)
+        elif minimum > 140 and maximum - minimum < 70:
+            cleaned.append(0xFFFF)
+        elif blue > 55 and green > 48 and blue > red * 1.2:
+            cleaned.append(0x0211)
+        elif red > 75 and green > 55 and red > blue * 1.23:
+            cleaned.append(0xFDA0)
+        elif minimum > 90:
+            cleaned.append(0xFFFF)
+        elif blue > 50 and green > 45:
+            cleaned.append(0x0211)
         else:
             cleaned.append(0)
     return cleaned
@@ -292,6 +363,12 @@ def main():
                 pixels = clean_cowboys_logo(pixels)
             elif league == "NFL" and abbr == "BAL":
                 pixels = clean_ravens_logo(pixels)
+            elif league == "NFL" and abbr == "NYG":
+                pixels = clean_giants_logo(pixels)
+            elif league == "NFL" and abbr == "NE":
+                pixels = clean_patriots_logo(pixels)
+            elif league == "NFL" and abbr == "JAX":
+                pixels = clean_jaguars_logo(pixels)
             elif league == "MLB" and abbr == "NYY":
                 pixels = clean_yankees_logo(pixels)
             elif league == "MLB" and abbr == "BAL":
@@ -303,12 +380,12 @@ def main():
     print("[airlines]")
     for icao, iata in AIRLINES.items():
         url = f"https://www.gstatic.com/flights/airline_logos/70px/{iata}.png"
-        img = fetch(url)
-        if img is None:
+        img = fetch(url) if icao != "ACA" else None
+        if img is None and icao != "ACA":
             skip += 1
             continue
         name = f"A_{icao}"
-        pixels = to_rgb565_array(img)
+        pixels = air_canada_roundel() if icao == "ACA" else to_rgb565_array(img)
         if icao == "AAL":
             pixels = clean_american_logo(pixels)
         elif icao == "DAL":
