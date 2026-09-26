@@ -171,6 +171,41 @@ def clean_southwest_heart(pixels):
     return cleaned
 
 
+def clean_united_globe(pixels):
+    """Keep the white globe lines on a solid blue 24px field."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if min(red, green, blue) > 90 and max(red, green, blue) - min(red, green, blue) < 110:
+            cleaned.append(0xFFFF)
+        else:
+            cleaned.append(0x0018 if max(red, green, blue) >= 55 else 0)
+    return cleaned
+
+
+def clean_yankees_logo(pixels):
+    """Brighten the thin navy NY mark without colored antialiasing."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        cleaned.append(0x0018 if blue >= 24 and blue > red * 1.4 else 0)
+    return cleaned
+
+
+def clean_orioles_logo(pixels):
+    """Keep the orange bird, white details, and black unlit gaps."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if min(red, green, blue) > 125 and max(red, green, blue) - min(red, green, blue) < 100:
+            cleaned.append(0xFFFF)
+        elif red > 92 and red > green * 1.4 and red > blue * 1.5:
+            cleaned.append(0xFBC0)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
 def clean_american_logo(pixels):
     """Keep American's blue, white and red bands distinct at 24px."""
     cleaned = []
@@ -230,6 +265,10 @@ def main():
                 pixels = clean_cowboys_logo(pixels)
             elif league == "NFL" and abbr == "BAL":
                 pixels = clean_ravens_logo(pixels)
+            elif league == "MLB" and abbr == "NYY":
+                pixels = clean_yankees_logo(pixels)
+            elif league == "MLB" and abbr == "BAL":
+                pixels = clean_orioles_logo(pixels)
             arrays.append(emit_array(name, pixels))
             teams_tbl.append(f'  {{ "{league}:{abbr}", {name}, {SIZE}, {SIZE} }},')
             ok += 1
@@ -249,6 +288,8 @@ def main():
             pixels = clean_delta_widget(pixels)
         elif icao == "SWA":
             pixels = clean_southwest_heart(pixels)
+        elif icao == "UAL":
+            pixels = clean_united_globe(pixels)
         arrays.append(emit_array(name, pixels))
         air_tbl.append(f'  {{ "{icao}", {name}, {SIZE}, {SIZE} }},')
         ok += 1
