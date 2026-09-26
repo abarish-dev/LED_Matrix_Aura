@@ -22,7 +22,7 @@
 // Firmware version, reported to the app over BLE (hidden "About" reveal in the
 // Device tab). Bump this on every firmware change so field troubleshooting can
 // confirm which build is actually flashed.
-#define AURA_FW_VERSION    "1.6.18"
+#define AURA_FW_VERSION    "1.6.19"
 
 // ---- Persisted settings ----------------------------------------------------
 static const uint8_t MAX_TEAMS = 16;
