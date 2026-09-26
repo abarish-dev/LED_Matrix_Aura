@@ -79,6 +79,7 @@ static double haversineMi(double la1, double lo1, double la2, double lo2) {
 static String airlineFromCallsign(const String& cs) {
   String p = cs.substring(0, 3); p.toUpperCase();
   if (p == "AAL") return "American";
+  if (p == "ACA") return "Air Canada";
   if (p == "DAL") return "Delta";
   if (p == "UAL") return "United";
   if (p == "SWA") return "Southwest";
