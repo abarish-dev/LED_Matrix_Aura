@@ -117,6 +117,31 @@ def logo_rgb(pixel):
             (pixel & 31) * 255 // 31)
 
 
+def clean_predators_logo(pixels):
+    """Keep Nashville's saber-toothed cat legible in gold, navy and white."""
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        maximum, minimum = max(red, green, blue), min(red, green, blue)
+        if maximum < 46:
+            cleaned.append(0)
+        elif minimum > 130 and maximum - minimum < 85:
+            cleaned.append(0xFFFF)
+        elif red > 95 and green > 55 and red > blue * 1.35 and green > blue * .95:
+            cleaned.append(0xFDA0)
+        elif blue > 55 and blue > red * 1.03:
+            cleaned.append(0x00B0)
+        elif minimum > 95:
+            cleaned.append(0xFFFF)
+        elif red > 80 and green > 45 and red > blue * 1.25:
+            cleaned.append(0xFDA0)
+        elif blue > 43:
+            cleaned.append(0x00B0)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
 def clean_cowboys_logo(pixels):
     """Keep the white star and blue outline, dropping dim color fringes."""
     cleaned = []
@@ -261,6 +286,8 @@ def main():
             pixels = to_rgb565_array(img)
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
+            elif league == "NHL" and abbr == "NSH":
+                pixels = clean_predators_logo(pixels)
             elif league == "NFL" and abbr == "DAL":
                 pixels = clean_cowboys_logo(pixels)
             elif league == "NFL" and abbr == "BAL":
