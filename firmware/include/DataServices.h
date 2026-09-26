@@ -23,6 +23,51 @@ struct FlightInfo { bool ok=false; String callsign; int distanceMi=0; String air
 struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0; String status; String streak; bool isRecord=false; String record; };
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
 
+// The backend's out-of-season "nextEvent" fallback sends an explicit UTC
+// status such as "9/26 7:00 PM UTC". Convert only that known format, using the
+// board's configured timezone; ordinary ESPN status strings pass through.
+static String localizeUtcScoreStatus(const String& status) {
+  if (!status.endsWith(" UTC")) return status;
+  int month, day, hour, minute, consumed = 0;
+  char meridiem[3] = {};
+  if (sscanf(status.c_str(), "%d/%d %d:%d %2s UTC%n",
+             &month, &day, &hour, &minute, meridiem, &consumed) != 5 ||
+      consumed != (int)status.length() || month < 1 || month > 12 ||
+      day < 1 || day > 31 || hour < 1 || hour > 12 ||
+      minute < 0 || minute > 59 ||
+      (strcmp(meridiem, "AM") && strcmp(meridiem, "PM"))) return status;
+
+  struct tm nowLocal;
+  if (!getLocalTime(&nowLocal, 50)) return status;
+  int year = nowLocal.tm_year + 1900;
+  // The upcoming game may be on the other side of New Year's Day.
+  if (month <= 2 && nowLocal.tm_mon + 1 >= 11) ++year;
+  else if (month >= 11 && nowLocal.tm_mon + 1 <= 2) --year;
+
+  // Convert calendar date to days since the Unix epoch without timegm(),
+  // which is not provided by every ESP32 newlib build.
+  int y = year - (month <= 2);
+  int era = (y >= 0 ? y : y - 399) / 400;
+  unsigned yoe = y - era * 400;
+  unsigned doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+  unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  int64_t days = (int64_t)era * 146097 + doe - 719468;
+  int hour24 = (hour % 12) + (strcmp(meridiem, "PM") == 0 ? 12 : 0);
+  time_t utc = (time_t)(days * 86400 + hour24 * 3600 + minute * 60);
+  struct tm checkUtc, local;
+  if (!gmtime_r(&utc, &checkUtc) || checkUtc.tm_year != year - 1900 ||
+      checkUtc.tm_mon != month - 1 || checkUtc.tm_mday != day ||
+      !localtime_r(&utc, &local)) return status;
+  char zone[12] = {};
+  strftime(zone, sizeof(zone), "%Z", &local);
+  int localHour = local.tm_hour % 12;
+  if (!localHour) localHour = 12;
+  return String(local.tm_mon + 1) + "/" + String(local.tm_mday) + " " +
+         String(localHour) + ":" + (local.tm_min < 10 ? "0" : "") +
+         String(local.tm_min) + (local.tm_hour < 12 ? " AM " : " PM ") +
+         String(zone[0] ? zone : "local");
+}
+
 static double haversineMi(double la1, double lo1, double la2, double lo2) {
   const double R = 3958.8; // miles
   double dLa = radians(la2 - la1), dLo = radians(lo2 - lo1);
@@ -550,7 +595,7 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.score.away = String((const char*)(sc["away"] | ""));
     r.score.hs = sc["hs"] | 0;
     r.score.as = sc["as"] | 0;
-    r.score.status = String((const char*)(sc["st"] | ""));
+    r.score.status = localizeUtcScoreStatus(String((const char*)(sc["st"] | "")));
     r.score.isRecord = strcmp((const char*)(sc["mode"] | ""), "record") == 0;
     r.score.record = String((const char*)(sc["record"] | ""));
   }
@@ -566,7 +611,7 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     si.away = String((const char*)(s["away"] | ""));
     si.hs = s["hs"] | 0;
     si.as = s["as"] | 0;
-    si.status = String((const char*)(s["st"] | ""));
+    si.status = localizeUtcScoreStatus(String((const char*)(s["st"] | "")));
     si.isRecord = strcmp((const char*)(s["mode"] | ""), "record") == 0;
     si.record = String((const char*)(s["record"] | ""));
     r.scoreKeys[sn] = String((const char*)(s["key"] | ""));
