@@ -717,3 +717,27 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 ### Action items for user
 1. Reflash to v1.6.24.
 2. No backend/redeploy needed — firmware-only.
+
+
+## Session Update — Panthers sharpen + Orioles color fix (firmware v1.6.25)
+
+### Context
+- User: "Sharpen the Florida Panthers for next time. Also the Baltimore Orioles looks yellow — I think there should be more orange?"
+
+### Investigation
+- Sampled the real ESPN source PNG pixels (bucketed RGB histogram) instead of guessing colors blind:
+  - `NHL:FLA` had **no cleanup function at all** — it went through the generic resize/alpha-blend path, which leaves anti-aliased fringing that reads as "soft"/blurry at 24×24. Dominant real colors: navy face line-art (0,16,64), gold head (192,144,80), red shield band (224,0,32), white highlights (240,240,240).
+  - `MLB:BAL` already had a cleanup function, but its correctly-detected orange pixels were being repainted with a hardcoded **`0xFBC0`** (~255,190,0 — yellow) constant that never matched the source. The true sampled bird color is **(240,64,0)** — genuinely orange, not yellow. The bug was the hardcoded output color, not the detection logic.
+
+### Actions (DONE)
+- Added `rgb565()` helper for exact 8-bit→RGB565 conversion (avoids hand-computed hex mistakes).
+- New `clean_panthers_logo()`: quantizes to flat RED / GOLD / NAVY / WHITE (navy kept as a bright flat blue instead of dropped, since it carries the panther's facial line-art — dropping it first attempt turned the face into an unrecognizable blob).
+- `clean_orioles_logo()`: hardcoded output color changed from `0xFBC0` to `rgb565(240, 64, 0)` (measured from source), and the capture threshold loosened slightly (`red > 70` vs `92`) so more of the bird's edge shading is included instead of falling through to black.
+- Rendered before/after 24×24 previews for both (`/tmp/fla_after2.png`, `/tmp/bal_after.png`) and visually verified before finalizing.
+- Regenerated `generated_logos.h` in full (135 logos embedded, 0 skipped) — all other teams/airlines unchanged.
+- `AURA_FW_VERSION` = `1.6.25`.
+
+### Action items for user
+1. Reflash to v1.6.25.
+2. No backend/redeploy needed — firmware-only change.
+3. Please sanity-check on the physical panel — Panthers should now show a distinct red band / gold face / blue outline instead of a muddy blend; Orioles should read as orange, not yellow.

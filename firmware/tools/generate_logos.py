@@ -117,6 +117,43 @@ def logo_rgb(pixel):
             (pixel & 31) * 255 // 31)
 
 
+def rgb565(r, g, b):
+    """Pack a true 8-bit color into RGB565, matching to_rgb565_array's rounding."""
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+
+
+def clean_panthers_logo(pixels):
+    """Sharpen Florida's leaping panther into flat red, gold, navy and white.
+
+    Sampled pixels from the source PNG: a red shield band (224,0,32),
+    gold head (192,144,80), navy face line-art (0,16,64) and white
+    highlights (240,240,240). The navy carries the panther's facial
+    features, so it is quantized to a bright flat blue instead of being
+    dropped -- that removes the blurry anti-aliasing without erasing
+    the face detail.
+    """
+    RED = rgb565(230, 0, 20)
+    GOLD = rgb565(255, 191, 106)
+    NAVY = rgb565(20, 70, 220)
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        maximum, minimum = max(red, green, blue), min(red, green, blue)
+        if maximum < 30:
+            cleaned.append(0)
+        elif minimum > 170 and maximum - minimum < 55:
+            cleaned.append(0xFFFF)
+        elif blue > red and blue > green and blue > 30:
+            cleaned.append(NAVY)
+        elif red > 110 and green < 70 and red > blue * 1.4:
+            cleaned.append(RED)
+        elif red > 90 and green > 60 and red > blue * 1.3 and green > blue:
+            cleaned.append(GOLD)
+        else:
+            cleaned.append(0)
+    return cleaned
+
+
 def clean_predators_logo(pixels):
     """Keep Nashville's saber-toothed cat legible in gold, navy and white."""
     cleaned = []
@@ -218,14 +255,20 @@ def clean_yankees_logo(pixels):
 
 
 def clean_orioles_logo(pixels):
-    """Keep the orange bird, white details, and black unlit gaps."""
+    """Keep the orange bird, white details, and black unlit gaps.
+
+    Sampled pixels from the source PNG show the bird's true color is
+    already orange-leaning red (240,64,0) — the previous hardcoded
+    (255,190,0) constant was the yellow culprit, not the source art.
+    """
+    ORANGE = rgb565(240, 64, 0)
     cleaned = []
     for pixel in pixels:
         red, green, blue = logo_rgb(pixel)
         if min(red, green, blue) > 125 and max(red, green, blue) - min(red, green, blue) < 100:
             cleaned.append(0xFFFF)
-        elif red > 92 and red > green * 1.4 and red > blue * 1.5:
-            cleaned.append(0xFBC0)
+        elif red > 70 and red > green * 1.2 and red > blue * 1.3:
+            cleaned.append(ORANGE)
         else:
             cleaned.append(0)
     return cleaned
@@ -288,6 +331,8 @@ def main():
                 pixels = clean_hurricanes_logo(pixels)
             elif league == "NHL" and abbr == "NSH":
                 pixels = clean_predators_logo(pixels)
+            elif league == "NHL" and abbr == "FLA":
+                pixels = clean_panthers_logo(pixels)
             elif league == "NFL" and abbr == "DAL":
                 pixels = clean_cowboys_logo(pixels)
             elif league == "NFL" and abbr == "BAL":
