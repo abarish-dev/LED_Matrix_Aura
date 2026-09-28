@@ -767,3 +767,21 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.6.26.
 2. No backend/redeploy needed — firmware-only.
 3. Please check Panthers and the Red Sox "B" on the physical panel again, and flag any other logo that looks similarly speckled/wrong-colored so the same large-block simplification can be applied.
+
+
+## Session Update — CORRECTION: hardware theory was untested; real blocker is a stale flash pipeline
+
+### Context
+- User reflashed again after v1.6.26 and reported "doesn't look different" (same speckle). Asked them to check the app's Device tab → About reveal (live BLE-read `fw` version, not app-cached — confirmed in `src/store/matrix.tsx`'s `finishConnect()`, which resets and re-queries `fw` on every connect).
+- **Result: the board reported firmware version `1.6.23`** — three versions behind (missing 1.6.24, 1.6.25, and 1.6.26 entirely), on *both* reflash attempts this session.
+
+### Implication — IMPORTANT for continuity
+- The "fine-detail hardware limitation" root-cause theory from the previous update was diagnosed from photos of what was very likely still **1.6.23-era code**, not the actual v1.6.25/1.6.26 fixes. **That theory is UNCONFIRMED** — treat it as a working hypothesis only, not settled fact, until verified against a board actually running v1.6.26.
+- Verified locally: firmware files ARE properly git-tracked in this workspace and the v1.6.26 commit is clean HEAD (no uncommitted/reverted changes here) — so the gap is in the user's local pull/build/upload pipeline, not the source in this session.
+- Added a "Troubleshooting: I reflashed but nothing looks different" section to `firmware/README.md` with concrete verification steps (check live BLE version, `git log`/`grep AURA_FW_VERSION` before building, `pio run -t clean` to rule out stale `.pio` cache).
+- User was asked for `git log --oneline -5` + `grep AURA_FW_VERSION include/Config.h` output from their local clone to pinpoint pull vs. build/cache failure, but opted to skip and let the agent proceed with best judgment. **This diagnostic is still open** — no confirmed root cause for the stale flash yet.
+
+### Next agent should
+1. If the user reports the About screen version again, first confirm it now reads `1.6.26`+ before evaluating any visual/color fix.
+2. If still stale, walk them through `firmware/README.md`'s new troubleshooting section (fresh clone often the most reliable fix vs. debugging a stuck local checkout).
+3. Only re-open the Panthers/Red Sox/Orioles color investigation once a board confirmed on the latest version still shows a problem — don't keep iterating on color thresholds blind to what's actually running.

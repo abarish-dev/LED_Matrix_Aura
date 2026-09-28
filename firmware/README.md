@@ -46,3 +46,30 @@ app writes and the Wi-Fi status the firmware notifies back.
 - HTTPS uses `setInsecure()` for a simple start. For production, load a root CA.
 - Airline/team **logos** are stubbed as text; drop 1-bit or RGB565 bitmaps into
   `DisplayManager` and blit them in `flight()` / `score()` when ready.
+
+## Troubleshooting: "I reflashed but nothing looks different"
+Before assuming a code fix didn't work, confirm the **board itself** is actually
+running the new build — it's easy to flash a stale checkout without realizing it.
+
+1. **Check the version actually on the board.** Open the Aura app → Device tab →
+   connect → tap the hidden "About" reveal. It shows the firmware's live
+   `AURA_FW_VERSION` string, read fresh over BLE on every connect (not cached).
+   Compare it to `#define AURA_FW_VERSION` in `include/Config.h` — they must match.
+2. **If the app shows an older version than expected**, the board didn't get the
+   new code. Before re-uploading, in your local `firmware/` folder run:
+   ```
+   git log --oneline -5           # confirms which commits you actually have
+   grep AURA_FW_VERSION include/Config.h   # confirms the version in the file about to compile
+   ```
+   If either doesn't match what you expect, the **pull** failed (wrong branch,
+   stale/detached clone, or the "Save to GitHub" push hadn't happened yet before
+   you pulled) — fix that before re-uploading, a rebuild of stale code will not help.
+3. **If the pull is confirmed correct but the board still shows the old version**,
+   force a clean build before uploading (stale `.pio` object cache can occasionally
+   skip relinking on header-only changes):
+   ```
+   pio run -t clean
+   pio run -t upload
+   ```
+4. Only once the About screen confirms the *new* version number should you judge
+   whether a visual/behavior fix actually worked.
