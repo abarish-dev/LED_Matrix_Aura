@@ -122,46 +122,6 @@ def rgb565(r, g, b):
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-def clean_panthers_logo(pixels):
-    """Sharpen Florida's leaping panther into flat red, gold and white.
-
-    Sampled pixels from the source PNG: a red shield band (224,0,32),
-    gold head (192,144,80), navy face line-art (0,16,64) and white
-    highlights (240,240,240). A first pass kept navy as its own flat
-    blue for the facial detail, but on real hardware that produced a
-    mostly white/cyan speckled mess -- the panel's known "fine detail /
-    fast data density" limitation (documented for other detailed
-    bitmaps) kicks in on the thin navy facial strokes. Merging navy
-    into the surrounding gold removes that fine detail and keeps the
-    logo to 3 flat colors in large coherent blocks, matching the
-    logos that are known to render cleanly (Cowboys, Ravens, Orioles).
-    v1.6.29: the gold itself was still washed out on hardware (reads
-    "yellowish") even after the above. Comparing to Orioles' orange,
-    which DOES render cleanly, its green channel is much lower
-    relative to red (240,64 -> ratio 0.27) than the original gold here
-    was (255,191 -> ratio 0.75, essentially true yellow). Shifted gold
-    toward Orioles' proven ratio (255,113 -> ratio 0.44) and dropped
-    its blue channel to 0 (was 106) -- fewer simultaneously-mixed
-    channels, closer to a color family already confirmed working on
-    this exact panel.
-    """
-    RED = rgb565(230, 0, 20)
-    GOLD = rgb565(255, 113, 0)
-    cleaned = []
-    for pixel in pixels:
-        red, green, blue = logo_rgb(pixel)
-        maximum, minimum = max(red, green, blue), min(red, green, blue)
-        if maximum < 30:
-            cleaned.append(0)
-        elif minimum > 170 and maximum - minimum < 55:
-            cleaned.append(0xFFFF)
-        elif red > 110 and green < 70 and red > blue * 1.4:
-            cleaned.append(RED)
-        else:
-            cleaned.append(GOLD)
-    return cleaned
-
-
 def clean_red_sox_logo(pixels):
     """Keep Boston's "B" mark in flat red, no navy/white detail.
 
@@ -186,6 +146,52 @@ def clean_red_sox_logo(pixels):
         else:
             cleaned.append(RED)
     return cleaned
+
+
+def florida_panthers_mark():
+    """Readable 24px Panthers shield with a red FLA banner and gold cat.
+
+    Hand-drawn at panel resolution (from a GitHub-branch contribution) instead
+    of downsampled from the full ESPN crest, which has tiny FLORIDA letters
+    and hundreds of antialiased colors that blur into mud at 24px.
+
+    Gold's RGB565 value below was changed from the original contribution's
+    (255,186,0) to (255,113,0): on this exact hardware, colors mixing R+G
+    show a signal-integrity glitch, and Orioles' orange (which renders
+    cleanly) has a much lower green-to-red ratio (~0.27) than gold's
+    original ~0.73 (near-true-yellow). This shifts it to ~0.44, matching
+    the same fix already applied to Panthers/other logos this session.
+    """
+    rows = (
+        ".......GGGGGGGGGGG......",
+        "..GGGGGGNNNNNNNNNGGGGG..",
+        "..GNNNWWWRRWRRRRRWNNNNG.",
+        "..GNRRWRRRRWRRRRWRWRRNG.",
+        "..GNRRWWRRRWRRRRWWWRRNG.",
+        "..GNRRWRRRRWRRRRWRWRRNG.",
+        "..GNRRWRRRRWWWRRWRWRRNG.",
+        "..GNRNNNNNNNNNNNNNNNRNG.",
+        "..GNNNNNNGGGGGGNNNNGNNG.",
+        "..GNNNNGGGGNNNNNGNNGNNG.",
+        "..GNNGGNNNNNWWNGGGGNNNG.",
+        "..GNNGGNWWRWWNGGGGGNGNG.",
+        "..GNNGGNNWWWGGGGGGGNNNG.",
+        "..GNNWGNWGNNNNGGGGNGNNG.",
+        "..GNNWWWWWWGGGGGGNGGNNG.",
+        "...GNNNNNWGGGGGGGGNGGG..",
+        "...GGNWWWNNGGGGGGGNGGG..",
+        "....GNNNNGWGGGGGGNGGG...",
+        "....GGNNNNGWWWGGNNGGG...",
+        ".....GGGNNNNWWGNNGGG....",
+        ".......GGNNNNNWNGG......",
+        ".........GGNNNGG........",
+        "..........GGNGG.........",
+        "............G...........",
+    )
+    assert len(rows) == SIZE and all(len(row) == SIZE for row in rows)
+    colors = {".": 0x0000, "R": 0xE000, "N": 0x0012,
+              "G": rgb565(255, 113, 0), "W": 0xFFFF}
+    return [colors[pixel] for row in rows for pixel in row]
 
 
 def clean_predators_logo(pixels):
@@ -355,18 +361,17 @@ def main():
         print(f"[{league}]")
         for abbr in abbrs:
             url = f"https://a.espncdn.com/i/teamlogos/{league.lower()}/500/{abbr.lower()}.png"
-            img = fetch(url)
-            if img is None:
+            is_panthers = league == "NHL" and abbr == "FLA"
+            img = None if is_panthers else fetch(url)
+            if img is None and not is_panthers:
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            pixels = to_rgb565_array(img)
+            pixels = florida_panthers_mark() if is_panthers else to_rgb565_array(img)
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
             elif league == "NHL" and abbr == "NSH":
                 pixels = clean_predators_logo(pixels)
-            elif league == "NHL" and abbr == "FLA":
-                pixels = clean_panthers_logo(pixels)
             elif league == "NFL" and abbr == "DAL":
                 pixels = clean_cowboys_logo(pixels)
             elif league == "NFL" and abbr == "BAL":

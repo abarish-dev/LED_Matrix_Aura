@@ -848,3 +848,24 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 ### Action items for user
 1. Reflash to v1.6.29.
 2. No backend/redeploy needed — firmware-only.
+
+
+## Session Update — Pulled ChatGPT's hand-drawn Panthers crest, fixed its color (firmware v1.6.30)
+
+### Context
+- User: "Chatgpt fixed it. You wanna pull it in to sync it?" — same `codex/display-type-weather-icons` branch as previous logo pulls.
+
+### What was pulled
+- Cloned the branch fresh; tip commit (`242e9ee`, "Bump firmware version to 1.6.24 for Panthers logo") contains exactly 2 real commits since the last sync: `035e859` ("Generate Florida Panthers shield as crisp native 24px bitmap") and `7079bc5` ("Ship sharp Florida Panthers crest"). Diffed against the last-pulled base (`fdd0818`) to confirm scope: only `Config.h` (version bump, ignored — using our own 1.6.30), `generated_logos.h` (regenerated locally instead of copied), and `generate_logos.py` (the real change).
+- The real change: a brand-new `florida_panthers_mark()` function — a **hand-drawn 24×24 ASCII-art pixel grid** (shield outline, "FLA" banner, panther silhouette) mapped to a small fixed palette, entirely bypassing the ESPN-fetch-and-threshold pipeline that produced every previous attempt this session. Far more legible than anything auto-generated from the source photo.
+
+### One correction before merging (not a blind copy)
+- Their gold constant was `(255,186,0)` — a ~0.73 green-to-red ratio, i.e. still essentially true yellow, the same color family already established this session as the root cause of the "washed out yellowish" look on this hardware. Changed it to `(255,113,0)` (~0.44 ratio) — the same hardware-safe value already validated for Panthers' gold in v1.6.29 — while keeping their red (`0xE000`), navy (`0x0012`), and white (`0xFFFF`) as-is (already pure/safe channel combinations).
+- Removed the now-superseded `clean_panthers_logo()` (photo-threshold approach); wired `NHL:FLA` to skip the ESPN fetch entirely and use `florida_panthers_mark()` instead.
+- Rendered a preview (`/tmp/fla_codex.png`) before finalizing — clean shield, readable "FLA" text, orange body, blue/white face detail.
+- Regenerated `generated_logos.h` in full (135 logos, 0 skipped). `AURA_FW_VERSION` = `1.6.30`.
+
+### Action items for user
+1. Reflash to v1.6.30.
+2. No backend/redeploy needed — firmware-only.
+3. This is the best-looking Panthers attempt yet (hand-drawn shape + hardware-safe color) — please confirm on the physical panel.
