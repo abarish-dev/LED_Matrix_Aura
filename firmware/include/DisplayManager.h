@@ -42,12 +42,14 @@ inline void begin() {
                                  // still ~half the RAM of the default 8-bit
   // Colors mixing R+G (orange/yellow/white) showing a green-on-top /
   // red-on-bottom split, while pure colors look fine, points to marginal
-  // signal integrity on the R/G data lines (loose HUB75 ribbon connector, or
-  // the replacement panel's R2/G2 lines needing a slower clock) rather than
-  // a driver-chip setting — FM6126A special init was already ruled out
-  // (removing it in v1.5.4 did not change this). Try the panel's ribbon
-  // cable reseated firmly at BOTH ends first; this slower clock is a second,
-  // purely-software mitigation for the same class of issue.
+  // signal integrity on the R/G data lines rather than a driver-chip
+  // setting — FM6126A special init was already ruled out (removing it in
+  // v1.5.4 did not change this). NOTE (v1.6.29): user confirmed this panel
+  // is direct-connect (no ribbon cable to reseat) — that mitigation from
+  // an earlier note doesn't apply here. Remaining levers: latch_blanking
+  // (below) and keeping colors closer to already-proven-good families
+  // (e.g. Orioles' low-green orange) rather than true yellow/gold, which
+  // is the closest thing to a real fix found so far.
   // v1.6.27: verified this library's clk_speed enum has NO slower option than
   // HZ_8M (checked the enum directly) — HZ_5M mentioned above was aspirational
   // and does not exist, so we stay at the floor here. latch_blanking (below)

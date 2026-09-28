@@ -830,3 +830,21 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 ### Action items for user
 1. Reflash to v1.6.28.
 2. No backend/redeploy needed — firmware-only.
+
+
+## Session Update — Day/night fix confirmed live; one more data-driven Panthers attempt (firmware v1.6.29)
+
+### Context
+- Moon/sun bug: user confirmed on v1.6.28 at ZIP 28117 (Mooresville, NC), 1:32pm local — verified live against Open-Meteo directly (`is_day:1`, `timezone: America/New_York`) that it should be day. Shortly after, user reported "the moon just became a sun" — confirms the `timezone=auto` fix worked, it just needed one fetch cycle after reflash to take effect. **Closed.**
+- Panthers: user confirmed Boston is now fixed, but Panthers is "still terrible" after 3 rounds (4-color → merged 3-color → latch_blanking bump). Also clarified their panel is **direct-connect, no ribbon cable** — the earlier "reseat the cable" recommendation doesn't apply to this hardware and was corrected in the `DisplayManager.h` code comment.
+
+### This round's change (data-driven, not a blind repeat)
+- Compared Panthers' gold against Orioles' orange, which IS confirmed rendering cleanly: Orioles' green channel is only ~27% of its red (240,64); Panthers' gold had green at ~75% of red (255,191) — i.e. genuinely close to true yellow, not orange. Shifted gold to (255,113,0) — ~44% ratio, roughly the midpoint, and dropped its blue channel to 0 (was 106) so only R+G mix instead of all three channels simultaneously.
+- Regenerated `generated_logos.h` (135 logos, 0 skipped). `AURA_FW_VERSION` = `1.6.29`.
+
+### If this still doesn't look right
+- User has offered to get an updated Panthers asset made via ChatGPT (same pattern as previous GitHub-branch logo pulls this project has already used successfully) if this 4th attempt still isn't good enough — that's the sensible next step rather than a 5th blind palette guess, given the diminishing returns.
+
+### Action items for user
+1. Reflash to v1.6.29.
+2. No backend/redeploy needed — firmware-only.

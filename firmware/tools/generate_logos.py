@@ -135,9 +135,18 @@ def clean_panthers_logo(pixels):
     into the surrounding gold removes that fine detail and keeps the
     logo to 3 flat colors in large coherent blocks, matching the
     logos that are known to render cleanly (Cowboys, Ravens, Orioles).
+    v1.6.29: the gold itself was still washed out on hardware (reads
+    "yellowish") even after the above. Comparing to Orioles' orange,
+    which DOES render cleanly, its green channel is much lower
+    relative to red (240,64 -> ratio 0.27) than the original gold here
+    was (255,191 -> ratio 0.75, essentially true yellow). Shifted gold
+    toward Orioles' proven ratio (255,113 -> ratio 0.44) and dropped
+    its blue channel to 0 (was 106) -- fewer simultaneously-mixed
+    channels, closer to a color family already confirmed working on
+    this exact panel.
     """
     RED = rgb565(230, 0, 20)
-    GOLD = rgb565(255, 191, 106)
+    GOLD = rgb565(255, 113, 0)
     cleaned = []
     for pixel in pixels:
         red, green, blue = logo_rgb(pixel)
