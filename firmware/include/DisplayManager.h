@@ -48,14 +48,19 @@ inline void begin() {
   // (removing it in v1.5.4 did not change this). Try the panel's ribbon
   // cable reseated firmly at BOTH ends first; this slower clock is a second,
   // purely-software mitigation for the same class of issue.
-  cfg.i2sspeed = HUB75_I2S_CFG::HZ_8M;   // was default (~10-15MHz); step down
-                                          // further to HZ_5M if still glitchy
+  // v1.6.27: verified this library's clk_speed enum has NO slower option than
+  // HZ_8M (checked the enum directly) — HZ_5M mentioned above was aspirational
+  // and does not exist, so we stay at the floor here. latch_blanking (below)
+  // is the remaining safe software knob; reseating the ribbon cable is the
+  // other one, and needs to happen on the hardware side.
+  cfg.i2sspeed = HUB75_I2S_CFG::HZ_8M;
   // Ghosting fix: bright elements (e.g. the weather clock's sun icon) can
   // leak a faint stray-colored pixel onto neighboring rows/cols without extra
   // blanking time around the row latch. 2 is the documented starting point
   // for this library (max 4; higher trades a little brightness for less
-  // ghosting) — bump toward 3-4 here if any stray pixels are still visible.
-  cfg.latch_blanking = 2;
+  // ghosting) — bumped to 3 in v1.6.27 after multi-color logos (gold/white
+  // mixed with red) still showed a visible green/red split at 2.
+  cfg.latch_blanking = 3;
   dma = new MatrixPanel_I2S_DMA(cfg);
   dma->begin();
   dma->setBrightness8(120);
@@ -296,12 +301,31 @@ inline void weatherScroll(const String& headline, uint16_t severityColor, int sc
 
 // Next UFC event "card" — text-only (no fighter photos), consistent with the
 // other simple info cards. Uses the same colored-bar pattern as weather().
-inline void ufc(const String& name, const String& date, const String& headline) {
+// Long fight names/headlines marquee-scroll (same technique as
+// weatherScroll()) instead of overflowing off both edges of the panel.
+inline void ufc(const String& name, const String& date, const String& headline,
+                 int scrollX = 0) {
   clear();
   dma->fillRect(0, 0, MATRIX_W, 12, rgb(239, 68, 68));
   centerText("UFC FIGHT NIGHT", 2, rgb(0, 0, 0), 1);
-  centerText(name.c_str(), 24, rgb(255, 255, 255), 1);
-  if (headline.length()) centerText(headline.c_str(), 40, rgb(200, 200, 200), 1);
+
+  auto scrollLine = [&](const String& text, int y, uint16_t color) {
+    if (!text.length()) return;
+    int textW = (int)text.length() * 6;
+    if (textW <= MATRIX_W - 4) {
+      centerText(text.c_str(), y, color, 1);
+    } else {
+      dma->setFont(nullptr);
+      dma->setTextSize(1);
+      dma->setTextWrap(false);
+      dma->setTextColor(color);
+      dma->setCursor(MATRIX_W - scrollX, y);   // slides in from the right, exits left
+      dma->print(text);
+    }
+  };
+
+  scrollLine(name, 24, rgb(255, 255, 255));
+  if (headline.length()) scrollLine(headline, 40, rgb(200, 200, 200));
   centerText(date.c_str(), 54, rgb(239, 68, 68), 1);
   flip();
 }

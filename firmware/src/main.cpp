@@ -708,6 +708,8 @@ void loop() {
 
   static int alertScrollX = 0;
   static uint32_t lastScroll = 0;
+  static int ufcScrollX = 0;
+  static uint32_t lastUfcScroll = 0;
 
   uint8_t seq[5];
   uint8_t n = buildSeq(seq);
@@ -737,6 +739,7 @@ void loop() {
     cardIndex++;
     cur = seq[cardIndex % n];
     alertScrollX = 0;              // fresh marquee each time the alert comes up
+    ufcScrollX = 0;                // fresh marquee each time the UFC card comes up
     applyBrightnessForNow();       // re-evaluate the night schedule each card
     drawCard(cur);
     gFirstCardShown = true;
@@ -749,6 +752,17 @@ void loop() {
     int textW = (int)gWeather.headline.length() * 6;
     alertScrollX += 2;                                  // scroll speed (px/frame)
     if (alertScrollX > textW + MATRIX_W) alertScrollX = 0;
+  }
+
+  // While the UFC card is showing, keep scrolling any name/headline that's
+  // wider than the panel (long fight-card names otherwise overflow both
+  // edges since the card only centers text, never wraps/truncates it).
+  if (cur == 4 && now - lastUfcScroll >= 40) {
+    lastUfcScroll = now;
+    Display::ufc(gUfc.name, gUfc.date, gUfc.headline, ufcScrollX);
+    int textW = max((int)gUfc.name.length(), (int)gUfc.headline.length()) * 6;
+    ufcScrollX += 2;                                    // scroll speed (px/frame)
+    if (ufcScrollX > textW + MATRIX_W) ufcScrollX = 0;
   }
 
   delay(20);

@@ -785,3 +785,30 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. If the user reports the About screen version again, first confirm it now reads `1.6.26`+ before evaluating any visual/color fix.
 2. If still stale, walk them through `firmware/README.md`'s new troubleshooting section (fresh clone often the most reliable fix vs. debugging a stuck local checkout).
 3. Only re-open the Panthers/Red Sox/Orioles color investigation once a board confirmed on the latest version still shows a problem — don't keep iterating on color thresholds blind to what's actually running.
+
+
+## Session Update — Real v1.6.26 data + 3 fixes (firmware v1.6.27)
+
+### Context
+- Root cause of the stale flash (previous update): user's local checkout was stuck, unrelated to GitHub sync. Fixed via a fresh `git clone` — confirmed `git log` + `grep AURA_FW_VERSION` matched HEAD (`1.6.26`) before building.
+- With a *confirmed* v1.6.26 board, user reported 3 things: (1) Red Sox "B" still not red, (2) Panthers logo is "a bright yellowish shield, can't tell much", (3) UFC Fight Night card text overflowing off both edges of the panel.
+
+### Root cause — found existing but unapplied code comments in `DisplayManager.h`
+- A previous session had already diagnosed and documented (but not fully applied) the real issue: **colors mixing R+G (orange/yellow/white) show a green-on-top/red-on-bottom split** on this specific/replacement panel — a signal-integrity issue on the R/G HUB75 data lines, not a palette-choice bug. This explains both the "yellowish" Panthers (gold + white both mix R+G) and, partially, the Red Sox red (my v1.6.26 constant still had trace G/B).
+- The comment suggested stepping the I2S clock down to `HZ_5M` as the next mitigation — **verified via the library's actual `clk_speed` enum that `HZ_5M` does not exist** (floor is `HZ_8M`). Reverted that attempted change before it could break the build; corrected the comment so this dead end isn't retried.
+
+### Actions (DONE)
+1. **UFC overflow**: `Display::ufc()` only ever centered text with no wrap/truncation, unlike the weather-alert card's existing marquee-scroll pattern. Added the same scroll technique (`ufcScrollX`, mirrors `alertScrollX` in `main.cpp`) so long fight names/headlines slide across instead of clipping off both edges.
+2. **Red Sox**: `clean_red_sox_logo()` now emits pure `rgb565(255,0,0)` (G=B=0 exactly, was (230,20,40) which still had trace green/blue) — this panel's signal-integrity issue means any non-zero G can visibly shift red toward white/pink.
+3. **Signal integrity (affects Panthers gold/white + everything else)**: bumped `latch_blanking` from 2 → 3 (a real, already-tested tunable in this codebase, safe increment per its own doc comment — "bump toward 3-4 if stray pixels still visible").
+4. Regenerated `generated_logos.h` (135 logos, 0 skipped). `AURA_FW_VERSION` = `1.6.27`.
+
+### Known limitation / what's still open
+- "Gold" is inherently an R+G mix — there is no way to represent it that fully avoids this panel's documented R/G signal-integrity issue without changing team identity colors. If Panthers/other gold-using logos (Predators, Ravens, Southwest) still look washed-out/yellowish after `latch_blanking=3`, the **highest-leverage untried fix is physical**: reseat the HUB75 ribbon cable firmly at BOTH ends (the first mitigation this issue's original comment recommended — no evidence yet it's been tried this session).
+- Did not touch `cfg.double_buff` (false) or `setPixelColorDepthBits` (6) — both are deliberate tradeoffs for a previously-solved TLS/OOM stall issue; changing them risks regressing that to chase this one.
+
+### Action items for user
+1. Reflash to v1.6.27 (same fresh-clone folder, just re-pull + clean + upload).
+2. Please physically reseat the ribbon cable at both ends before judging colors again — this is the most likely real fix for the gold/white "yellowish" look, more so than any further software tweak.
+3. Confirm UFC long text now scrolls instead of clipping, and Red Sox reads as clean red.
+4. No backend/redeploy needed — firmware-only.

@@ -163,8 +163,12 @@ def clean_red_sox_logo(pixels):
     almost entirely dropped out. Collapsing to a single flat red
     silhouette (dropping the thin navy outline) is the most reliable
     way to keep a letterform legible at this resolution on this panel.
+    v1.6.27: zeroed the G/B channels entirely (was (230,20,40), which
+    still had trace green/blue) -- this panel has a documented R/G
+    signal-integrity issue where any G mixed into a color can show as
+    a visible white/pink shift, so pure red must have G=B=0.
     """
-    RED = rgb565(230, 20, 40)
+    RED = rgb565(255, 0, 0)
     cleaned = []
     for pixel in pixels:
         red, green, blue = logo_rgb(pixel)
