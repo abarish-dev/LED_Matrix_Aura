@@ -110,6 +110,45 @@ def clean_hurricanes_logo(pixels):
     return cleaned
 
 
+def florida_panthers_mark():
+    """Readable 24px Panthers shield with a red FLA banner and gold cat.
+
+    The full ESPN crest has tiny FLORIDA letters and hundreds of antialiased
+    colors when reduced to 24px. Draw its defining shapes at panel resolution
+    so later asset regeneration does not restore the blurry original.
+    """
+    rows = (
+        ".......GGGGGGGGGGG......",
+        "..GGGGGGNNNNNNNNNGGGGG..",
+        "..GNNNWWWRRWRRRRRWNNNNG.",
+        "..GNRRWRRRRWRRRRWRWRRNG.",
+        "..GNRRWWRRRWRRRRWWWRRNG.",
+        "..GNRRWRRRRWRRRRWRWRRNG.",
+        "..GNRRWRRRRWWWRRWRWRRNG.",
+        "..GNRNNNNNNNNNNNNNNNRNG.",
+        "..GNNNNNNGGGGGGNNNNGNNG.",
+        "..GNNNNGGGGNNNNNGNNGNNG.",
+        "..GNNGGNNNNNWWNGGGGNNNG.",
+        "..GNNGGNWWRWWNGGGGGNGNG.",
+        "..GNNGGNNWWWGGGGGGGNNNG.",
+        "..GNNWGNWGNNNNGGGGNGNNG.",
+        "..GNNWWWWWWGGGGGGNGGNNG.",
+        "...GNNNNNWGGGGGGGGNGGG..",
+        "...GGNWWWNNGGGGGGGNGGG..",
+        "....GNNNNGWGGGGGGNGGG...",
+        "....GGNNNNGWWWGGNNGGG...",
+        ".....GGGNNNNWWGNNGGG....",
+        ".......GGNNNNNWNGG......",
+        ".........GGNNNGG........",
+        "..........GGNGG.........",
+        "............G...........",
+    )
+    assert len(rows) == SIZE and all(len(row) == SIZE for row in rows)
+    colors = {".": 0x0000, "R": 0xE000, "N": 0x0012,
+              "G": 0xFDC0, "W": 0xFFFF}
+    return [colors[pixel] for row in rows for pixel in row]
+
+
 def logo_rgb(pixel):
     """Expand RGB565 channels for stable, palette-based pixel decisions."""
     return ((pixel >> 11 & 31) * 255 // 31,
@@ -374,12 +413,13 @@ def main():
         print(f"[{league}]")
         for abbr in abbrs:
             url = f"https://a.espncdn.com/i/teamlogos/{league.lower()}/500/{abbr.lower()}.png"
-            img = fetch(url)
-            if img is None:
+            is_panthers = league == "NHL" and abbr == "FLA"
+            img = None if is_panthers else fetch(url)
+            if img is None and not is_panthers:
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            pixels = to_rgb565_array(img)
+            pixels = florida_panthers_mark() if is_panthers else to_rgb565_array(img)
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
             elif league == "NHL" and abbr == "NSH":
