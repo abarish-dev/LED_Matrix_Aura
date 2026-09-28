@@ -460,7 +460,7 @@ inline int currentTempF(double lat, double lon, int* feels = nullptr,
   String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(lat, 4) +
                "&longitude=" + String(lon, 4) +
                "&current=temperature_2m,apparent_temperature,weather_code,is_day" +
-               "&temperature_unit=fahrenheit";
+               "&temperature_unit=fahrenheit&timezone=auto";
   String body = httpGet(url);
   if (body.isEmpty()) return -999;
   JsonDocument doc;

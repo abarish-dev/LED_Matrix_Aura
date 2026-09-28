@@ -812,3 +812,21 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 2. Please physically reseat the ribbon cable at both ends before judging colors again — this is the most likely real fix for the gold/white "yellowish" look, more so than any further software tweak.
 3. Confirm UFC long text now scrolls instead of clipping, and Red Sox reads as clean red.
 4. No backend/redeploy needed — firmware-only.
+
+
+## Session Update — Sun/moon icon bug fixed (firmware v1.6.28)
+
+### Context
+- User: "I just noticed on the weather slide there is a crescent moon showing and not a sun?"
+
+### Root cause
+- `DataServices.h`'s `currentTempF()` (the direct, non-proxy weather fetch path used by the firmware when it isn't going through the backend `/api/matrix/feed` proxy) built its Open-Meteo URL **without `&timezone=auto`**. Without that parameter, Open-Meteo computes `is_day` relative to **UTC**, not the board's actual local time at its lat/lon — so during genuine local daytime it can report "night" whenever UTC happens to be past sunset. `dailyHiLo()` (a few lines below in the same file) and the backend's own `_fetch_temp()` in `server.py` both already had `&timezone=auto` — only this one direct-fetch function was missing it.
+
+### Actions (DONE)
+- Added `&timezone=auto` to `currentTempF()`'s request URL in `DataServices.h`.
+- Confirmed the backend's temp fetch (`server.py` `_fetch_temp`) already had this correctly — no backend change needed.
+- `AURA_FW_VERSION` = `1.6.28`.
+
+### Action items for user
+1. Reflash to v1.6.28.
+2. No backend/redeploy needed — firmware-only.
