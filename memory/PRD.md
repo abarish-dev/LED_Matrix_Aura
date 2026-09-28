@@ -741,3 +741,29 @@ Driven by hardware photos: v1.3.0 confirmed working (flight card shows callsign/
 1. Reflash to v1.6.25.
 2. No backend/redeploy needed — firmware-only change.
 3. Please sanity-check on the physical panel — Panthers should now show a distinct red band / gold face / blue outline instead of a muddy blend; Orioles should read as orange, not yellow.
+
+
+## Session Update — Root cause found: fine-detail hardware limit (firmware v1.6.26)
+
+### Context
+- User reflashed v1.6.25 and reported: Panthers logo rendered as a mostly white/cyan speckled mess (barely any red/gold visible), and separately flagged the Boston "B" logo (`MLB:BOS`) rendering purple/blue instead of red.
+
+### Root cause (confirmed via physical photos)
+- This is **not** a color-value bug — it's the already-documented "fine detail / fast data density" hardware limitation (ribbon cable / HUB75 shift registers struggling with rapid pixel-to-pixel color changes), resurfacing on any *new, thin/multi-color* bitmap:
+  - Panthers v1 had 4 flat colors with thin navy facial line-art inside the gold head → on hardware, red/gold data almost entirely dropped out, replaced by white/cyan.
+  - Red Sox `MLB:BOS` "B" glyph (red body + thin navy outline, inherent letterform strokes) → same failure, red mostly replaced by white/cyan/blue.
+  - By contrast, logos that already render fine (Orioles, Cowboys, Ravens) are all **large coherent color blocks** with no thin multi-color detail — confirming the pattern.
+
+### Actions (DONE)
+- `clean_panthers_logo()`: dropped the separate navy facial color, merging it into gold. Now 3 flat colors (RED/GOLD/WHITE) in large coherent blocks — no thin detail.
+- New `clean_red_sox_logo()`: collapsed to a single flat RED silhouette (dropped the thin navy outline entirely) for `MLB:BOS`.
+- Regenerated `generated_logos.h` in full (135 logos, 0 skipped).
+- `AURA_FW_VERSION` = `1.6.26`.
+
+### Known limitation (be upfront)
+- This hardware fine-detail ceiling may still affect other logos with thin strokes or letterforms (same class of issue previously accepted for JetBlue's cursive wordmark). If a specific logo still looks off after this fix, the reliable path is the same: reduce it to fewer, larger, flatter color regions rather than trying to preserve fine detail.
+
+### Action items for user
+1. Reflash to v1.6.26.
+2. No backend/redeploy needed — firmware-only.
+3. Please check Panthers and the Red Sox "B" on the physical panel again, and flag any other logo that looks similarly speckled/wrong-colored so the same large-block simplification can be applied.

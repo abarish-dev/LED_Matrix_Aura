@@ -123,18 +123,21 @@ def rgb565(r, g, b):
 
 
 def clean_panthers_logo(pixels):
-    """Sharpen Florida's leaping panther into flat red, gold, navy and white.
+    """Sharpen Florida's leaping panther into flat red, gold and white.
 
     Sampled pixels from the source PNG: a red shield band (224,0,32),
     gold head (192,144,80), navy face line-art (0,16,64) and white
-    highlights (240,240,240). The navy carries the panther's facial
-    features, so it is quantized to a bright flat blue instead of being
-    dropped -- that removes the blurry anti-aliasing without erasing
-    the face detail.
+    highlights (240,240,240). A first pass kept navy as its own flat
+    blue for the facial detail, but on real hardware that produced a
+    mostly white/cyan speckled mess -- the panel's known "fine detail /
+    fast data density" limitation (documented for other detailed
+    bitmaps) kicks in on the thin navy facial strokes. Merging navy
+    into the surrounding gold removes that fine detail and keeps the
+    logo to 3 flat colors in large coherent blocks, matching the
+    logos that are known to render cleanly (Cowboys, Ravens, Orioles).
     """
     RED = rgb565(230, 0, 20)
     GOLD = rgb565(255, 191, 106)
-    NAVY = rgb565(20, 70, 220)
     cleaned = []
     for pixel in pixels:
         red, green, blue = logo_rgb(pixel)
@@ -143,14 +146,32 @@ def clean_panthers_logo(pixels):
             cleaned.append(0)
         elif minimum > 170 and maximum - minimum < 55:
             cleaned.append(0xFFFF)
-        elif blue > red and blue > green and blue > 30:
-            cleaned.append(NAVY)
         elif red > 110 and green < 70 and red > blue * 1.4:
             cleaned.append(RED)
-        elif red > 90 and green > 60 and red > blue * 1.3 and green > blue:
-            cleaned.append(GOLD)
         else:
+            cleaned.append(GOLD)
+    return cleaned
+
+
+def clean_red_sox_logo(pixels):
+    """Keep Boston's "B" mark in flat red, no navy/white detail.
+
+    Sampled pixels: red glyph body (208,32,48), navy outline (0,32,80).
+    The "B" letterform is inherently thin strokes at 24px, which hits
+    the same fine-detail hardware limitation as the Panthers face --
+    on the physical panel this rendered as mostly white/cyan with red
+    almost entirely dropped out. Collapsing to a single flat red
+    silhouette (dropping the thin navy outline) is the most reliable
+    way to keep a letterform legible at this resolution on this panel.
+    """
+    RED = rgb565(230, 20, 40)
+    cleaned = []
+    for pixel in pixels:
+        red, green, blue = logo_rgb(pixel)
+        if max(red, green, blue) < 35:
             cleaned.append(0)
+        else:
+            cleaned.append(RED)
     return cleaned
 
 
@@ -341,6 +362,8 @@ def main():
                 pixels = clean_yankees_logo(pixels)
             elif league == "MLB" and abbr == "BAL":
                 pixels = clean_orioles_logo(pixels)
+            elif league == "MLB" and abbr == "BOS":
+                pixels = clean_red_sox_logo(pixels)
             arrays.append(emit_array(name, pixels))
             teams_tbl.append(f'  {{ "{league}:{abbr}", {name}, {SIZE}, {SIZE} }},')
             ok += 1
