@@ -135,11 +135,20 @@ static void applyBrightnessForNow() {
     struct tm t;
     if (getLocalTime(&t, 50)) {
       if (gSettings.night.useSunset) {
-        // Dim from local sunset to sunrise; sun times cached per day.
+        // Cache sunrise/sunset per day. A failed HTTPS lookup must not run
+        // again on every card: retry at most once per hour when online.
         static int cachedYday = -1, srMin = -1, ssMin = -1;
-        if (t.tm_yday != cachedYday || srMin < 0 || ssMin < 0) {
-          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, srMin, ssMin);
-          if (srMin >= 0 && ssMin >= 0) cachedYday = t.tm_yday;
+        static uint32_t lastSunAttempt = 0;
+        bool needsSun = t.tm_yday != cachedYday || srMin < 0 || ssMin < 0;
+        uint32_t currentMs = millis();
+        if (needsSun && WiFi.status() == WL_CONNECTED &&
+            (lastSunAttempt == 0 || currentMs - lastSunAttempt >= 3600000UL)) {
+          lastSunAttempt = currentMs;
+          int sunrise = -1, sunset = -1;
+          Data::sunTimes(gSettings.flights.lat, gSettings.flights.lon, sunrise, sunset);
+          if (sunrise >= 0 && sunset >= 0) {
+            srMin = sunrise; ssMin = sunset; cachedYday = t.tm_yday;
+          }
         }
         if (srMin >= 0 && ssMin >= 0) {
           int nowMin = t.tm_hour * 60 + t.tm_min;
@@ -555,20 +564,10 @@ static void drawCard(uint8_t t) {
       fp = &gFlightList[0]; shownIdx = 0;
     }
     bool tracked = (gTrackedIdx >= 0 && shownIdx == gTrackedIdx);
-    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : accent;
+    uint16_t cardAccent = tracked ? Display::rgb(16, 185, 129) : 0;
     Display::flight(fp->callsign, fp->distanceMi, fp->airline,
                     fp->altFt, fp->headingDeg, cardAccent, tracked ? gEtaMin : -1,
-                    fp->origin, fp->dest, tracked);
-    // Bitmap logo overlay disabled: on this panel, dense multi-color logo
-    // bitmaps rendered with missing/wrong red (confirmed persisting across
-    // two different draw-path fixes — drawRGBBitmap AND per-pixel
-    // drawPixel), and some source logos (e.g. JetBlue's solid-background
-    // wordmark) didn't downscale legibly at 24x24 either way. The callsign/
-    // airline text already carries all the info cleanly, so we're keeping
-    // cards text-only rather than shipping a logo that renders wrong.
-    // String icao = fp->callsign.substring(0, 3);
-    // const LogoAsset* lg = airlineLogo(icao);
-    // if (lg) Display::drawLogo(lg->data, lg->w, lg->h, MATRIX_W - lg->w - 2, 2);
+                    fp->origin, fp->dest, tracked, airlineLogo(fp->callsign.substring(0, 3)));
   } else if (t == 1) {
     // Cycle through every followed team's game, one each time the sports card
     // comes up (mirrors the flight card + the app).
@@ -580,15 +579,10 @@ static void drawCard(uint8_t t) {
     uint16_t border = accent;
     for (uint8_t i = 0; i < gSettings.sports.rivalCount; i++)
       if (gSettings.sports.rivals[i] == key) { border = Display::rgb(56, 189, 248); break; }
-    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record);
-    // Team logo overlay disabled — same red-rendering issue as the airline
-    // logo above (see comment there). Team abbreviation text already shown
-    // by Display::score() above.
-    // int colon = key.indexOf(':');
-    // if (colon > 0) {
-    //   const LogoAsset* lg = teamLogo(key.substring(0, colon), key.substring(colon + 1));
-    //   if (lg) Display::drawLogo(lg->data, lg->w, lg->h, 2, 2);
-    // }
+    int colon = key.indexOf(':');
+    String league = colon > 0 ? key.substring(0, colon) : String("");
+    Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record,
+                   teamLogo(league, s.home), teamLogo(league, s.away));
     if (gScoreCount > 1) gScoreShown++;
   }
 }
