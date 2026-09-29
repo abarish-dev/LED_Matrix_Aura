@@ -149,6 +149,76 @@ def florida_panthers_mark():
     return [colors[pixel] for row in rows for pixel in row]
 
 
+def native_mark(rows, colors):
+    """Keep small pixel-art logos stable when the source CDN changes."""
+    assert len(rows) == SIZE and all(len(row) == SIZE for row in rows)
+    return [colors[pixel] for row in rows for pixel in row]
+
+
+def titans_mark():
+    """Tennessee's red ring, blue field, white T, and three stars."""
+    rows = (
+        "........................",
+        "........RRRRRRRR........",
+        "......RRRWWWWWWRRR......",
+        ".....RRWWSSSSSSWWRR.....",
+        "....RWWSSSSSSSSSSWWR....",
+        "...RWWSSSSSWWSSSSSWWR...",
+        "..RRWSSSSSSWWSSSSSSWRR..",
+        "..RWSSSSSSSSSSSSSSSSWR..",
+        ".RRWSSSSSSSSSSSSSSSSWRR.",
+        ".RWSSWWWWWWWWWWWWWWSSWR.",
+        ".RWSSSWWWWWWWWWWWWSSSWR.",
+        ".RWSSSWSSSWWWWSSSWSSSWR.",
+        ".RWSSSSSSSWWWWSSSSSSSWR.",
+        ".RWSSSSSSSSWWSSSSSSSSWR.",
+        ".RWSSSSWSSSWWSSSWSSSSWR.",
+        ".RRWSSWWWSSWWSSWWWSSWRR.",
+        "..RWSSSWSSSWWSSSWSSSWR..",
+        "..RRWSSSSSSWWSSSSSSWRR..",
+        "...RWWSSSSSWWSSSSSWWR...",
+        "....RWWSSSSSSSSSSWWR....",
+        ".....RRWWSSSSSSWWRR.....",
+        "......RRRWWWWWWRRR......",
+        "........RRRRRRRR........",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": 0xE000,
+                              "S": 0x2C9B, "W": 0xFFFF})
+
+
+def southwest_heart():
+    """Southwest's red/blue heart, gold accent, and continuous white trim."""
+    rows = (
+        ".....WWWW......WWWW.....",
+        "...WWWRRWWWWWWWWYYWWW...",
+        "..WWRRRRRRRRRRRYYYYYWW..",
+        ".WWRRRRRRRRRRRRRYYYYYWW.",
+        "WWRRRRRRRRRRRRRRRYYYYYWW",
+        "WWRRRRRRRRRRRRRRRRYYYYYW",
+        "WBWRRRRRRRRRRRRRRRRYYYYW",
+        "WBBWWRRRRRRRRRRRRRRRRRRW",
+        "WBBBBWRRRRRRRRRRRRRRRRRW",
+        "WBBBBBWRRRRRRRRRRRRRRRRW",
+        "WWBBBBBWWRRRRRRRRRRRRRWW",
+        ".WBBBBBBBWRRRRRRRRRRRRW.",
+        ".WWBBBBBBBWRRRRRRRRRRWW.",
+        "..WBBBBBBBBWWRRRRRRRRW..",
+        "..WWBBBBBBBBBWRRRRRRWW..",
+        "...WWBBBBBBBBBWRRRRWW...",
+        "....WWBBBBBBBBBWWRWW....",
+        ".....WWBBBBBBBBBBWW.....",
+        "......WWBBBBBBBBWW......",
+        ".......WWBBBBBBWW.......",
+        "........WWBBBBWW........",
+        ".........WWWWWW.........",
+        "...........WW...........",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": 0xE000, "B": 0x0219,
+                              "Y": 0xFE40, "W": 0xFFFF})
+
+
 def logo_rgb(pixel):
     """Expand RGB565 channels for stable, palette-based pixel decisions."""
     return ((pixel >> 11 & 31) * 255 // 31,
@@ -309,28 +379,6 @@ def clean_jaguars_logo(pixels):
     return cleaned
 
 
-def clean_southwest_heart(pixels):
-    """Keep the heart's red, blue, yellow and white regions distinct."""
-    cleaned = []
-    for pixel in pixels:
-        red, green, blue = logo_rgb(pixel)
-        if max(red, green, blue) < 62:
-            cleaned.append(0)
-        elif red > 90 and green > 70 and red > blue * 1.4 and green > blue * 1.3:
-            cleaned.append(0xFDE0)
-        elif red > 80 and red > green * 1.45 and red > blue * 1.2:
-            cleaned.append(0xE000)
-        elif blue > 70 and blue > red * .9:
-            cleaned.append(0x001E)
-        elif min(red, green, blue) > 92:
-            cleaned.append(0xFFFF)
-        elif red > blue * 1.35:
-            cleaned.append(0xE000)
-        else:
-            cleaned.append(0x001E)
-    return cleaned
-
-
 def clean_united_globe(pixels):
     """Keep the white globe lines on a solid blue 24px field."""
     cleaned = []
@@ -414,12 +462,14 @@ def main():
         for abbr in abbrs:
             url = f"https://a.espncdn.com/i/teamlogos/{league.lower()}/500/{abbr.lower()}.png"
             is_panthers = league == "NHL" and abbr == "FLA"
-            img = None if is_panthers else fetch(url)
-            if img is None and not is_panthers:
+            is_titans = league == "NFL" and abbr == "TEN"
+            img = None if is_panthers or is_titans else fetch(url)
+            if img is None and not (is_panthers or is_titans):
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            pixels = florida_panthers_mark() if is_panthers else to_rgb565_array(img)
+            pixels = (florida_panthers_mark() if is_panthers else
+                      titans_mark() if is_titans else to_rgb565_array(img))
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
             elif league == "NHL" and abbr == "NSH":
@@ -445,19 +495,18 @@ def main():
     print("[airlines]")
     for icao, iata in AIRLINES.items():
         url = f"https://www.gstatic.com/flights/airline_logos/70px/{iata}.png"
-        img = fetch(url) if icao not in ("ACA", "JBU") else None
-        if img is None and icao not in ("ACA", "JBU"):
+        img = fetch(url) if icao not in ("ACA", "JBU", "SWA") else None
+        if img is None and icao not in ("ACA", "JBU", "SWA"):
             skip += 1
             continue
         name = f"A_{icao}"
         pixels = (air_canada_roundel() if icao == "ACA" else
-                  jetblue_wordmark() if icao == "JBU" else to_rgb565_array(img))
+                  jetblue_wordmark() if icao == "JBU" else
+                  southwest_heart() if icao == "SWA" else to_rgb565_array(img))
         if icao == "AAL":
             pixels = clean_american_logo(pixels)
         elif icao == "DAL":
             pixels = clean_delta_widget(pixels)
-        elif icao == "SWA":
-            pixels = clean_southwest_heart(pixels)
         elif icao == "UAL":
             pixels = clean_united_globe(pixels)
         arrays.append(emit_array(name, pixels))
