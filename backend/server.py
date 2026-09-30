@@ -7,6 +7,7 @@ import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -88,6 +89,46 @@ def _haversine_mi(lat1, lon1, lat2, lon2):
 
 _route_cache: dict = {}          # callsign -> (expires_ts, {airline, from, to})
 
+# Latency budgets so /api/matrix/feed always answers well inside the ESP32's
+# 12s HTTP timeout, even when adsb.lol / adsbdb / ESPN are slow. A source that
+# misses its budget falls back to its last good value (or ok=0).
+_FLIGHT_FETCH_TIMEOUT = 4.0      # adsb.lol request itself
+_FLIGHT_BUDGET = 5.5             # adsb.lol + adsbdb enrichment, total
+_SOURCE_BUDGET = 6.5             # every other feed source (ESPN, NWS, open-meteo)
+_LAST_GOOD_TTL = 600             # seconds a last-good fallback may be reused
+_last_good: dict = {}            # source key -> (ts, value)
+_ET = ZoneInfo("America/New_York")
+
+
+def _fmt_eastern(dt: datetime) -> str:
+    """Format like ESPN's shortDetail, e.g. '10/2 - 7:00 PM EDT'."""
+    return dt.astimezone(_ET).strftime("%-m/%-d - %-I:%M %p %Z")
+
+
+def _is_good(v) -> bool:
+    if isinstance(v, dict):
+        return v.get("ok") == 1
+    if isinstance(v, list):
+        return any(isinstance(g, dict) and g.get("ok") == 1 for g in v)
+    return False
+
+
+async def _bounded(key: str, coro, timeout: float, default):
+    """Run one feed source with a hard time budget. On success remember the
+    value; on timeout/error return the last good value (<= _LAST_GOOD_TTL old)
+    or `default`."""
+    try:
+        v = await asyncio.wait_for(coro, timeout)
+    except Exception as e:  # asyncio.TimeoutError or anything upstream
+        logger.info(f"[feed] {key} missed budget/failed: {type(e).__name__}")
+        hit = _last_good.get(key)
+        if hit and _time.time() - hit[0] < _LAST_GOOD_TTL:
+            return hit[1]
+        return default
+    if _is_good(v):
+        _last_good[key] = (_time.time(), v)
+    return v
+
 
 async def _enrich_route(cx, cs):
     """Airline name + origin/destination IATA for a callsign (adsbdb.com,
@@ -101,7 +142,7 @@ async def _enrich_route(cx, cs):
     info = {}
     try:
         r = await cx.get(f"https://api.adsbdb.com/v0/callsign/{cs}",
-                         headers={"User-Agent": "AuraMatrix/1.0"})
+                         headers={"User-Agent": "AuraMatrix/1.0"}, timeout=3.0)
         if r.status_code == 200:
             fr = ((r.json() or {}).get("response") or {}).get("flightroute") or {}
             info = {
@@ -120,7 +161,9 @@ async def _fetch_flight(cx, lat, lon, radius_mi):
     try:
         nm = max(1, int(radius_mi / 1.15078))
         url = f"https://api.adsb.lol/v2/lat/{lat:.4f}/lon/{lon:.4f}/dist/{nm}"
-        r = await cx.get(url, headers={"User-Agent": "AuraMatrix/1.0 (LED matrix flight display)"})
+        t0 = _time.monotonic()
+        r = await cx.get(url, headers={"User-Agent": "AuraMatrix/1.0 (LED matrix flight display)"},
+                         timeout=_FLIGHT_FETCH_TIMEOUT)
         if r.status_code != 200:
             return out
         ac = (r.json() or {}).get("ac") or []
@@ -144,9 +187,16 @@ async def _fetch_flight(cx, lat, lon, radius_mi):
         cands.sort(key=lambda c: c["_d"])
         top = cands[:5]
         # Enrich each with airline name + route (parallel, best-effort).
-        import asyncio
-        routes = await asyncio.gather(*[_enrich_route(cx, c["cs"]) for c in top],
-                                      return_exceptions=True)
+        # Bounded by whatever is left of the flight budget: any lookup still
+        # pending is cancelled and that plane is returned without route info
+        # (a later feed call will pick it up from _route_cache).
+        budget = max(0.5, _FLIGHT_BUDGET - 0.3 - (_time.monotonic() - t0))
+        tasks = [asyncio.ensure_future(_enrich_route(cx, c["cs"])) for c in top]
+        _done, pending = await asyncio.wait(tasks, timeout=budget)
+        for t in pending:
+            t.cancel()
+        routes = [t.result() if (t.done() and not t.cancelled() and t.exception() is None) else {}
+                  for t in tasks]
         planes = []
         for c, rt in zip(top, routes):
             rt = rt if isinstance(rt, dict) else {}
@@ -279,7 +329,7 @@ async def _fetch_score(cx, team):
                     opp_abbr = ((opp2 or {}).get("team") or {}).get("abbreviation", "").upper()
                     try:
                         ev_dt = datetime.fromisoformat(ne.get("date", "").replace("Z", "+00:00"))
-                        st_text = ev_dt.strftime("%-m/%-d %-I:%M %p UTC")
+                        st_text = _fmt_eastern(ev_dt)
                     except Exception:
                         st_text = "Upcoming"
                 if record or opp_abbr:
@@ -409,15 +459,19 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
     # game for EVERY followed team (the matrix then cycles through them all).
     team_list = [t.strip() for t in (team or "").split(",") if t.strip()][:8]
     cx = _get_http()
+    loc = f"{lat:.4f},{lon:.4f}"
     tasks = {}
     if flights:
-        tasks["flight"] = _fetch_flight(cx, lat, lon, radius)
+        tasks["flight"] = _bounded(f"flight:{loc}:{radius}", _fetch_flight(cx, lat, lon, radius),
+                                   _FLIGHT_BUDGET, {"ok": 0})
     if weather:
-        tasks["alert"] = _fetch_alert(cx, lat, lon, severity)
+        tasks["alert"] = _bounded(f"alert:{loc}:{severity}", _fetch_alert(cx, lat, lon, severity),
+                                  _SOURCE_BUDGET, {"ok": 0})
     if ufc:
-        tasks["ufc"] = _fetch_ufc(cx)
-    tasks["temp"] = _fetch_temp(cx, lat, lon)
-    score_tasks = [_fetch_score(cx, t) for t in team_list] if sports else []
+        tasks["ufc"] = _bounded("ufc", _fetch_ufc(cx), _SOURCE_BUDGET, {"ok": 0})
+    tasks["temp"] = _bounded(f"temp:{loc}", _fetch_temp(cx, lat, lon), _SOURCE_BUDGET, {"ok": 0})
+    score_tasks = ([_bounded(f"score:{t}", _fetch_score(cx, t), _SOURCE_BUDGET, [])
+                    for t in team_list] if sports else [])
     results = await asyncio.gather(*tasks.values(), *score_tasks, return_exceptions=True)
     n = len(tasks)
     for k, res in zip(tasks.keys(), results[:n]):
