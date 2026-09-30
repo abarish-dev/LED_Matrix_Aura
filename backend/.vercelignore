@@ -1,0 +1,9 @@
+tests/
+fw_store/
+__pycache__/
+*.pyc
+.pytest_cache/
+pytest.ini
+.env
+.venv/
+venv/

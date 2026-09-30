@@ -1,40 +1,52 @@
-from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
+import asyncio
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List
-import uuid
 from datetime import datetime
+
+import httpx
 
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# One shared outbound HTTP client (connection pooling / TLS reuse across the
+# feed's parallel upstream fetches and across warm serverless invocations).
+# Created lazily so importing the module never needs a running event loop.
+_http: "httpx.AsyncClient | None" = None
+_http_loop = None
+
+
+def _get_http() -> httpx.AsyncClient:
+    """Return the shared client, (re)creating it if it was closed or belongs to
+    a different event loop (pooled connections are loop-bound)."""
+    global _http, _http_loop
+    loop = asyncio.get_running_loop()
+    if _http is None or _http.is_closed or _http_loop is not loop:
+        _http = httpx.AsyncClient(timeout=10.0, follow_redirects=True)
+        _http_loop = loop
+    return _http
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    yield
+    global _http
+    if _http is not None and not _http.is_closed:
+        await _http.aclose()
+    _http = None
+
 
 # Create the main app without a prefix
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-
-# Define Models
-class StatusCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
 # Add your routes to the router instead of directly to app
 @api_router.get("/app-icon.png")
@@ -47,24 +59,11 @@ async def app_icon():
 async def root():
     return {"message": "Hello World"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.dict()
-    status_obj = StatusCheck(**status_dict)
-    _ = await db.status_checks.insert_one(status_obj.dict())
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    status_checks = await db.status_checks.find().to_list(1000)
-    return [StatusCheck(**status_check) for status_check in status_checks]
-
 # ---------------------------------------------------------------------------
 # Matrix feed proxy: the ESP32 makes ONE small HTTPS call here every 30s and we
 # do all the heavy multi-source fetching server-side (reliable network, no bot
 # blocks / rate-limit issues, off-day sports logic). Returns compact JSON.
 # ---------------------------------------------------------------------------
-import httpx
 import time as _time
 import math as _math
 from datetime import timezone, timedelta
@@ -409,34 +408,33 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
     # `team` may be a comma-separated list of "LEAGUE:ABBR" so we can return a
     # game for EVERY followed team (the matrix then cycles through them all).
     team_list = [t.strip() for t in (team or "").split(",") if t.strip()][:8]
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as cx:
-        import asyncio
-        tasks = {}
-        if flights:
-            tasks["flight"] = _fetch_flight(cx, lat, lon, radius)
-        if weather:
-            tasks["alert"] = _fetch_alert(cx, lat, lon, severity)
-        if ufc:
-            tasks["ufc"] = _fetch_ufc(cx)
-        tasks["temp"] = _fetch_temp(cx, lat, lon)
-        score_tasks = [_fetch_score(cx, t) for t in team_list] if sports else []
-        results = await asyncio.gather(*tasks.values(), *score_tasks, return_exceptions=True)
-        n = len(tasks)
-        for k, res in zip(tasks.keys(), results[:n]):
-            payload[k] = res if isinstance(res, dict) else {"ok": 0}
-        # Build the per-team scores list. `_fetch_score` now returns a LIST
-        # per team (0-2 entries: live-only, or recent-final + upcoming-soon
-        # together, or a single next-game fallback) — flatten them all,
-        # capped to the firmware's fixed-size array (8).
-        scores = []
-        for t, res in zip(team_list, results[n:]):
-            if isinstance(res, list):
-                for g in res:
-                    if isinstance(g, dict) and g.get("ok") == 1:
-                        scores.append({**g, "key": t})
-        scores = scores[:8]
-        payload["scores"] = scores
-        payload["score"] = scores[0] if scores else {"ok": 0}
+    cx = _get_http()
+    tasks = {}
+    if flights:
+        tasks["flight"] = _fetch_flight(cx, lat, lon, radius)
+    if weather:
+        tasks["alert"] = _fetch_alert(cx, lat, lon, severity)
+    if ufc:
+        tasks["ufc"] = _fetch_ufc(cx)
+    tasks["temp"] = _fetch_temp(cx, lat, lon)
+    score_tasks = [_fetch_score(cx, t) for t in team_list] if sports else []
+    results = await asyncio.gather(*tasks.values(), *score_tasks, return_exceptions=True)
+    n = len(tasks)
+    for k, res in zip(tasks.keys(), results[:n]):
+        payload[k] = res if isinstance(res, dict) else {"ok": 0}
+    # Build the per-team scores list. `_fetch_score` now returns a LIST
+    # per team (0-2 entries: live-only, or recent-final + upcoming-soon
+    # together, or a single next-game fallback) — flatten them all,
+    # capped to the firmware's fixed-size array (8).
+    scores = []
+    for t, res in zip(team_list, results[n:]):
+        if isinstance(res, list):
+            for g in res:
+                if isinstance(g, dict) and g.get("ok") == 1:
+                    scores.append({**g, "key": t})
+    scores = scores[:8]
+    payload["scores"] = scores
+    payload["score"] = scores[0] if scores else {"ok": 0}
 
     _feed_cache[key] = (_time.time() + _FEED_TTL, payload)
     return payload
@@ -449,10 +447,13 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
 # ESP32); they upload it here once, then every matrix pulls it automatically.
 # ---------------------------------------------------------------------------
 import json as _json
-_FW_DIR = ROOT_DIR / "fw_store"
-_FW_DIR.mkdir(exist_ok=True)
+# Firmware is published as static files in backend/public/fw/ (served by the
+# Vercel CDN at /fw/firmware.bin). The serverless filesystem is read-only, so
+# uploads through the API are no longer possible — see public/fw/README.md.
+_FW_DIR = ROOT_DIR / "public" / "fw"
 _FW_BIN = _FW_DIR / "firmware.bin"
 _FW_META = _FW_DIR / "meta.json"
+_FW_URL = "/fw/firmware.bin"
 
 
 def _fw_meta() -> dict:
@@ -465,15 +466,17 @@ def _fw_meta() -> dict:
 
 
 @api_router.post("/firmware/upload")
-async def firmware_upload(version: str = Form(...), file: UploadFile = File(...)):
-    """Upload a compiled firmware .bin + its version string (e.g. 1.2.0)."""
-    data = await file.read()
-    if not data or len(data) < 1000:
-        raise HTTPException(status_code=400, detail="empty or invalid .bin")
-    _FW_BIN.write_bytes(data)
-    _FW_META.write_text(_json.dumps({"version": version.strip(), "size": len(data)}))
-    logger.info(f"[ota] uploaded firmware v{version} ({len(data)} bytes)")
-    return {"ok": True, "version": version.strip(), "size": len(data)}
+async def firmware_upload():
+    """Retired: the deployment is read-only. Publish builds via git instead."""
+    return JSONResponse(
+        status_code=410,
+        content={
+            "ok": False,
+            "detail": "Firmware upload is no longer supported. Commit the new "
+                      "build to backend/public/fw/ (firmware.bin + meta.json) "
+                      "and redeploy — see backend/public/fw/README.md.",
+        },
+    )
 
 
 @api_router.get("/firmware/latest")
@@ -482,17 +485,22 @@ async def firmware_latest(current: str = ""):
     hosted version differs from the caller's `current`."""
     m = _fw_meta()
     has = bool(m.get("version")) and _FW_BIN.exists()
+    size = m.get("size", 0)
+    if has and not size:
+        size = _FW_BIN.stat().st_size
     return {
         "version": m.get("version", ""),
-        "size": m.get("size", 0),
+        "size": size,
         "available": has,
         "update": has and m.get("version", "") != (current or ""),
-        "url": "/api/firmware/download",
+        "url": _FW_URL,
     }
 
 
 @api_router.get("/firmware/download")
 async def firmware_download():
+    # Legacy path (older firmware falls back to it if `url` is missing).
+    # Served directly (no redirect — ESP32 HTTPUpdate doesn't follow them).
     if not _FW_BIN.exists():
         raise HTTPException(status_code=404, detail="no firmware uploaded")
     return FileResponse(str(_FW_BIN), media_type="application/octet-stream",
@@ -521,7 +529,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
