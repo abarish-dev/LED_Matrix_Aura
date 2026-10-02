@@ -42,6 +42,6 @@ The flight card is live in `src/main.cpp`. It passes
 `airlineLogo(callsign.substring(0, 3))`, so lookup uses the callsign's ICAO
 prefix, matched against the `AIRLINES` keys in the generator. When no logo
 matches, the card falls back to centered text. `NATIVE_AIRLINE_MARKS` holds
-hand-drawn airline marks. Piedmont (PDT) is the first; Google Flights serves
-only a generic gray tail for its IATA code, PT. The same placeholder is what
-SkyWest (OO) currently embeds.
+hand-drawn airline marks for the CLT regionals: Piedmont (PDT), PSA (JIA),
+Envoy (ENY), Republic (RPA), SkyWest (SKW) and Breeze (MXY). Google Flights
+serves only a generic gray tail for PT, OH, MQ, YX and OO.

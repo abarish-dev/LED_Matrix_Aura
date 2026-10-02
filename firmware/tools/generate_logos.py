@@ -40,6 +40,7 @@ AIRLINES = {
     "AAL": "AA", "DAL": "DL", "UAL": "UA", "SWA": "WN", "JBU": "B6",
     "NKS": "NK", "FFT": "F9", "SKW": "OO", "ASA": "AS", "HAL": "HA",
     "AAY": "G4", "SCX": "SY", "PDT": "PT",
+    "JIA": "OH", "ENY": "MQ", "RPA": "YX", "MXY": "MX",
 }
 
 session = requests.Session()
@@ -421,16 +422,12 @@ NATIVE_TEAM_MARKS = {
 }
 
 
-def piedmont_mark(variant="p_swoosh"):
-    """Piedmont Airlines (PDT/PT, American Eagle regional, common at CLT).
+def piedmont_mark():
+    """Piedmont (PDT/PT): bold italic red P with three bright-blue speed stripes.
 
-    Google Flights only serves a generic gray tail for PT, so this is drawn at
-    panel resolution. Default: bold italic red "P" with three bright-blue speed
-    stripes. "stripe_bird" is the alternate: Piedmont's staggered blue stripe
-    bird over a red underline. Bright blue replaces navy, which vanishes on
-    the panel; no gold/yellow.
-    """
-    p_swoosh = (
+    Google Flights serves only a generic gray tail for PT. Bright blue
+    replaces navy, which vanishes on the panel; no gold/yellow."""
+    rows = (
         "........................",
         "........................",
         "........................",
@@ -456,41 +453,176 @@ def piedmont_mark(variant="p_swoosh"):
         "........................",
         "........................",
     )
-    stripe_bird = (
+    return native_mark(rows, {".": 0, "R": LED_RED, "B": rgb565(30, 120, 255)})
+
+
+def psa_mark():
+    """PSA Airlines (JIA/OH): blue italic PSA over the red PSA smile."""
+    rows = (
         "........................",
         "........................",
         "........................",
         "........................",
-        "..............LLLLLLL...",
-        ".............LLLLLLL....",
         "........................",
-        "..........BBBBBBBBBB....",
-        ".........BBBBBBBBBB.....",
-        "........................",
-        "......BBBBBBBBBBBBB.....",
-        ".....BBBBBBBBBBBBB......",
-        "........................",
-        "....BBBBBBBBBBBBBBBB....",
-        "..BBBBBBBBBBBBBBBBB.....",
-        "..BBBBBBBBBBBBBBBB......",
+        "....BBBB...BBBB..BBB....",
+        "....BB.BB.BB....BB.BB...",
+        "....BB.BB.BB....BB.BB...",
+        "...BBBB...BBB..BBBBB....",
+        "...BB.......BB.BB.BB....",
+        "...BB.......BB.BB.BB....",
+        "...BB....BBBB..BB.BB....",
         "........................",
         "........................",
-        "....RRRRRRRRRRRRRRRRRR..",
-        "...RRRRRRRRRRRRRRRRRR...",
+        "........................",
+        "..R..................R..",
+        "..RRR..............RRR..",
+        "...RRRRR........RRRRR...",
+        ".....RRRRRRRRRRRRRR.....",
+        "........RRRRRRRR........",
         "........................",
         "........................",
         "........................",
         "........................",
     )
-    rows = stripe_bird if variant == "stripe_bird" else p_swoosh
-    return native_mark(rows, {".": 0, "R": LED_RED,
-                              "B": rgb565(30, 120, 255),
-                              "L": rgb565(90, 170, 255)})
+    return native_mark(rows, {".": 0, "R": LED_RED, "B": rgb565(30, 120, 255)})
+
+
+def envoy_mark():
+    """Envoy (ENY/MQ): lowercase env/oy in brightened Envoy violet with the
+    red accent on the y. Brand purple #250E72 is too dark for the panel."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        "....VVV..VVVV..VV.VV....",
+        "...VV.VV.VV.VV.VV.VV....",
+        "...VVVVV.VV.VV.VV.VV....",
+        "...VV....VV.VV..VVV.....",
+        "....VVVV.VV.VV...V......",
+        "........................",
+        "........................",
+        "........................",
+        ".......VVV..VV.VV.......",
+        "......VV.VV.VV.VV.......",
+        "......VV.VV.VV.VV.......",
+        "......VV.VV..VVVV.......",
+        ".......VVV.....VV.......",
+        "................R.......",
+        "...............RR.......",
+        "..............RR........",
+        "...........RRRR.........",
+        "..........RRR...........",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "V": rgb565(120, 70, 255)})
+
+
+def republic_mark():
+    """Republic Airways (RPA/YX): seven-star ring (white) around a bold
+    bright-blue R."""
+    rows = (
+        "........................",
+        "............W...........",
+        "...........WWW..........",
+        "............W...........",
+        "........................",
+        "....W..............W....",
+        "...WWW..BBBBBBB...WWW...",
+        "....W...BBBBBBBB...W....",
+        "........BBB..BBB........",
+        "........BBB..BBB........",
+        "........BBB..BBB........",
+        "........BBBBBBBB........",
+        "........BBBBBBB.........",
+        "..W.....BBB.BBB......W..",
+        ".WWW....BBB..BBB....WWW.",
+        "..W.....BBB..BBB.....W..",
+        "........BBB..BBB........",
+        "........................",
+        "........................",
+        ".......W........W.......",
+        "......WWW......WWW......",
+        ".......W........W.......",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "W": LED_WHITE, "B": rgb565(30, 120, 255)})
+
+
+def breeze_mark():
+    """Breeze Airways (MXY/MX): light-blue check swoosh with a white leading
+    edge (Breeze's navy tile background is dropped; navy vanishes)."""
+    rows = (
+        "........................",
+        "........................",
+        "......................W.",
+        ".....................WL.",
+        "....................WLL.",
+        "...................WLLL.",
+        "..................WLLL..",
+        ".................WLLL...",
+        "................WLLL....",
+        "...............WLLL.....",
+        ".L............WLLL......",
+        ".LL..........WLLL.......",
+        ".LLL........WLLL........",
+        "..LLL.......LLL.........",
+        "...LLL.....LLL..........",
+        "....LLL...LLL...........",
+        ".....LLL.LLL............",
+        "......LLLLL.............",
+        ".......LLL..............",
+        "........L...............",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "L": rgb565(110, 190, 255), "W": LED_WHITE})
+
+
+def skywest_mark():
+    """SkyWest (SKW/OO): italic SKY / WEST in bright SkyWest blue with the
+    three-color logo's red rule. Replaces Google's gray placeholder tail."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        ".....BBBB.BB..B.BB.BB...",
+        "....BB....BB.BB.BB.BB...",
+        "....BB....BBBB..BB.BB...",
+        "....BBB..BBB....BBB.....",
+        "......BB.BBBB....B......",
+        "......BB.BB.BB...B......",
+        "...BBBB..BB..B...B......",
+        "........................",
+        "........................",
+        "B...B.BBBBB..BBBB.BBBBB.",
+        "B...B.BB....BB....BBBBB.",
+        "B...B.BB....BB......B...",
+        "B.B.B.BBBB...BBB....B...",
+        "B.B.B.BB.......BB...B...",
+        "BBBBB.BB.......BB...B...",
+        ".B.B..BBBBB.BBBB....B...",
+        "........................",
+        "........................",
+        "RRRRRRRRRRRRRRRRRRRRRRRR",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "B": rgb565(30, 120, 255)})
 
 
 # Hand-tuned airline marks that replace the Google Flights download.
 NATIVE_AIRLINE_MARKS = {
     "PDT": piedmont_mark,
+    "JIA": psa_mark,
+    "ENY": envoy_mark,
+    "RPA": republic_mark,
+    "MXY": breeze_mark,
+    "SKW": skywest_mark,
 }
 
 
