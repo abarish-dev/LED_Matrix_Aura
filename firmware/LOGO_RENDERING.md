@@ -32,6 +32,6 @@ there is no app-side protocol change in this branch.
 pixel-art marks drawn at panel resolution instead of downsampling ESPN art.
 Current entries: Panthers (NHL:FLA), the 2026 Titans roundel (NFL:TEN),
 Buccaneers flag (NFL:TB), Lightning bolt (NHL:TB), Rays TB (MLB:TB) and
-Capitals (NHL:WSH). These marks use only black, white, pure red, and blues
+Capitals (NHL:WSH), drawn as the Capitol dome over crossed red sticks. These marks use only black, white, pure red, and blues
 (plus pewter gray on the Bucs pole). They avoid gold and yellow because R+G
 mixes split on this panel.

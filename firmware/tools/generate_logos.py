@@ -344,38 +344,70 @@ def rays_mark():
                               "L": rgb565(120, 180, 255)})
 
 
-def capitals_mark():
-    """Capitals wordmark cues at 24px: three red stars, bold CAPS, and the
-    hockey-stick underline with red blade. The full "capitals" script is
-    unreadable at this size and its navy vanishes on the panel."""
-    rows = (
+def capitals_mark(variant="red_sticks"):
+    """Capitals: white Capitol dome (statue, lantern, colonnade) over two
+    crossed hockey sticks, with a blue plinth accent.
+
+    Replaces the v1.6.31 draft "CAPS" wordmark. Default variant uses all-red
+    sticks for contrast against the white dome; "white_shafts" keeps white
+    shafts with red blades (blends into the dome more at 24px).
+    """
+    red_sticks = (
         "........................",
-        "........................",
-        "........................",
-        "....R......R.......R....",
-        "..RRRRR..RRRRR...RRRRR..",
-        "...RRR....RRR.....RRR...",
-        "...R.R....R.R.....R.R...",
-        "........................",
-        "........................",
-        ".WWWW..WWW..WWWW...WWWW.",
-        "WW..W.WW.WW.WW.WW.WW....",
-        "WW....WW.WW.WW.WW.WW....",
-        "WW....WW.WW.WW.WW..WWW..",
-        "WW....WWWWW.WWWW.....WW.",
-        "WW....WW.WW.WW.......WW.",
-        "WW..W.WW.WW.WW.......WW.",
-        ".WWWW.WW.WW.WW....WWWW..",
-        "........................",
-        "........................",
-        "NNNNNNNNNNNNNNNNNNNN....",
-        "....................RRRR",
-        "........................",
-        "........................",
+        "...........WW...........",
+        "...........WW...........",
+        "..........WWWW..........",
+        "..........W..W..........",
+        ".RR......WWWWWW......RR.",
+        "..RR....WWWWWWWW....RR..",
+        "...RR..WWWWWWWWWW..RR...",
+        "....RR.WWWWWWWWWW.RR....",
+        ".....RGGGGGGGGGGGGR.....",
+        "......W.WW.WW.WW.W......",
+        "......W.WW.WW.WW.W......",
+        "......GGGGGGGGGGGG......",
+        "....WWWWWWWWWWWWWWWW....",
+        "....BBBBBBBBBBBBBBBB....",
+        "...........RR...........",
+        "..........RRRR..........",
+        ".........RR..RR.........",
+        "........RR....RR........",
+        ".......RR......RR.......",
+        "......RR........RR......",
+        ".RRRRRR..........RRRRRR.",
+        ".RRRRRR..........RRRRRR.",
         "........................",
     )
+    white_shafts = (
+        "........................",
+        "...........WW...........",
+        "...........WW...........",
+        "..........WWWW..........",
+        "..........W..W..........",
+        ".WW......WWWWWW......WW.",
+        "..WW....WWWWWWWW....WW..",
+        "...WW..WWWWWWWWWW..WW...",
+        "....WW.WWWWWWWWWW.WW....",
+        ".....WGGGGGGGGGGGGW.....",
+        "......W.WW.WW.WW.W......",
+        "......W.WW.WW.WW.W......",
+        "......GGGGGGGGGGGG......",
+        "....WWWWWWWWWWWWWWWW....",
+        "....RRRRRRRRRRRRRRRR....",
+        "...........WW...........",
+        "..........WWWW..........",
+        ".........WW..WW.........",
+        "........WW....WW........",
+        ".......WW......WW.......",
+        "......WW........WW......",
+        ".RRRRRR..........RRRRRR.",
+        ".RRRRRR..........RRRRRR.",
+        "........................",
+    )
+    rows = white_shafts if variant == "white_shafts" else red_sticks
     return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
-                              "N": rgb565(0, 40, 220)})
+                              "G": rgb565(170, 170, 180),
+                              "B": rgb565(30, 120, 255)})
 
 
 # Hand-tuned marks that replace the ESPN download entirely.
