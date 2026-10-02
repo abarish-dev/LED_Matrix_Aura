@@ -39,7 +39,7 @@ TEAMS = {
 AIRLINES = {
     "AAL": "AA", "DAL": "DL", "UAL": "UA", "SWA": "WN", "JBU": "B6",
     "NKS": "NK", "FFT": "F9", "SKW": "OO", "ASA": "AS", "HAL": "HA",
-    "AAY": "G4", "SCX": "SY",
+    "AAY": "G4", "SCX": "SY", "PDT": "PT",
 }
 
 session = requests.Session()
@@ -421,6 +421,79 @@ NATIVE_TEAM_MARKS = {
 }
 
 
+def piedmont_mark(variant="p_swoosh"):
+    """Piedmont Airlines (PDT/PT, American Eagle regional, common at CLT).
+
+    Google Flights only serves a generic gray tail for PT, so this is drawn at
+    panel resolution. Default: bold italic red "P" with three bright-blue speed
+    stripes. "stripe_bird" is the alternate: Piedmont's staggered blue stripe
+    bird over a red underline. Bright blue replaces navy, which vanishes on
+    the panel; no gold/yellow.
+    """
+    p_swoosh = (
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "BBBBBBBBBB....RRRRRRRRR.",
+        "BBBBBBBBBB...RRRRRRRRRRR",
+        ".............RRR.....RRR",
+        ".............RRR.....RRR",
+        ".BBBBBBBB...RRR.....RRRR",
+        ".BBBBBBBB...RRRRRRRRRRR.",
+        "............RRRRRRRRRR..",
+        "............RRR.........",
+        "..BBBBBB...RRR..........",
+        "..BBBBBB...RRR..........",
+        "...........RRR..........",
+        "...........RR...........",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    )
+    stripe_bird = (
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "..............LLLLLLL...",
+        ".............LLLLLLL....",
+        "........................",
+        "..........BBBBBBBBBB....",
+        ".........BBBBBBBBBB.....",
+        "........................",
+        "......BBBBBBBBBBBBB.....",
+        ".....BBBBBBBBBBBBB......",
+        "........................",
+        "....BBBBBBBBBBBBBBBB....",
+        "..BBBBBBBBBBBBBBBBB.....",
+        "..BBBBBBBBBBBBBBBB......",
+        "........................",
+        "........................",
+        "....RRRRRRRRRRRRRRRRRR..",
+        "...RRRRRRRRRRRRRRRRRR...",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    )
+    rows = stripe_bird if variant == "stripe_bird" else p_swoosh
+    return native_mark(rows, {".": 0, "R": LED_RED,
+                              "B": rgb565(30, 120, 255),
+                              "L": rgb565(90, 170, 255)})
+
+
+# Hand-tuned airline marks that replace the Google Flights download.
+NATIVE_AIRLINE_MARKS = {
+    "PDT": piedmont_mark,
+}
+
+
 def clean_predators_logo(pixels):
     """Keep Nashville's saber-toothed cat legible in gold, navy and white."""
     cleaned = []
@@ -616,12 +689,13 @@ def main():
     print("[airlines]")
     for icao, iata in AIRLINES.items():
         url = f"https://www.gstatic.com/flights/airline_logos/70px/{iata}.png"
-        img = fetch(url)
-        if img is None:
+        native = NATIVE_AIRLINE_MARKS.get(icao)
+        img = None if native else fetch(url)
+        if img is None and not native:
             skip += 1
             continue
         name = f"A_{icao}"
-        pixels = to_rgb565_array(img)
+        pixels = native() if native else to_rgb565_array(img)
         if icao == "AAL":
             pixels = clean_american_logo(pixels)
         elif icao == "DAL":

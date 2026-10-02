@@ -35,3 +35,13 @@ Buccaneers flag (NFL:TB), Lightning bolt (NHL:TB), Rays TB (MLB:TB) and
 Capitals (NHL:WSH), drawn as the Capitol dome over crossed red sticks. These marks use only black, white, pure red, and blues
 (plus pewter gray on the Bucs pole). They avoid gold and yellow because R+G
 mixes split on this panel.
+
+## Airline marks (v1.6.32)
+
+The flight card is live in `src/main.cpp`. It passes
+`airlineLogo(callsign.substring(0, 3))`, so lookup uses the callsign's ICAO
+prefix, matched against the `AIRLINES` keys in the generator. When no logo
+matches, the card falls back to centered text. `NATIVE_AIRLINE_MARKS` holds
+hand-drawn airline marks. Piedmont (PDT) is the first; Google Flights serves
+only a generic gray tail for its IATA code, PT. The same placeholder is what
+SkyWest (OO) currently embeds.
