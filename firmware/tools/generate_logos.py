@@ -194,6 +194,201 @@ def florida_panthers_mark():
     return [colors[pixel] for row in rows for pixel in row]
 
 
+def native_mark(rows, colors):
+    """Expand a hand-tuned 24x24 pixel-art mark into RGB565 pixels.
+
+    Used for logos that downsample into mud at 24px (thin strokes, navy on
+    black, tiny wordmarks). '.' is unlit black, which drawLogo() treats as
+    transparent. Colors avoid R+G-only mixes (gold/yellow/orange), which split
+    on this panel (see DisplayManager.h); white and pure red/blue are proven.
+    """
+    assert len(rows) == SIZE and all(len(row) == SIZE for row in rows)
+    return [colors[pixel] for row in rows for pixel in row]
+
+
+LED_RED = rgb565(230, 0, 0)
+LED_WHITE = 0xFFFF
+
+
+def titans_mark():
+    """2026 Titans roundel: white T and three stars on Titans blue, white/red rings.
+
+    Supersedes the pre-2026 flaming-T art and the unmerged
+    codex/display-type-weather-icons hand-drawn version (b44411a): the T now
+    has the new flared crossbar and tapered stem, with clear 5px stars.
+    """
+    rows = (
+        "........RRRRRRRR........",
+        "......RRRWWWWWWRRR......",
+        "....RRRWWBBBBBBWWRRR....",
+        "...RRWWBBBBWBBBBBWWRR...",
+        "..RRWWBBBWWWWWBBBBWWRR..",
+        "..RWWBBBBBWWWBBBBBBWWR..",
+        ".RRWBBBBBBWBWBBBBBBBWRR.",
+        ".RWBBBBBBBBBBBBBBBBBBWR.",
+        "RRWBWWWWWWWWWWWWWWWWBWRR",
+        "RWBBWWWWWWWWWWWWWWWWBBWR",
+        "RWBBBWWWWWWWWWWWWWWBBBWR",
+        "RWBBBBBBBBWWWWBBBBBBBBWR",
+        "RWBBBBBBBBWWWWBBBBBBBBWR",
+        "RWBBBBWBBBWWWWBBBWBBBBWR",
+        "RWBBWWWWWBWWWWBWWWWWBBWR",
+        "RRWBBWWWBBWWWWBBWWWBBWRR",
+        ".RWBBWBWBBBWWBBBWBWBBWR.",
+        ".RRWBBBBBBBWWBBBBBBBWRR.",
+        "..RWWBBBBBBBBBBBBBBWWR..",
+        "..RRWWBBBBBBBBBBBBWWRR..",
+        "...RRWWBBBBBBBBBBWWRR...",
+        "....RRRWWBBBBBBWWRRR....",
+        "......RRRWWWWWWRRR......",
+        "........RRRRRRRR........",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
+                              "B": rgb565(60, 140, 230)})
+
+
+def buccaneers_mark():
+    """Bucs red flag with white skull and crossed swords on a pewter pole."""
+    rows = (
+        ".....................PP.",
+        ".....R..............RPP.",
+        "...RRRRRRRR.......RRPP..",
+        ".RRRRRRRRWWWWRRRRRRRPP..",
+        "..RRRRRRWWWWWWRRRRRRPP..",
+        "...RRRRRW.WW.WRRRRRRPP..",
+        "....RRRRW.WW.WRRRRRRPP..",
+        "...RRRRRWWWWWWRRRRRRPP..",
+        ".RRRRRRRRWWWWRRRRRRPP...",
+        "RRRRRRWWRW.W.RWWRRRPP...",
+        ".RRRRRRRWWRRWWRRRRRPP...",
+        "..RRRRRRRRWWRRRRRRRPP...",
+        "...RRRRRWWRRWWRRRRRPP...",
+        "...RRRWWRRRRRRWWRRRRR...",
+        "..RRRRRRRRRRRRRRRRRRR...",
+        "..RR.....RRRRRRRR.PP....",
+        ".R.........R.....PP.....",
+        "................PP......",
+        "............PPPPPPP.....",
+        "...............PP.......",
+        "..............PP........",
+        ".............P..........",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
+                              "P": rgb565(150, 150, 160)})
+
+
+def lightning_mark():
+    """Lightning bolt through the open ring. ESPN's navy art is nearly
+    invisible on the panel, so the ring is brightened and the bolt is white."""
+    rows = (
+        "...................WWWWW",
+        "..........BB......WWWWW.",
+        ".......BBBBB.....WWWW...",
+        ".....BBBBBBB....WWWW....",
+        "....BBBBB.....WWWWW.....",
+        "...BBBB......WWWWW......",
+        "...BBB......WWWW..BBB...",
+        "..BBB......WWWW....BBB..",
+        "..BB......WWWWWWWW..BB..",
+        ".BBB.....WWWWWWWW...BBB.",
+        ".BBB...WWWWWWWWW....BBB.",
+        ".BB...WWWWWWWWW......BB.",
+        ".BB..WWWWWWWWW.......BB.",
+        ".BB.....WWWWW........BB.",
+        ".BBB....WWWW........BBB.",
+        ".BBB...WWWW.........BBB.",
+        "..BB..WWW...........BB..",
+        "..BBBWWW...........BBB..",
+        ".....WW...........BBB...",
+        "....WW...........BBBB...",
+        "...WW...B......BBBBB....",
+        "..WW....BBBBBBBBBBB.....",
+        "..W.....BBBBBBBBB.......",
+        ".W........BBBB..........",
+    )
+    return native_mark(rows, {".": 0, "B": rgb565(30, 120, 255), "W": LED_WHITE})
+
+
+def rays_mark():
+    """Rays interlocking "TB" cap mark: brightened navy with a Columbia-blue
+    drop shadow (the source navy is too dark to read on black)."""
+    rows = (
+        "........................",
+        "........................",
+        "NNNNNNNNNNNNNL..........",
+        "NNNNNNNNNNNNNL..........",
+        "NNLLLNNNLLLNNL..........",
+        "NLL..NNNL..LNL..........",
+        "LL...NNNL...LL..........",
+        ".....NNNL...............",
+        ".....NNNL.NNNNNNNNNL....",
+        ".....NNNL.LNNNLLLNNNL...",
+        ".....NNNL..NNNL..LNNNL..",
+        ".....NNNL..NNNL...NNNL..",
+        ".....NNNL..NNNL..NNNLL..",
+        ".....NNNL..NNNNNNNNLL...",
+        ".....NNNL..NNNLLLNNNNL..",
+        ".....NNNL..NNNL..LNNNNL.",
+        ".....NNNL..NNNL...LNNNL.",
+        ".....NNNL..NNNL....NNNL.",
+        ".....NNNL..NNNL...NNNNL.",
+        "...NNNNNNNLNNNL..NNNNLL.",
+        "...NNNNNNNNNNNNNNNNNLL..",
+        "...LLLLLLLLLLLLLLLLLL...",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "N": rgb565(0, 40, 220),
+                              "L": rgb565(120, 180, 255)})
+
+
+def capitals_mark():
+    """Capitals wordmark cues at 24px: three red stars, bold CAPS, and the
+    hockey-stick underline with red blade. The full "capitals" script is
+    unreadable at this size and its navy vanishes on the panel."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        "....R......R.......R....",
+        "..RRRRR..RRRRR...RRRRR..",
+        "...RRR....RRR.....RRR...",
+        "...R.R....R.R.....R.R...",
+        "........................",
+        "........................",
+        ".WWWW..WWW..WWWW...WWWW.",
+        "WW..W.WW.WW.WW.WW.WW....",
+        "WW....WW.WW.WW.WW.WW....",
+        "WW....WW.WW.WW.WW..WWW..",
+        "WW....WWWWW.WWWW.....WW.",
+        "WW....WW.WW.WW.......WW.",
+        "WW..W.WW.WW.WW.......WW.",
+        ".WWWW.WW.WW.WW....WWWW..",
+        "........................",
+        "........................",
+        "NNNNNNNNNNNNNNNNNNNN....",
+        "....................RRRR",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
+                              "N": rgb565(0, 40, 220)})
+
+
+# Hand-tuned marks that replace the ESPN download entirely.
+NATIVE_TEAM_MARKS = {
+    ("NHL", "FLA"): florida_panthers_mark,
+    ("NFL", "TEN"): titans_mark,
+    ("NFL", "TB"): buccaneers_mark,
+    ("NHL", "TB"): lightning_mark,
+    ("MLB", "TB"): rays_mark,
+    ("NHL", "WSH"): capitals_mark,
+}
+
+
 def clean_predators_logo(pixels):
     """Keep Nashville's saber-toothed cat legible in gold, navy and white."""
     cleaned = []
@@ -361,13 +556,13 @@ def main():
         print(f"[{league}]")
         for abbr in abbrs:
             url = f"https://a.espncdn.com/i/teamlogos/{league.lower()}/500/{abbr.lower()}.png"
-            is_panthers = league == "NHL" and abbr == "FLA"
-            img = None if is_panthers else fetch(url)
-            if img is None and not is_panthers:
+            native = NATIVE_TEAM_MARKS.get((league, abbr))
+            img = None if native else fetch(url)
+            if img is None and not native:
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            pixels = florida_panthers_mark() if is_panthers else to_rgb565_array(img)
+            pixels = native() if native else to_rgb565_array(img)
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
             elif league == "NHL" and abbr == "NSH":
