@@ -33,7 +33,8 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "android.permission.ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "versionCode": 2
     },
     "web": {
       "bundler": "metro",
