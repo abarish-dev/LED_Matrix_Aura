@@ -37,12 +37,17 @@ Each field edit pushes just its section:
 { "command": "sports",  "enabled": true, "ufc": true, "teams": ["MLB:NYY"], "rivals": ["MLB:NYY"] }
 { "command": "weather", "enabled": true, "severity": "moderate", "showClock": true }
 { "command": "holiday", "enabled": true }
+{ "command": "markets", "enabled": true }
 { "command": "brightness", "value": 60 }
 { "command": "night", "enabled": true, "startHour": 22, "endHour": 7, "dimLevel": 20, "weekend": { "enabled": true, "startHour": 23, "endHour": 8, "dimLevel": 30 } }
 ```
 `teams` entries are always `"<LEAGUE>:<ABBR>"` where LEAGUE ∈ NFL|NBA|MLB|NHL and
 ABBR is the ESPN abbreviation. The **order** of the array is the rotation order
 shown on the matrix (set by drag-to-reorder in the app).
+
+`markets` (firmware ≥ 1.6.33, default off) adds an S&P 500 / Dow 30 / Nasdaq card; the
+matrix then calls `/api/matrix/feed?...&markets=1` and the backend returns
+`markets: {ok, status: OPEN|PRE|AFTER|CLOSED, idx: [{n, v, c, p, sp[], spn, b}]}`.
 
 `severity` ∈ `minor | moderate | severe | extreme` (minimum threshold to display).
 `brightness` ∈ `0–100` (%). `nightMode` auto-dims to `dimLevel` between

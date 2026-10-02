@@ -3,7 +3,7 @@
 //
 //  The app writes a UTF-8 JSON string to the characteristic. Two shapes:
 //    Full sync : {"flights":{...},"sports":{...},"weather":{...},"syncedAt":n}
-//    Live cmd  : {"command":"flights|sports|weather|wifi|flash_test", ...}
+//    Live cmd  : {"command":"flights|sports|weather|markets|wifi|flash_test", ...}
 //
 //  After the matrix joins Wi-Fi, notify the app on the same characteristic:
 //    {"wifiStatus":"connected","ip":"192.168.1.42"}   or
@@ -76,6 +76,10 @@ static void applyNight(JsonObjectConst o) {
   }
 }
 
+static void applyMarkets(JsonObjectConst o) {
+  if (o["enabled"].is<bool>()) gSettings.markets.enabled = o["enabled"];
+}
+
 class CharCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic* c) override {
     std::string raw = c->getValue();
@@ -106,6 +110,9 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
       } else if (command == "night") {
         applyNight(doc.as<JsonObjectConst>());
         gConfigChanged = true;
+      } else if (command == "markets") {
+        applyMarkets(doc.as<JsonObjectConst>());
+        gConfigChanged = true;
       } else if (command == "holiday") {
         if (doc["enabled"].is<bool>()) gSettings.holidayThemes = doc["enabled"];
         gConfigChanged = true;
@@ -135,6 +142,7 @@ class CharCallbacks : public NimBLECharacteristicCallbacks {
     if (doc["sports"].is<JsonObjectConst>())  applySports(doc["sports"]);
     if (doc["weather"].is<JsonObjectConst>()) applyWeather(doc["weather"]);
     if (doc["nightMode"].is<JsonObjectConst>()) applyNight(doc["nightMode"]);
+    if (doc["markets"].is<JsonObjectConst>()) applyMarkets(doc["markets"]);
     if (doc["brightness"].is<int>())          gSettings.brightness = doc["brightness"];
     if (doc["holidayThemes"].is<bool>())      gSettings.holidayThemes = doc["holidayThemes"];
     gConfigChanged = true;

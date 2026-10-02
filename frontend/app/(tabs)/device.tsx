@@ -89,6 +89,7 @@ export default function DeviceScreen() {
     updateNightMode,
     updateWeekend,
     updateHolidayThemes,
+    updateMarkets,
   } = useMatrix();
   const toast = useToast();
   const insets = useSafeAreaInsets();
@@ -423,6 +424,19 @@ export default function DeviceScreen() {
             })()}
           <Text style={styles.brightHint}>
             The matrix shifts its accent colors on holidays (red/green in December, etc.).
+          </Text>
+        </Card>
+
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Market Indices"
+            icon="trending-up"
+            value={settings.markets.enabled}
+            onValueChange={(v) => updateMarkets(v)}
+          />
+          <Text style={styles.brightHint}>
+            Adds an S&P 500 / Dow / Nasdaq card with % change, an intraday sparkline and
+            market open/closed status. Needs firmware 1.6.33 or newer.
           </Text>
         </Card>
 

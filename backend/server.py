@@ -443,13 +443,122 @@ async def _fetch_temp(cx, lat, lon):
         return _last_temp.get(key, out)
 
 
+# ---------------------------------------------------------------------------
+# Market indices card (optional; the app's "Market Indices" toggle adds
+# &markets=1 to the feed). Keyless Yahoo chart API, browser UA, <=5s per
+# symbol, cached 60s. Values are pre-formatted so the ESP32 only draws.
+# ---------------------------------------------------------------------------
+_MARKET_SYMBOLS = (("^GSPC", "S&P 500"), ("^DJI", "DOW 30"), ("^IXIC", "NASDAQ"))
+_MARKET_TTL = 60
+_MARKET_TIMEOUT = 5.0
+_MARKET_SPARK_POINTS = 64
+_market_cache: dict = {"exp": 0.0, "data": None}
+
+
+def _spark(stamps, closes, prev, session_start, n=_MARKET_SPARK_POINTS,
+           session_len=6.5 * 3600):
+    """Place intraday closes on a fixed n-slot timeline for the regular
+    session (9:30-16:00 ET), so the line fills left-to-right as the day
+    goes on. Scaled 0-100 to the day's own range. Returns
+    (points so far, baseline 0-100 or -1)."""
+    pairs = [(t, c) for t, c in zip(stamps or [], closes or [])
+             if isinstance(c, (int, float)) and t]
+    if len(pairs) < 2:
+        return [], -1
+    start = session_start or pairs[0][0]
+    pts, j, last = [], 0, None
+    for k in range(n):
+        slot_t = start + k * session_len / (n - 1)
+        if slot_t > pairs[-1][0] + 300:
+            break
+        while j < len(pairs) and pairs[j][0] <= slot_t:
+            last = pairs[j][1]
+            j += 1
+        pts.append(last if last is not None else pairs[0][1])
+    if len(pts) < 2:
+        pts = [pairs[0][1], pairs[-1][1]]
+    lo, hi = min(pts), max(pts)
+    span = (hi - lo) or 1.0
+    scaled = [round((v - lo) / span * 100) for v in pts]
+    # Baseline only when the prior close falls inside the day's range;
+    # otherwise the 8px-tall line would flatten against it.
+    base = round((prev - lo) / span * 100) if prev and lo <= prev <= hi else -1
+    return scaled, base
+
+
+def _market_status(meta, now=None) -> str:
+    now = now or _time.time()
+    tp = (meta or {}).get("currentTradingPeriod") or {}
+    def inside(k):
+        p = tp.get(k) or {}
+        return p.get("start", 0) <= now < p.get("end", 0)
+    if inside("regular"):
+        # Holiday guard: a session with no fresh trade is not really open.
+        last = (meta or {}).get("regularMarketTime") or 0
+        return "OPEN" if now - last < 1800 else "CLOSED"
+    if inside("pre"):
+        return "PRE"
+    if inside("post"):
+        return "AFTER"
+    return "CLOSED"
+
+
+async def _fetch_index(cx, sym, label):
+    r = await cx.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}",
+                     params={"range": "1d", "interval": "5m"},
+                     headers={"User-Agent": _BROWSER_UA}, timeout=_MARKET_TIMEOUT)
+    r.raise_for_status()
+    res = r.json()["chart"]["result"][0]
+    meta = res.get("meta") or {}
+    price = meta.get("regularMarketPrice")
+    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    if price is None or not prev:
+        raise ValueError("no price")
+    chg = price - prev
+    closes = ((res.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
+    reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+    stamps = res.get("timestamp") or []
+    start = reg.get("start") if stamps and reg.get("start", 0) <= stamps[0] else None
+    sp, base = _spark(stamps, closes, prev, start)
+    return meta, {"n": label, "v": f"{price:,.2f}", "c": f"{chg:+,.2f}",
+                  "p": round(chg / prev * 100, 2), "sp": sp, "b": base,
+                  "spn": _MARKET_SPARK_POINTS}
+
+
+async def _fetch_markets(cx):
+    if _market_cache["data"] and _market_cache["exp"] > _time.time():
+        return _market_cache["data"]
+    results = await asyncio.gather(*[_fetch_index(cx, s, l) for s, l in _MARKET_SYMBOLS],
+                                   return_exceptions=True)
+    idx, status = [], "CLOSED"
+    for i, res in enumerate(results):
+        if isinstance(res, Exception):
+            logger.info(f"[markets] {_MARKET_SYMBOLS[i][0]} failed: {type(res).__name__}")
+            continue
+        meta, row = res
+        if not idx:
+            status = _market_status(meta)
+        idx.append(row)
+    out = {"ok": 1 if idx else 0, "status": status, "idx": idx}
+    if idx:
+        _market_cache.update(exp=_time.time() + _MARKET_TTL, data=out)
+    return out
+
+
+@api_router.get("/markets")
+async def markets():
+    """Market indices as fed to the matrix (debug / app preview)."""
+    return await _bounded("markets", _fetch_markets(_get_http()), _SOURCE_BUDGET, {"ok": 0})
+
+
 @api_router.get("/matrix/feed")
 async def matrix_feed(lat: float, lon: float, radius: int = 40,
                       team: str = "", severity: str = "severe",
-                      flights: int = 1, sports: int = 1, weather: int = 1, ufc: int = 0):
+                      flights: int = 1, sports: int = 1, weather: int = 1, ufc: int = 0,
+                      markets: int = 0):
     """One-shot aggregated feed for the LED matrix so the ESP32 makes a single
     small HTTPS call instead of 4+ heavy ones. Cached ~20s per param set."""
-    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}"
+    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}{markets}"
     hit = _feed_cache.get(key)
     if hit and hit[0] > _time.time():
         return hit[1]
@@ -469,6 +578,8 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
                                   _SOURCE_BUDGET, {"ok": 0})
     if ufc:
         tasks["ufc"] = _bounded("ufc", _fetch_ufc(cx), _SOURCE_BUDGET, {"ok": 0})
+    if markets:
+        tasks["markets"] = _bounded("markets", _fetch_markets(cx), _SOURCE_BUDGET, {"ok": 0})
     tasks["temp"] = _bounded(f"temp:{loc}", _fetch_temp(cx, lat, lon), _SOURCE_BUDGET, {"ok": 0})
     score_tasks = ([_bounded(f"score:{t}", _fetch_score(cx, t), _SOURCE_BUDGET, [])
                     for t in team_list] if sports else [])

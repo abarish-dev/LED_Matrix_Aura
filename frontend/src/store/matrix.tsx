@@ -62,6 +62,7 @@ export type Settings = {
   };
   brightness: number; // 0-100 matrix brightness
   holidayThemes: boolean; // shift accent colors on holidays
+  markets: { enabled: boolean }; // optional S&P / Dow / Nasdaq card on the wall
   nightMode: {
     enabled: boolean;
     useSunset: boolean; // dim from local sunset to sunrise instead of fixed hours
@@ -108,6 +109,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   brightness: 80,
   holidayThemes: true,
+  markets: { enabled: false },
   nightMode: {
     enabled: false,
     useSunset: false,
@@ -153,6 +155,7 @@ type MatrixContextValue = {
   toggleFavorite: (key: string) => void;
   updateBrightness: (value: number) => void;
   updateHolidayThemes: (value: boolean) => void;
+  updateMarkets: (enabled: boolean) => void;
   updateNightMode: (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => void;
   updateWeekend: (patch: Partial<Settings["nightMode"]["weekend"]>) => void;
 
@@ -204,6 +207,7 @@ export function buildFullPayload(s: Settings) {
     },
     brightness: s.brightness,
     holidayThemes: s.holidayThemes,
+    markets: { enabled: s.markets.enabled },
     nightMode: {
       enabled: s.nightMode.enabled,
       useSunset: s.nightMode.useSunset,
@@ -249,6 +253,7 @@ async function pushAllSections(full: ReturnType<typeof buildFullPayload>) {
   await writeLive({ command: "night", ...full.nightMode }); await gap();
   await writeLive({ command: "brightness", value: full.brightness }); await gap();
   await writeLive({ command: "holiday", enabled: full.holidayThemes }); await gap();
+  await writeLive({ command: "markets", enabled: full.markets.enabled }); await gap();
   // Tell the matrix our backend base URL so it can fetch flight/weather/temp via
   // the reliable server proxy (one small call) instead of many direct HTTPS hits.
   const server = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
@@ -303,6 +308,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
             typeof saved.holidayThemes === "boolean"
               ? saved.holidayThemes
               : DEFAULT_SETTINGS.holidayThemes,
+          markets: { ...DEFAULT_SETTINGS.markets, ...(saved.markets ?? {}) },
         });
       }
       const ssid = await storage.getItem<string>("aura_last_ssid", "");
@@ -537,6 +543,18 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     [persist, livePush],
   );
 
+  const updateMarkets = useCallback(
+    (enabled: boolean) => {
+      setSettings((prev) => {
+        const next = { ...prev, markets: { enabled } };
+        persist(next);
+        livePush("markets", { enabled });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
   const updateNightMode = useCallback(
     (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => {
       setSettings((prev) => {
@@ -730,6 +748,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     toggleFavorite,
     updateBrightness,
     updateHolidayThemes,
+    updateMarkets,
     updateNightMode,
     updateWeekend,
     connect,

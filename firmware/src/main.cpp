@@ -53,6 +53,7 @@ static uint8_t           gScoreCount = 0;
 static uint8_t           gScoreShown = 0; // rotating index for on-wall cycling
 static Data::WeatherInfo gWeather;
 static Data::UfcInfo     gUfc;
+static Data::MarketsInfo gMarkets;    // optional market indices card
 static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
 static int               gEtaMin = -1;      // rough arrival ETA for tracked flight
@@ -238,6 +239,7 @@ static bool saveSettings() {
   nw["dimLevel"] = gSettings.night.weekend.dimLevel;
   doc["brightness"] = gSettings.brightness;
   doc["holidayThemes"] = gSettings.holidayThemes;
+  doc["markets"]["enabled"] = gSettings.markets.enabled;
 
   String out;
   serializeJson(doc, out);
@@ -316,6 +318,7 @@ static bool loadSettings() {
   }
   gSettings.brightness   = doc["brightness"] | 80;
   gSettings.holidayThemes= doc["holidayThemes"] | true;
+  gSettings.markets.enabled = doc["markets"]["enabled"] | false;
   return true;
 }
 
@@ -413,7 +416,8 @@ static void refreshData() {
         gSettings.flights.radiusMi, gSettings.weather.severity,
         gSettings.flights.enabled, gSettings.weather.enabled,
         entry, gSettings.sports.enabled && entry.length() > 0,
-        gSettings.sports.enabled && gSettings.sports.ufc);
+        gSettings.sports.enabled && gSettings.sports.ufc,
+        gSettings.markets.enabled);
     if (fr.ok) {
       if (gSettings.flights.enabled) {
         gFlight = fr.flight; proxyFlight = true;
@@ -423,6 +427,8 @@ static void refreshData() {
       }
       if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
       if (gSettings.sports.enabled && gSettings.sports.ufc) gUfc = fr.ufc;
+      // Keep the last good markets data through a failed upstream fetch.
+      if (gSettings.markets.enabled && fr.markets.ok) gMarkets = fr.markets;
       if (entry.length() > 0 && fr.scoreCount > 0) {
         gScoreCount = fr.scoreCount;
         for (uint8_t i = 0; i < fr.scoreCount; i++) {
@@ -527,9 +533,13 @@ static void refreshData() {
   }
 }
 
-// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert, 4=ufc.
+// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert, 4=ufc, 5=markets.
 static void drawCard(uint8_t t) {
   uint16_t accent = holidayAccent();
+  if (t == 5) {
+    Display::markets(gMarkets);
+    return;
+  }
   if (t == 4) {
     Display::ufc(gUfc.name, gUfc.date, gUfc.headline);
     return;
@@ -601,6 +611,7 @@ static uint8_t buildSeq(uint8_t* seq) {
   if (gSettings.flights.enabled && gFlightCount > 0) seq[n++] = 0;
   if (gSettings.sports.enabled  && gScoreCount > 0) seq[n++] = 1;
   if (gSettings.sports.enabled  && gSettings.sports.ufc && gUfc.ok) seq[n++] = 4;
+  if (gSettings.markets.enabled && gMarkets.ok) seq[n++] = 5;
   // Clock shows when enabled OR as a fallback so the panel is never blank.
   if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
   return n;
@@ -711,15 +722,16 @@ void loop() {
   static int ufcScrollX = 0;
   static uint32_t lastUfcScroll = 0;
 
-  uint8_t seq[5];
+  uint8_t seq[6];
   uint8_t n = buildSeq(seq);
   static int lastN = -1;
   if ((int)n != lastN) {
-    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d ufc=%d clock=%d\n", n,
+    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d ufc=%d markets=%d clock=%d\n", n,
                   (gSettings.weather.enabled && gWeather.ok),
                   (gSettings.flights.enabled && gFlightCount > 0),
                   (gSettings.sports.enabled && gScoreCount > 0),
                   (gSettings.sports.enabled && gSettings.sports.ufc && gUfc.ok),
+                  (gSettings.markets.enabled && gMarkets.ok),
                   gSettings.weather.showClock);
     lastN = n;
   }
