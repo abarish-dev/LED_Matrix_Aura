@@ -544,6 +544,7 @@ struct FeedResult {
   int8_t  trackedIdx = -1; // index in planes[] of the pinned flight (server "trk":1), -1 = not found
   String  trackCs;         // ADS-B callsign the server resolved the pinned ident to (AA786 -> AAL786)
   WeatherInfo alert;
+  WeatherInfo alert2;      // second location's alert (when requested)
   ScoreInfo score;
   ScoreInfo scores[8];    // one game per followed team that is in-season
   String    scoreKeys[8]; // "LEAGUE:ABBR" for each entry in scores[]
@@ -559,7 +560,8 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
                              int radiusMi, const String& severity,
                              bool wantFlights, bool wantWeather,
                              const String& team, bool wantSports, bool wantUfc = false,
-                             bool wantMarkets = false, const String& track = "") {
+                             bool wantMarkets = false, const String& track = "",
+                             bool wantLoc2 = false, double lat2 = 0, double lon2 = 0) {
   FeedResult r;
   if (base.isEmpty()) return r;
   String url = base;
@@ -575,6 +577,7 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
   // American Eagle AA5584 -> JIA5584) and returns it first in the list even
   // when it isn't among the 5 closest or is outside the radius.
   if (wantFlights && track.length()) url += "&track=" + track;
+  if (wantWeather && wantLoc2) url += "&lat2=" + String(lat2, 4) + "&lon2=" + String(lon2, 4);
   if (wantSports && team.length()) url += "&team=" + team;
   String body = httpGet(url, "AuraMatrix/1.0");
   if (body.isEmpty()) return r;
@@ -656,6 +659,12 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.alert.ok = true;
     r.alert.headline = String((const char*)(a["head"] | ""));
     r.alert.severity = String((const char*)(a["sev"] | ""));
+  }
+  JsonObjectConst a2 = doc["alert2"];
+  if (a2["ok"].as<int>() == 1) {
+    r.alert2.ok = true;
+    r.alert2.headline = String((const char*)(a2["head"] | ""));
+    r.alert2.severity = String((const char*)(a2["sev"] | ""));
   }
   JsonObjectConst t = doc["temp"];
   if (t["ok"].as<int>() == 1) {

@@ -87,3 +87,16 @@ After a Wi-Fi join attempt, the firmware **notifies** one of:
 { "wifiStatus": "failed" }
 ```
 The Device tab shows a live banner: *sending → waiting → joined <ip> / failed*.
+
+## Firmware 1.6.35 additions
+
+- **Frames are applied in `loop()`**, not in the NimBLE callback: the BLE task only queues
+  the raw write (repeats of the same settings section merge), so config writes can no longer
+  race the main loop's reads of the settings strings.
+- **Acks:** after applying a settings command the matrix notifies `{"ack":"<command>"}`
+  (`weather` also carries `"loc2":true|false`). The app's Sync waits for the `server` ack.
+- **Second location (weather):** `{"command":"weather",...,"loc2":true,"lat2":25.77,"lon2":-80.19,"where2":"Miami FL"}`
+  or `"loc2":false` to clear (absent = unchanged). The feed is called with `&lat2=&lon2=` and its
+  `alert2` is shown as its own alert card, prefixed with the place (e.g. `MIAMI FL: HURRICANE WARNING`).
+- **`version` / ready value** now include `"rst"`, the reset reason of the current boot
+  (`poweron`, `sw`, `panic`, `task_wdt`, `int_wdt`, `wdt`, `brownout`, ...).

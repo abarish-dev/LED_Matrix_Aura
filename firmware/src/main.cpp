@@ -16,6 +16,7 @@
 #include <Preferences.h>
 #include <time.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include "Config.h"
 #include "DisplayManager.h"
 #include "BleProvisioning.h"
@@ -40,6 +41,12 @@ static uint8_t  cardIndex = 0;
 static bool     gFirstCardShown = false; // true once any real card has rendered (gates the boot-time OTA check so it can't block the first render)
 
 // Cached fetch results.
+// The loop task runs every HTTPS fetch (mbedTLS handshake ~4-5KB of stack)
+// under refreshData() (~2.2KB frame since the markets/tracked FeedResult
+// grew) + matrixFeed + httpGet: too close to the 8KB default. 16KB of the
+// ~270KB free internal RAM buys real headroom.
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 static Data::FlightInfo  gFlight;
 static Data::FlightInfo  gFlightList[5];   // nearby planes (closest first)
 static uint8_t           gFlightCount = 0;
@@ -53,6 +60,7 @@ static Data::ScoreInfo   gScoreList[8];   // one game per in-season followed tea
 static String            gScoreKeysArr[8];
 static uint8_t           gScoreCount = 0;
 static uint8_t           gScoreShown = 0; // rotating index for on-wall cycling
+static Data::WeatherInfo  gWeather2;  // second location's alert
 static Data::WeatherInfo gWeather;
 static Data::UfcInfo     gUfc;
 static Data::MarketsInfo gMarkets;    // optional market indices card
@@ -228,6 +236,10 @@ static bool saveSettings() {
   w["showHiLo"] = gSettings.weather.showHiLo;
   w["showFeels"] = gSettings.weather.showFeels;
   w["showWxIcon"] = gSettings.weather.showWxIcon;
+  w["loc2"] = gSettings.weather.loc2;
+  w["lat2"] = gSettings.weather.lat2;
+  w["lon2"] = gSettings.weather.lon2;
+  w["where2"] = gSettings.weather.where2;
   JsonObject n = doc["night"].to<JsonObject>();
   n["enabled"] = gSettings.night.enabled;
   n["useSunset"] = gSettings.night.useSunset;
@@ -302,6 +314,10 @@ static bool loadSettings() {
     gSettings.weather.showHiLo  = w["showHiLo"] | false;
     gSettings.weather.showFeels = w["showFeels"] | false;
     gSettings.weather.showWxIcon= w["showWxIcon"] | false;
+    gSettings.weather.loc2      = w["loc2"] | false;
+    gSettings.weather.lat2      = w["lat2"] | 0.0;
+    gSettings.weather.lon2      = w["lon2"] | 0.0;
+    gSettings.weather.where2    = String((const char*)(w["where2"] | ""));
   }
   JsonObjectConst n = doc["night"];
   if (!n.isNull()) {
@@ -424,7 +440,8 @@ static void refreshData() {
         entry, gSettings.sports.enabled && entry.length() > 0,
         gSettings.sports.enabled && gSettings.sports.ufc,
         gSettings.markets.enabled,
-        trackParam);
+        trackParam,
+        gSettings.weather.loc2, gSettings.weather.lat2, gSettings.weather.lon2);
     if (fr.ok) {
       if (gSettings.flights.enabled) {
         gFlight = fr.flight; proxyFlight = true;
@@ -433,7 +450,12 @@ static void refreshData() {
         gFeedTrackedIdx = fr.trackedIdx; gFeedTrackCs = fr.trackCs;
         if (gFlightShown >= gFlightCount) gFlightShown = 0;
       }
-      if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
+      if (gSettings.weather.enabled) {
+        gWeather = fr.alert; proxyWeather = true;
+        gWeather2 = gSettings.weather.loc2 ? fr.alert2 : Data::WeatherInfo();
+        if (gWeather2.ok && gSettings.weather.where2.length())
+          gWeather2.headline = gSettings.weather.where2 + ": " + gWeather2.headline;
+      }
       if (gSettings.sports.enabled && gSettings.sports.ufc) gUfc = fr.ufc;
       // Keep the last good markets data through a failed upstream fetch.
       if (gSettings.markets.enabled && fr.markets.ok) gMarkets = fr.markets;
@@ -558,9 +580,11 @@ static void drawCard(uint8_t t) {
     Display::ufc(gUfc.name, gUfc.date, gUfc.headline);
     return;
   }
-  if (t == 3) {
+  if (t == 3 || t == 6) {
     // Initial alert frame; the marquee scroll is animated from loop().
-    Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), 0);
+    // 6 = the second location's alert (headline prefixed with its place).
+    const Data::WeatherInfo& w = (t == 6) ? gWeather2 : gWeather;
+    Display::weatherScroll(w.headline, severityColor(w.severity), 0);
     return;
   }
   if (t == 2) {
@@ -636,6 +660,7 @@ static void drawCard(uint8_t t) {
 static uint8_t buildSeq(uint8_t* seq) {
   uint8_t n = 0;
   if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
+  if (gSettings.weather.enabled && gSettings.weather.loc2 && gWeather2.ok) seq[n++] = 6; // 2nd location alert
   if (gSettings.flights.enabled && gFlightCount > 0) seq[n++] = 0;
   if (gSettings.sports.enabled  && gScoreCount > 0) seq[n++] = 1;
   if (gSettings.sports.enabled  && gSettings.sports.ufc && gUfc.ok) seq[n++] = 4;
@@ -643,6 +668,21 @@ static uint8_t buildSeq(uint8_t* seq) {
   // Clock shows when enabled OR as a fallback so the panel is never blank.
   if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
   return n;
+}
+
+static const char* resetReasonName() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_SW:        return "sw";        // ESP.restart() / OTA
+    case ESP_RST_PANIC:     return "panic";     // crash / exception / stack overflow
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_EXT:       return "ext";
+    default:                return "other";
+  }
 }
 
 void setup() {
@@ -658,7 +698,7 @@ void setup() {
   // it connects and must not race NVS restoration.
   bool restored = loadSettings();
   Serial.println(restored ? "[NVS] restored saved settings" : "[NVS] no saved settings");
-  AuraBLE::begin();
+  AuraBLE::begin(resetReasonName());
   Serial.printf("[BLE] advertising as %s\n", AuraBLE::deviceName());
   Display::begin();
   Display::setBrightness(gSettings.brightness);
@@ -671,6 +711,9 @@ void setup() {
 }
 
 void loop() {
+  // Apply config frames the app wrote over BLE (queued by the BLE task).
+  AuraBLE::processPending();
+
   // Flash test (one-shot from the app).
   if (gFlashTest) {
     gFlashTest = false;
@@ -750,7 +793,7 @@ void loop() {
   static int ufcScrollX = 0;
   static uint32_t lastUfcScroll = 0;
 
-  uint8_t seq[6];
+  uint8_t seq[8];
   uint8_t n = buildSeq(seq);
   static int lastN = -1;
   if ((int)n != lastN) {
@@ -771,7 +814,7 @@ void loop() {
   }
 
   uint8_t cur = seq[cardIndex % n];
-  uint32_t dwell = (cur == 3) ? ALERT_MS : CARD_MS;
+  uint32_t dwell = (cur == 3 || cur == 6) ? ALERT_MS : CARD_MS;
 
   // Advance to the next card once its dwell time elapses.
   if (now - lastCard >= dwell) {
@@ -786,10 +829,11 @@ void loop() {
   }
 
   // While the alert card is showing, keep scrolling the headline.
-  if (cur == 3 && now - lastScroll >= 40) {
+  if ((cur == 3 || cur == 6) && now - lastScroll >= 40) {
     lastScroll = now;
-    Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), alertScrollX);
-    int textW = (int)gWeather.headline.length() * 6;
+    const Data::WeatherInfo& w = (cur == 6) ? gWeather2 : gWeather;
+    Display::weatherScroll(w.headline, severityColor(w.severity), alertScrollX);
+    int textW = (int)w.headline.length() * 6;
     alertScrollX += 2;                                  // scroll speed (px/frame)
     if (alertScrollX > textW + MATRIX_W) alertScrollX = 0;
   }

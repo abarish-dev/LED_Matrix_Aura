@@ -730,11 +730,15 @@ async def markets():
 async def matrix_feed(lat: float, lon: float, radius: int = 40,
                       team: str = "", severity: str = "severe",
                       flights: int = 1, sports: int = 1, weather: int = 1, ufc: int = 0,
-                      markets: int = 0, track: str = ""):
+                      markets: int = 0, track: str = "",
+                      lat2: float | None = None, lon2: float | None = None):
     """One-shot aggregated feed for the LED matrix so the ESP32 makes a single
     small HTTPS call instead of 4+ heavy ones. Cached ~20s per param set."""
     track = _re.sub(r"[^A-Za-z0-9]", "", track or "").upper()[:10]
-    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}{markets},{track}"
+    # Optional second location (a family member's ZIP) watched for alerts only.
+    loc2 = (f"{lat2:.4f},{lon2:.4f}" if (lat2 is not None and lon2 is not None
+                                          and -90 <= lat2 <= 90 and -180 <= lon2 <= 180) else "")
+    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}{markets},{track},{loc2}"
     hit = _feed_cache.get(key)
     if hit and hit[0] > _time.time():
         return hit[1]
@@ -752,6 +756,9 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
     if weather:
         tasks["alert"] = _bounded(f"alert:{loc}:{severity}", _fetch_alert(cx, lat, lon, severity),
                                   _SOURCE_BUDGET, {"ok": 0})
+    if weather and loc2:
+        tasks["alert2"] = _bounded(f"alert:{loc2}:{severity}", _fetch_alert(cx, lat2, lon2, severity),
+                                   _SOURCE_BUDGET, {"ok": 0})
     if ufc:
         tasks["ufc"] = _bounded("ufc", _fetch_ufc(cx), _SOURCE_BUDGET, {"ok": 0})
     if markets:

@@ -84,6 +84,7 @@ export default function DeviceScreen() {
     sendWifi,
     settings,
     firmwareVersion,
+    panelResetReason,
     installOta,
     updateBrightness,
     updateNightMode,
@@ -530,6 +531,15 @@ export default function DeviceScreen() {
                     : "connect to read"}
               </Text>
             </View>
+            {panelResetReason && (
+              <View style={styles.aboutRow}>
+                <Text style={styles.aboutKey}>Last restart</Text>
+                <Text style={styles.aboutVal}>
+                  {({ poweron: "power on", sw: "software / update", panic: "crash", task_wdt: "watchdog",
+                     int_wdt: "watchdog", wdt: "watchdog", brownout: "low power (brownout)" } as Record<string, string>)[panelResetReason] ?? panelResetReason}
+                </Text>
+              </View>
+            )}
             <View style={styles.aboutRow}>
               <Text style={styles.aboutKey}>Device</Text>
               <Text style={styles.aboutVal}>{deviceName ?? "—"}</Text>
