@@ -16,6 +16,7 @@
 #include <Preferences.h>
 #include <time.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include "Config.h"
 #include "DisplayManager.h"
 #include "BleProvisioning.h"
@@ -40,10 +41,18 @@ static uint8_t  cardIndex = 0;
 static bool     gFirstCardShown = false; // true once any real card has rendered (gates the boot-time OTA check so it can't block the first render)
 
 // Cached fetch results.
+// The loop task runs every HTTPS fetch (mbedTLS handshake ~4-5KB of stack)
+// under refreshData() (~2.2KB frame since the markets/tracked FeedResult
+// grew) + matrixFeed + httpGet: too close to the 8KB default. 16KB of the
+// ~270KB free internal RAM buys real headroom.
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);
+
 static Data::FlightInfo  gFlight;
 static Data::FlightInfo  gFlightList[5];   // nearby planes (closest first)
 static uint8_t           gFlightCount = 0;
 static uint8_t           gFlightShown = 0; // rotating index for on-wall cycling
+static int8_t             gFeedTrackedIdx = -1; // server-resolved index of the pinned flight in the feed list
+static String             gFeedTrackCs;         // server-resolved ADS-B callsign of the pinned flight
 static int                gTrackedIdx = -1; // index of the tracked flight within gFlightList, -1 = not currently overhead
 static String              gTrackedCallsign;  // callsign of the tracked flight when a landing alert fires
 static Data::ScoreInfo   gScore;
@@ -51,8 +60,10 @@ static Data::ScoreInfo   gScoreList[8];   // one game per in-season followed tea
 static String            gScoreKeysArr[8];
 static uint8_t           gScoreCount = 0;
 static uint8_t           gScoreShown = 0; // rotating index for on-wall cycling
+static Data::WeatherInfo  gWeather2;  // second location's alert
 static Data::WeatherInfo gWeather;
 static Data::UfcInfo     gUfc;
+static Data::MarketsInfo gMarkets;    // optional market indices card
 static String            gScoreKey;   // "NFL:DAL" of the current score card
 static int               gLandingFlash = 0; // 0 none, 1 descending, 2 landed
 static int               gEtaMin = -1;      // rough arrival ETA for tracked flight
@@ -225,6 +236,10 @@ static bool saveSettings() {
   w["showHiLo"] = gSettings.weather.showHiLo;
   w["showFeels"] = gSettings.weather.showFeels;
   w["showWxIcon"] = gSettings.weather.showWxIcon;
+  w["loc2"] = gSettings.weather.loc2;
+  w["lat2"] = gSettings.weather.lat2;
+  w["lon2"] = gSettings.weather.lon2;
+  w["where2"] = gSettings.weather.where2;
   JsonObject n = doc["night"].to<JsonObject>();
   n["enabled"] = gSettings.night.enabled;
   n["useSunset"] = gSettings.night.useSunset;
@@ -238,6 +253,7 @@ static bool saveSettings() {
   nw["dimLevel"] = gSettings.night.weekend.dimLevel;
   doc["brightness"] = gSettings.brightness;
   doc["holidayThemes"] = gSettings.holidayThemes;
+  doc["markets"]["enabled"] = gSettings.markets.enabled;
 
   String out;
   serializeJson(doc, out);
@@ -298,6 +314,10 @@ static bool loadSettings() {
     gSettings.weather.showHiLo  = w["showHiLo"] | false;
     gSettings.weather.showFeels = w["showFeels"] | false;
     gSettings.weather.showWxIcon= w["showWxIcon"] | false;
+    gSettings.weather.loc2      = w["loc2"] | false;
+    gSettings.weather.lat2      = w["lat2"] | 0.0;
+    gSettings.weather.lon2      = w["lon2"] | 0.0;
+    gSettings.weather.where2    = String((const char*)(w["where2"] | ""));
   }
   JsonObjectConst n = doc["night"];
   if (!n.isNull()) {
@@ -316,6 +336,7 @@ static bool loadSettings() {
   }
   gSettings.brightness   = doc["brightness"] | 80;
   gSettings.holidayThemes= doc["holidayThemes"] | true;
+  gSettings.markets.enabled = doc["markets"]["enabled"] | false;
   return true;
 }
 
@@ -389,6 +410,10 @@ static void refreshData() {
 
   bool wantTrack = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
   bool proxyFlight = false, proxyWeather = false, proxyTemp = false, proxyScore = false;
+  String trackParam;   // URL-safe pinned ident (A-Z0-9 only)
+  if (wantTrack)
+    for (char c : gSettings.flights.flightIdent)
+      if (isalnum((unsigned char)c) && trackParam.length() < 10) trackParam += (char)toupper((unsigned char)c);
 
   // Send ALL followed teams (comma-joined) so the server returns a game for
   // each one and the matrix can cycle through every team that's playing.
@@ -413,16 +438,27 @@ static void refreshData() {
         gSettings.flights.radiusMi, gSettings.weather.severity,
         gSettings.flights.enabled, gSettings.weather.enabled,
         entry, gSettings.sports.enabled && entry.length() > 0,
-        gSettings.sports.enabled && gSettings.sports.ufc);
+        gSettings.sports.enabled && gSettings.sports.ufc,
+        gSettings.markets.enabled,
+        trackParam,
+        gSettings.weather.loc2, gSettings.weather.lat2, gSettings.weather.lon2);
     if (fr.ok) {
       if (gSettings.flights.enabled) {
         gFlight = fr.flight; proxyFlight = true;
         gFlightCount = fr.planeCount;
         for (uint8_t i = 0; i < fr.planeCount; i++) gFlightList[i] = fr.planes[i];
+        gFeedTrackedIdx = fr.trackedIdx; gFeedTrackCs = fr.trackCs;
         if (gFlightShown >= gFlightCount) gFlightShown = 0;
       }
-      if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
+      if (gSettings.weather.enabled) {
+        gWeather = fr.alert; proxyWeather = true;
+        gWeather2 = gSettings.weather.loc2 ? fr.alert2 : Data::WeatherInfo();
+        if (gWeather2.ok && gSettings.weather.where2.length())
+          gWeather2.headline = gSettings.weather.where2 + ": " + gWeather2.headline;
+      }
       if (gSettings.sports.enabled && gSettings.sports.ufc) gUfc = fr.ufc;
+      // Keep the last good markets data through a failed upstream fetch.
+      if (gSettings.markets.enabled && fr.markets.ok) gMarkets = fr.markets;
       if (entry.length() > 0 && fr.scoreCount > 0) {
         gScoreCount = fr.scoreCount;
         for (uint8_t i = 0; i < fr.scoreCount; i++) {
@@ -460,8 +496,14 @@ static void refreshData() {
   gTrackedIdx = -1;
   static int prevTrackedAlt = -1;
   if (wantTrack) {
-    String want = gSettings.flights.flightIdent; want.trim(); want.toUpperCase();
-    for (uint8_t i = 0; i < gFlightCount; i++) {
+    // Prefer the server's match (it maps IATA "AA786" to the ADS-B callsign
+    // "AAL786" and looks beyond the 5 closest / outside the radius); fall
+    // back to an exact callsign match for older servers.
+    if (proxyFlight && gFeedTrackedIdx >= 0 && gFeedTrackedIdx < gFlightCount)
+      gTrackedIdx = gFeedTrackedIdx;
+    String want = proxyFlight && gFeedTrackCs.length() ? gFeedTrackCs : gSettings.flights.flightIdent;
+    want.trim(); want.toUpperCase();
+    for (uint8_t i = 0; i < gFlightCount && gTrackedIdx < 0; i++) {
       String cs = gFlightList[i].callsign; cs.trim(); cs.toUpperCase();
       if (cs == want) { gTrackedIdx = i; break; }
     }
@@ -527,16 +569,22 @@ static void refreshData() {
   }
 }
 
-// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert, 4=ufc.
+// Draw a single card of the given type: 0=flight, 1=sports, 2=clock, 3=alert, 4=ufc, 5=markets.
 static void drawCard(uint8_t t) {
   uint16_t accent = holidayAccent();
+  if (t == 5) {
+    Display::markets(gMarkets);
+    return;
+  }
   if (t == 4) {
     Display::ufc(gUfc.name, gUfc.date, gUfc.headline);
     return;
   }
-  if (t == 3) {
+  if (t == 3 || t == 6) {
     // Initial alert frame; the marquee scroll is animated from loop().
-    Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), 0);
+    // 6 = the second location's alert (headline prefixed with its place).
+    const Data::WeatherInfo& w = (t == 6) ? gWeather2 : gWeather;
+    Display::weatherScroll(w.headline, severityColor(w.severity), 0);
     return;
   }
   if (t == 2) {
@@ -562,7 +610,21 @@ static void drawCard(uint8_t t) {
     // (green border + label) instead of hiding the rest of the traffic.
     Data::FlightInfo* fp = &gFlight;
     int shownIdx = -1;
-    if (gFlightCount > 1) {
+    // A pinned flight gets every other flight-card slot (pinned, nearby,
+    // pinned, nearby...) so it's never more than one card away, while the
+    // rest of the traffic still cycles.
+    static bool pinnedTurn = false;
+    if (gTrackedIdx >= 0 && gTrackedIdx < gFlightCount && gFlightCount > 1) {
+      pinnedTurn = !pinnedTurn;
+      if (pinnedTurn) {
+        shownIdx = gTrackedIdx;
+      } else {
+        gFlightShown = gFlightShown % gFlightCount;
+        if (gFlightShown == gTrackedIdx) gFlightShown = (gFlightShown + 1) % gFlightCount;
+        shownIdx = gFlightShown++;
+      }
+      fp = &gFlightList[shownIdx];
+    } else if (gFlightCount > 1) {
       gFlightShown = gFlightShown % gFlightCount;
       shownIdx = gFlightShown;
       fp = &gFlightList[gFlightShown];
@@ -598,12 +660,29 @@ static void drawCard(uint8_t t) {
 static uint8_t buildSeq(uint8_t* seq) {
   uint8_t n = 0;
   if (gSettings.weather.enabled && gWeather.ok)  seq[n++] = 3; // alert (30s, scrolls)
+  if (gSettings.weather.enabled && gSettings.weather.loc2 && gWeather2.ok) seq[n++] = 6; // 2nd location alert
   if (gSettings.flights.enabled && gFlightCount > 0) seq[n++] = 0;
   if (gSettings.sports.enabled  && gScoreCount > 0) seq[n++] = 1;
   if (gSettings.sports.enabled  && gSettings.sports.ufc && gUfc.ok) seq[n++] = 4;
+  if (gSettings.markets.enabled && gMarkets.ok) seq[n++] = 5;
   // Clock shows when enabled OR as a fallback so the panel is never blank.
   if (gSettings.weather.showClock || n == 0)     seq[n++] = 2;
   return n;
+}
+
+static const char* resetReasonName() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_SW:        return "sw";        // ESP.restart() / OTA
+    case ESP_RST_PANIC:     return "panic";     // crash / exception / stack overflow
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_EXT:       return "ext";
+    default:                return "other";
+  }
 }
 
 void setup() {
@@ -619,7 +698,7 @@ void setup() {
   // it connects and must not race NVS restoration.
   bool restored = loadSettings();
   Serial.println(restored ? "[NVS] restored saved settings" : "[NVS] no saved settings");
-  AuraBLE::begin();
+  AuraBLE::begin(resetReasonName());
   Serial.printf("[BLE] advertising as %s\n", AuraBLE::deviceName());
   Display::begin();
   Display::setBrightness(gSettings.brightness);
@@ -632,6 +711,9 @@ void setup() {
 }
 
 void loop() {
+  // Apply config frames the app wrote over BLE (queued by the BLE task).
+  AuraBLE::processPending();
+
   // Flash test (one-shot from the app).
   if (gFlashTest) {
     gFlashTest = false;
@@ -711,15 +793,16 @@ void loop() {
   static int ufcScrollX = 0;
   static uint32_t lastUfcScroll = 0;
 
-  uint8_t seq[5];
+  uint8_t seq[8];
   uint8_t n = buildSeq(seq);
   static int lastN = -1;
   if ((int)n != lastN) {
-    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d ufc=%d clock=%d\n", n,
+    Serial.printf("[CARD] n=%d  wxAlert=%d flight=%d score=%d ufc=%d markets=%d clock=%d\n", n,
                   (gSettings.weather.enabled && gWeather.ok),
                   (gSettings.flights.enabled && gFlightCount > 0),
                   (gSettings.sports.enabled && gScoreCount > 0),
                   (gSettings.sports.enabled && gSettings.sports.ufc && gUfc.ok),
+                  (gSettings.markets.enabled && gMarkets.ok),
                   gSettings.weather.showClock);
     lastN = n;
   }
@@ -731,7 +814,7 @@ void loop() {
   }
 
   uint8_t cur = seq[cardIndex % n];
-  uint32_t dwell = (cur == 3) ? ALERT_MS : CARD_MS;
+  uint32_t dwell = (cur == 3 || cur == 6) ? ALERT_MS : CARD_MS;
 
   // Advance to the next card once its dwell time elapses.
   if (now - lastCard >= dwell) {
@@ -746,10 +829,11 @@ void loop() {
   }
 
   // While the alert card is showing, keep scrolling the headline.
-  if (cur == 3 && now - lastScroll >= 40) {
+  if ((cur == 3 || cur == 6) && now - lastScroll >= 40) {
     lastScroll = now;
-    Display::weatherScroll(gWeather.headline, severityColor(gWeather.severity), alertScrollX);
-    int textW = (int)gWeather.headline.length() * 6;
+    const Data::WeatherInfo& w = (cur == 6) ? gWeather2 : gWeather;
+    Display::weatherScroll(w.headline, severityColor(w.severity), alertScrollX);
+    int textW = (int)w.headline.length() * 6;
     alertScrollX += 2;                                  // scroll speed (px/frame)
     if (alertScrollX > textW + MATRIX_W) alertScrollX = 0;
   }

@@ -1,16 +1,15 @@
 {
   "expo": {
     "name": "Aura 2",
-    "slug": "frontend",
+    "slug": "aura-matrix",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "auratwo",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.auratwo.hltjsu",
+      "bundleIdentifier": "com.abarish.auratwo",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Connect to your LED matrix to sync settings",
         "NSBluetoothPeripheralUsageDescription": "Connect to your LED matrix to sync settings",
@@ -22,13 +21,20 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#14171d"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.emergent.auratwo.hltjsu",
+      "package": "com.abarish.auratwo",
       "permissions": [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "versionCode": 3
     },
     "web": {
       "bundler": "metro",
@@ -76,6 +82,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7adafa96-660d-47a9-a874-dc5ab4168cf9"
+      }
+    },
+    "owner": "abarish"
   }
 }

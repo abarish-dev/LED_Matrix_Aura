@@ -84,11 +84,13 @@ export default function DeviceScreen() {
     sendWifi,
     settings,
     firmwareVersion,
+    panelResetReason,
     installOta,
     updateBrightness,
     updateNightMode,
     updateWeekend,
     updateHolidayThemes,
+    updateMarkets,
   } = useMatrix();
   const toast = useToast();
   const insets = useSafeAreaInsets();
@@ -426,6 +428,19 @@ export default function DeviceScreen() {
           </Text>
         </Card>
 
+        <Card style={{ marginTop: spacing.md }}>
+          <ToggleRow
+            label="Market Indices"
+            icon="trending-up"
+            value={settings.markets.enabled}
+            onValueChange={(v) => updateMarkets(v)}
+          />
+          <Text style={styles.brightHint}>
+            Adds an S&P 500 / Dow / Nasdaq card with % change, an intraday sparkline and
+            market open/closed status. Needs firmware 1.6.33 or newer.
+          </Text>
+        </Card>
+
         {/* Wi-Fi */}
         <SectionLabel>Wi-Fi Setup</SectionLabel>
         <Card>
@@ -516,6 +531,15 @@ export default function DeviceScreen() {
                     : "connect to read"}
               </Text>
             </View>
+            {panelResetReason && (
+              <View style={styles.aboutRow}>
+                <Text style={styles.aboutKey}>Last restart</Text>
+                <Text style={styles.aboutVal}>
+                  {({ poweron: "power on", sw: "software / update", panic: "crash", task_wdt: "watchdog",
+                     int_wdt: "watchdog", wdt: "watchdog", brownout: "low power (brownout)" } as Record<string, string>)[panelResetReason] ?? panelResetReason}
+                </Text>
+              </View>
+            )}
             <View style={styles.aboutRow}>
               <Text style={styles.aboutKey}>Device</Text>
               <Text style={styles.aboutVal}>{deviceName ?? "—"}</Text>

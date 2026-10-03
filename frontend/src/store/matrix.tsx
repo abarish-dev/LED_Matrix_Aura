@@ -62,6 +62,7 @@ export type Settings = {
   };
   brightness: number; // 0-100 matrix brightness
   holidayThemes: boolean; // shift accent colors on holidays
+  markets: { enabled: boolean }; // optional S&P / Dow / Nasdaq card on the wall
   nightMode: {
     enabled: boolean;
     useSunset: boolean; // dim from local sunset to sunrise instead of fixed hours
@@ -108,6 +109,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   brightness: 80,
   holidayThemes: true,
+  markets: { enabled: false },
   nightMode: {
     enabled: false,
     useSunset: false,
@@ -153,6 +155,7 @@ type MatrixContextValue = {
   toggleFavorite: (key: string) => void;
   updateBrightness: (value: number) => void;
   updateHolidayThemes: (value: boolean) => void;
+  updateMarkets: (enabled: boolean) => void;
   updateNightMode: (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => void;
   updateWeekend: (patch: Partial<Settings["nightMode"]["weekend"]>) => void;
 
@@ -161,7 +164,9 @@ type MatrixContextValue = {
   connectToPicked: (deviceId: string) => Promise<{ name: string }>;
   dismissPicker: () => void;
   disconnect: () => Promise<void>;
-  syncAll: () => Promise<{ confirmed: boolean }>;
+  syncAll: () => Promise<{ confirmed: boolean; dropped?: boolean; ackSupported?: boolean }>;
+  waitForAck: (cmd: string, timeoutMs?: number) => Promise<any | null>;
+  panelResetReason: string | null;
   sendWifi: (ssid: string, pass: string) => Promise<void>;
   flashTest: () => Promise<void>;
   weatherTest: () => Promise<void>;
@@ -175,6 +180,39 @@ export function useMatrix(): MatrixContextValue {
   if (!ctx) throw new Error("useMatrix must be used within MatrixProvider");
   return ctx;
 }
+
+// Weather section as the firmware expects it, including the optional second
+// location (firmware 1.6.35+ shows its alerts; older firmware ignores it).
+function weatherPayload(w: Settings["weather"]) {
+  const l2 = w.secondLocation;
+  const has2 = l2.lat != null && l2.lon != null;
+  return {
+    enabled: w.enabled,
+    severity: w.severity,
+    showClock: w.showClock,
+    showHiLo: w.showHiLo,
+    showFeels: w.showFeels,
+    showWxIcon: w.showWxIcon,
+    loc2: has2,
+    ...(has2
+      ? { lat2: l2.lat, lon2: l2.lon, where2: `${l2.city}${l2.state ? " " + l2.state : ""}`.trim().slice(0, 20) }
+      : {}),
+  };
+}
+
+/** True if firmware version `v` is at least `min` (dotted numbers). */
+export function fwAtLeast(v: string | null, min: string): boolean {
+  if (!v) return false;
+  const a = v.split(".").map((x) => parseInt(x, 10) || 0);
+  const b = min.split(".").map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+  }
+  return true;
+}
+
+// Firmware that confirms each applied command with {"ack":"<command>"}.
+export const ACK_FW = "1.6.35";
 
 export function buildFullPayload(s: Settings) {
   return {
@@ -194,16 +232,10 @@ export function buildFullPayload(s: Settings) {
       rivals: s.sports.rivals,
       showStreak: s.sports.showStreak,
     },
-    weather: {
-      enabled: s.weather.enabled,
-      severity: s.weather.severity,
-      showClock: s.weather.showClock,
-      showHiLo: s.weather.showHiLo,
-      showFeels: s.weather.showFeels,
-      showWxIcon: s.weather.showWxIcon,
-    },
+    weather: weatherPayload(s.weather),
     brightness: s.brightness,
     holidayThemes: s.holidayThemes,
+    markets: { enabled: s.markets.enabled },
     nightMode: {
       enabled: s.nightMode.enabled,
       useSunset: s.nightMode.useSunset,
@@ -249,6 +281,7 @@ async function pushAllSections(full: ReturnType<typeof buildFullPayload>) {
   await writeLive({ command: "night", ...full.nightMode }); await gap();
   await writeLive({ command: "brightness", value: full.brightness }); await gap();
   await writeLive({ command: "holiday", enabled: full.holidayThemes }); await gap();
+  await writeLive({ command: "markets", enabled: full.markets.enabled }); await gap();
   // Tell the matrix our backend base URL so it can fetch flight/weather/temp via
   // the reliable server proxy (one small call) instead of many direct HTTPS hits.
   const server = process.env.EXPO_PUBLIC_BACKEND_URL ?? "";
@@ -274,7 +307,15 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   const [wifiIp, setWifiIp] = useState<string | null>(null);
   const [lastSsid, setLastSsid] = useState("");
   const [firmwareVersion, setFirmwareVersion] = useState<string | null>(null);
+  // Why the matrix last booted ("panic", "task_wdt", "brownout", ...), from fw 1.6.35+.
+  const [panelResetReason, setPanelResetReason] = useState<string | null>(null);
+  const firmwareRef = useRef<string | null>(null);
+  const bleStatusRef = useRef<BleStatus>("disconnected");
+  useEffect(() => { firmwareRef.current = firmwareVersion; }, [firmwareVersion]);
+  // Pending waits for {"ack":"<command>"} notifications from the matrix.
+  const ackWaiters = useRef<{ cmd: string; resolve: (obj: any | null) => void }[]>([]);
 
+  useEffect(() => { bleStatusRef.current = bleStatus; }, [bleStatus]);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const pushTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -303,6 +344,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
             typeof saved.holidayThemes === "boolean"
               ? saved.holidayThemes
               : DEFAULT_SETTINGS.holidayThemes,
+          markets: { ...DEFAULT_SETTINGS.markets, ...(saved.markets ?? {}) },
         });
       }
       const ssid = await storage.getItem<string>("aura_last_ssid", "");
@@ -368,14 +410,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
       setSettings((prev) => {
         const next = { ...prev, weather: { ...prev.weather, ...patch } };
         persist(next);
-        livePush("weather", {
-          enabled: next.weather.enabled,
-          severity: next.weather.severity,
-          showClock: next.weather.showClock,
-          showHiLo: next.weather.showHiLo,
-          showFeels: next.weather.showFeels,
-          showWxIcon: next.weather.showWxIcon,
-        });
+        livePush("weather", weatherPayload(next.weather));
         return next;
       });
     },
@@ -418,10 +453,12 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
           weather: { ...prev.weather, secondLocation: { ...prev.weather.secondLocation, ...patch } },
         };
         persist(next);
+        // Send it to the matrix too (it used to stay phone-only).
+        livePush("weather", weatherPayload(next.weather));
         return next;
       });
     },
-    [persist],
+    [persist, livePush],
   );
 
 
@@ -537,6 +574,18 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     [persist, livePush],
   );
 
+  const updateMarkets = useCallback(
+    (enabled: boolean) => {
+      setSettings((prev) => {
+        const next = { ...prev, markets: { enabled } };
+        persist(next);
+        livePush("markets", { enabled });
+        return next;
+      });
+    },
+    [persist, livePush],
+  );
+
   const updateNightMode = useCallback(
     (patch: Partial<Omit<Settings["nightMode"], "weekend">>) => {
       setSettings((prev) => {
@@ -569,6 +618,9 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
 
   // ---- BLE actions ----------------------------------------------------------
   const onBleDisconnected = useCallback(() => {
+    // Fail any pending ack waits right away (don't sit out the timeout).
+    for (const w of ackWaiters.current) w.resolve(null);
+    ackWaiters.current = [];
     setBleStatus("disconnected");
     setDeviceName(null);
     setRssi(null);
@@ -585,6 +637,15 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     // Listen for async status pushes (Wi-Fi join result + firmware version).
     monitorMatrix((obj) => {
       if (typeof obj?.fw === "string") setFirmwareVersion(obj.fw);
+      if (typeof obj?.rst === "string") setPanelResetReason(obj.rst);
+      if (typeof obj?.ack === "string") {
+        const left: typeof ackWaiters.current = [];
+        for (const w of ackWaiters.current) {
+          if (w.cmd === obj.ack) w.resolve(obj);
+          else left.push(w);
+        }
+        ackWaiters.current = left;
+      }
       if (obj?.wifiStatus === "connected") {
         setWifiStatus("joined");
         setWifiIp(obj.ip ?? null);
@@ -670,10 +731,30 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     setFirmwareVersion(null);
   }, []);
 
-  const syncAll = useCallback(async () => {
-    await pushAllSections(buildFullPayload(settingsRef.current));
-    return { confirmed: true };
+  /** Resolve with the matrix's {"ack":cmd} notification, or null on timeout/disconnect. */
+  const waitForAck = useCallback((cmd: string, timeoutMs = 15000): Promise<any | null> => {
+    return new Promise((resolve) => {
+      const entry = { cmd, resolve: (o: any | null) => { clearTimeout(t); resolve(o); } };
+      const t = setTimeout(() => {
+        ackWaiters.current = ackWaiters.current.filter((w) => w !== entry);
+        resolve(null);
+      }, timeoutMs);
+      ackWaiters.current.push(entry);
+    });
   }, []);
+
+  // "confirmed" = the matrix acknowledged applying the last section (fw
+  // 1.6.35+). Older firmware can't confirm, so we only report the writes went
+  // out. "dropped" = the BLE link went away before the matrix confirmed.
+  const syncAll = useCallback(async () => {
+    const canAck = fwAtLeast(firmwareRef.current, ACK_FW);
+    const ack = canAck ? waitForAck("server") : null;
+    await pushAllSections(buildFullPayload(settingsRef.current));
+    if (!canAck) return { confirmed: false, dropped: false, ackSupported: false };
+    const got = await ack;
+    const dropped = bleStatusRef.current !== "connected";
+    return { confirmed: !!got, dropped, ackSupported: true };
+  }, [waitForAck]);
 
   const sendWifi = useCallback(async (ssid: string, pass: string) => {
     setLastSsid(ssid);
@@ -718,6 +799,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     wifiIp,
     lastSsid,
     firmwareVersion,
+    panelResetReason,
+    waitForAck,
     updateFlights,
     updateSports,
     updateWeather,
@@ -730,6 +813,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     toggleFavorite,
     updateBrightness,
     updateHolidayThemes,
+    updateMarkets,
     updateNightMode,
     updateWeekend,
     connect,

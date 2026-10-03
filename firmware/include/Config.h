@@ -22,7 +22,7 @@
 // Firmware version, reported to the app over BLE (hidden "About" reveal in the
 // Device tab). Bump this on every firmware change so field troubleshooting can
 // confirm which build is actually flashed.
-#define AURA_FW_VERSION    "1.6.30"
+#define AURA_FW_VERSION    "1.6.35"
 
 // ---- Persisted settings ----------------------------------------------------
 static const uint8_t MAX_TEAMS = 16;
@@ -54,6 +54,15 @@ struct WeatherCfg {
   bool   showHiLo  = false;    // add today's high/low to the clock card
   bool   showFeels = false;    // add the "feels like" temp to the clock card
   bool   showWxIcon = false;   // draw a sun/cloud/rain/storm symbol on the clock card
+  // Optional second location (a family member's ZIP) watched for alerts.
+  bool   loc2      = false;
+  double lat2      = 0.0;
+  double lon2      = 0.0;
+  String where2    = "";       // short label shown on the alert, e.g. "MIAMI FL"
+};
+
+struct MarketsCfg {
+  bool enabled = false;        // optional S&P / Dow / Nasdaq card (app toggle)
 };
 
 struct NightWindow {
@@ -77,6 +86,7 @@ struct AuraSettings {
   SportsCfg  sports;
   WeatherCfg weather;
   NightCfg   night;
+  MarketsCfg markets;
   int        brightness = 80;   // 0-100 (%)
   bool       holidayThemes = true;
   String     wifiSsid = "";

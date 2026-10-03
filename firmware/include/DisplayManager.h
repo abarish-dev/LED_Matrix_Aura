@@ -9,6 +9,7 @@
 #include <Fonts/FreeMono9pt7b.h>
 #include "Config.h"
 #include "Logos.h"
+#include "DataServices.h"   // MarketsInfo for the markets card
 
 namespace Display {
 
@@ -428,6 +429,53 @@ inline void clock(const String& timeStr, int tempF, uint16_t accent = 0,
     if (hasHiLo) sec += "H" + String(hiF) + " L" + String(loF);
     sec.trim();
     centerText(sec.c_str(), 51, rgb(160, 160, 160), 1);
+  }
+  flip();
+}
+
+// Optional market indices card: header (MARKETS + session status), then one
+// two-line row per index: name + value, then % change (green up / red down)
+// beside an intraday sparkline on a fixed 9:30-16:00 timeline.
+inline void markets(const Data::MarketsInfo& m) {
+  clear();
+  dma->setFont(nullptr);
+  dma->setTextSize(1);
+  dma->setTextWrap(false);
+  auto text = [](const String& t, int x, int y, uint16_t c) {
+    dma->setTextColor(c); dma->setCursor(x, y); dma->print(t);
+  };
+  const uint16_t green = rgb(0, 210, 90), red = rgb(255, 40, 40);
+  const uint16_t white = rgb(235, 235, 235), gray = rgb(150, 150, 150);
+  const uint16_t dim = rgb(70, 70, 70), blue = rgb(56, 150, 255);
+  String st = "CLOSED"; uint16_t stc = gray;
+  if (m.status == "OPEN")       { st = "OPEN";      stc = green; }
+  else if (m.status == "PRE")   { st = "PRE-MKT";   stc = blue; }
+  else if (m.status == "AFTER") { st = "AFTER HRS"; stc = blue; }
+  text("MARKETS", 1, 0, brandAmber());
+  text(st, MATRIX_W - (int)st.length() * 6, 0, stc);
+  for (uint8_t i = 0; i < m.count && i < 3; i++) {
+    const Data::MarketIndex& ix = m.idx[i];
+    int y = 10 + i * 18;
+    bool up = ix.pct >= 0;
+    uint16_t col = up ? green : red;
+    text(ix.name, 1, y, gray);
+    text(ix.value, MATRIX_W - (int)ix.value.length() * 6, y, white);
+    char pct[12];
+    snprintf(pct, sizeof(pct), "%s%.2f%%", up ? "+" : "", ix.pct);
+    text(pct, 1, y + 9, col);
+    const int x0 = 44, x1 = MATRIX_W - 2, top = y + 9, bot = y + 16;
+    if (ix.base >= 0) {
+      int by = bot - (ix.base * (bot - top) + 50) / 100;
+      for (int x = x0; x <= x1; x += 2) dma->drawPixel(x, by, dim);
+    }
+    int px = -1, py = -1;
+    for (uint8_t k = 0; k < ix.n; k++) {
+      int x = x0 + (k * (x1 - x0) + (ix.slots - 1) / 2) / (ix.slots - 1);
+      int yy = bot - (ix.spark[k] * (bot - top) + 50) / 100;
+      if (px >= 0) dma->drawLine(px, py, x, yy, col);
+      else dma->drawPixel(x, yy, col);
+      px = x; py = yy;
+    }
   }
   flip();
 }

@@ -33,9 +33,22 @@ export default function SyncFab() {
     setBusy(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await syncAll();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.show("Synced ✓  Flights, sports & weather sent to the matrix.", "success");
+      const r = await syncAll();
+      if (r.dropped) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        toast.show("The matrix disconnected during sync. Reconnect on the Device tab and try again.", "error");
+      } else if (r.ackSupported && !r.confirmed) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        toast.show("Sent, but the matrix didn't confirm. Tap Sync again.", "info");
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        toast.show(
+          r.confirmed
+            ? "Synced ✓  The matrix confirmed your settings."
+            : "Sent ✓  Flights, sports & weather sent to the matrix.",
+          "success",
+        );
+      }
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       toast.show(e?.message ?? "Sync failed.", "error");

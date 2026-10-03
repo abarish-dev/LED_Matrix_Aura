@@ -39,7 +39,8 @@ TEAMS = {
 AIRLINES = {
     "AAL": "AA", "DAL": "DL", "UAL": "UA", "SWA": "WN", "JBU": "B6",
     "NKS": "NK", "FFT": "F9", "SKW": "OO", "ASA": "AS", "HAL": "HA",
-    "AAY": "G4", "SCX": "SY",
+    "AAY": "G4", "SCX": "SY", "PDT": "PT",
+    "JIA": "OH", "ENY": "MQ", "RPA": "YX", "MXY": "MX",
 }
 
 session = requests.Session()
@@ -192,6 +193,437 @@ def florida_panthers_mark():
     colors = {".": 0x0000, "R": 0xE000, "N": 0x0012,
               "G": rgb565(255, 113, 0), "W": 0xFFFF}
     return [colors[pixel] for row in rows for pixel in row]
+
+
+def native_mark(rows, colors):
+    """Expand a hand-tuned 24x24 pixel-art mark into RGB565 pixels.
+
+    Used for logos that downsample into mud at 24px (thin strokes, navy on
+    black, tiny wordmarks). '.' is unlit black, which drawLogo() treats as
+    transparent. Colors avoid R+G-only mixes (gold/yellow/orange), which split
+    on this panel (see DisplayManager.h); white and pure red/blue are proven.
+    """
+    assert len(rows) == SIZE and all(len(row) == SIZE for row in rows)
+    return [colors[pixel] for row in rows for pixel in row]
+
+
+LED_RED = rgb565(230, 0, 0)
+LED_WHITE = 0xFFFF
+
+
+def titans_mark():
+    """2026 Titans roundel: white T and three stars on Titans blue, white/red rings.
+
+    Supersedes the pre-2026 flaming-T art and the unmerged
+    codex/display-type-weather-icons hand-drawn version (b44411a): the T now
+    has the new flared crossbar and tapered stem, with clear 5px stars.
+    """
+    rows = (
+        "........RRRRRRRR........",
+        "......RRRWWWWWWRRR......",
+        "....RRRWWBBBBBBWWRRR....",
+        "...RRWWBBBBWBBBBBWWRR...",
+        "..RRWWBBBWWWWWBBBBWWRR..",
+        "..RWWBBBBBWWWBBBBBBWWR..",
+        ".RRWBBBBBBWBWBBBBBBBWRR.",
+        ".RWBBBBBBBBBBBBBBBBBBWR.",
+        "RRWBWWWWWWWWWWWWWWWWBWRR",
+        "RWBBWWWWWWWWWWWWWWWWBBWR",
+        "RWBBBWWWWWWWWWWWWWWBBBWR",
+        "RWBBBBBBBBWWWWBBBBBBBBWR",
+        "RWBBBBBBBBWWWWBBBBBBBBWR",
+        "RWBBBBWBBBWWWWBBBWBBBBWR",
+        "RWBBWWWWWBWWWWBWWWWWBBWR",
+        "RRWBBWWWBBWWWWBBWWWBBWRR",
+        ".RWBBWBWBBBWWBBBWBWBBWR.",
+        ".RRWBBBBBBBWWBBBBBBBWRR.",
+        "..RWWBBBBBBBBBBBBBBWWR..",
+        "..RRWWBBBBBBBBBBBBWWRR..",
+        "...RRWWBBBBBBBBBBWWRR...",
+        "....RRRWWBBBBBBWWRRR....",
+        "......RRRWWWWWWRRR......",
+        "........RRRRRRRR........",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
+                              "B": rgb565(60, 140, 230)})
+
+
+def buccaneers_mark():
+    """Bucs red flag with white skull and crossed swords on a pewter pole."""
+    rows = (
+        ".....................PP.",
+        ".....R..............RPP.",
+        "...RRRRRRRR.......RRPP..",
+        ".RRRRRRRRWWWWRRRRRRRPP..",
+        "..RRRRRRWWWWWWRRRRRRPP..",
+        "...RRRRRW.WW.WRRRRRRPP..",
+        "....RRRRW.WW.WRRRRRRPP..",
+        "...RRRRRWWWWWWRRRRRRPP..",
+        ".RRRRRRRRWWWWRRRRRRPP...",
+        "RRRRRRWWRW.W.RWWRRRPP...",
+        ".RRRRRRRWWRRWWRRRRRPP...",
+        "..RRRRRRRRWWRRRRRRRPP...",
+        "...RRRRRWWRRWWRRRRRPP...",
+        "...RRRWWRRRRRRWWRRRRR...",
+        "..RRRRRRRRRRRRRRRRRRR...",
+        "..RR.....RRRRRRRR.PP....",
+        ".R.........R.....PP.....",
+        "................PP......",
+        "............PPPPPPP.....",
+        "...............PP.......",
+        "..............PP........",
+        ".............P..........",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
+                              "P": rgb565(150, 150, 160)})
+
+
+def lightning_mark():
+    """Lightning bolt through the open ring. ESPN's navy art is nearly
+    invisible on the panel, so the ring is brightened and the bolt is white."""
+    rows = (
+        "...................WWWWW",
+        "..........BB......WWWWW.",
+        ".......BBBBB.....WWWW...",
+        ".....BBBBBBB....WWWW....",
+        "....BBBBB.....WWWWW.....",
+        "...BBBB......WWWWW......",
+        "...BBB......WWWW..BBB...",
+        "..BBB......WWWW....BBB..",
+        "..BB......WWWWWWWW..BB..",
+        ".BBB.....WWWWWWWW...BBB.",
+        ".BBB...WWWWWWWWW....BBB.",
+        ".BB...WWWWWWWWW......BB.",
+        ".BB..WWWWWWWWW.......BB.",
+        ".BB.....WWWWW........BB.",
+        ".BBB....WWWW........BBB.",
+        ".BBB...WWWW.........BBB.",
+        "..BB..WWW...........BB..",
+        "..BBBWWW...........BBB..",
+        ".....WW...........BBB...",
+        "....WW...........BBBB...",
+        "...WW...B......BBBBB....",
+        "..WW....BBBBBBBBBBB.....",
+        "..W.....BBBBBBBBB.......",
+        ".W........BBBB..........",
+    )
+    return native_mark(rows, {".": 0, "B": rgb565(30, 120, 255), "W": LED_WHITE})
+
+
+def rays_mark():
+    """Rays interlocking "TB" cap mark: brightened navy with a Columbia-blue
+    drop shadow (the source navy is too dark to read on black)."""
+    rows = (
+        "........................",
+        "........................",
+        "NNNNNNNNNNNNNL..........",
+        "NNNNNNNNNNNNNL..........",
+        "NNLLLNNNLLLNNL..........",
+        "NLL..NNNL..LNL..........",
+        "LL...NNNL...LL..........",
+        ".....NNNL...............",
+        ".....NNNL.NNNNNNNNNL....",
+        ".....NNNL.LNNNLLLNNNL...",
+        ".....NNNL..NNNL..LNNNL..",
+        ".....NNNL..NNNL...NNNL..",
+        ".....NNNL..NNNL..NNNLL..",
+        ".....NNNL..NNNNNNNNLL...",
+        ".....NNNL..NNNLLLNNNNL..",
+        ".....NNNL..NNNL..LNNNNL.",
+        ".....NNNL..NNNL...LNNNL.",
+        ".....NNNL..NNNL....NNNL.",
+        ".....NNNL..NNNL...NNNNL.",
+        "...NNNNNNNLNNNL..NNNNLL.",
+        "...NNNNNNNNNNNNNNNNNLL..",
+        "...LLLLLLLLLLLLLLLLLL...",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "N": rgb565(0, 40, 220),
+                              "L": rgb565(120, 180, 255)})
+
+
+def capitals_mark(variant="red_sticks"):
+    """Capitals: white Capitol dome (statue, lantern, colonnade) over two
+    crossed hockey sticks, with a blue plinth accent.
+
+    Replaces the v1.6.31 draft "CAPS" wordmark. Default variant uses all-red
+    sticks for contrast against the white dome; "white_shafts" keeps white
+    shafts with red blades (blends into the dome more at 24px).
+    """
+    red_sticks = (
+        "........................",
+        "...........WW...........",
+        "...........WW...........",
+        "..........WWWW..........",
+        "..........W..W..........",
+        ".RR......WWWWWW......RR.",
+        "..RR....WWWWWWWW....RR..",
+        "...RR..WWWWWWWWWW..RR...",
+        "....RR.WWWWWWWWWW.RR....",
+        ".....RGGGGGGGGGGGGR.....",
+        "......W.WW.WW.WW.W......",
+        "......W.WW.WW.WW.W......",
+        "......GGGGGGGGGGGG......",
+        "....WWWWWWWWWWWWWWWW....",
+        "....BBBBBBBBBBBBBBBB....",
+        "...........RR...........",
+        "..........RRRR..........",
+        ".........RR..RR.........",
+        "........RR....RR........",
+        ".......RR......RR.......",
+        "......RR........RR......",
+        ".RRRRRR..........RRRRRR.",
+        ".RRRRRR..........RRRRRR.",
+        "........................",
+    )
+    white_shafts = (
+        "........................",
+        "...........WW...........",
+        "...........WW...........",
+        "..........WWWW..........",
+        "..........W..W..........",
+        ".WW......WWWWWW......WW.",
+        "..WW....WWWWWWWW....WW..",
+        "...WW..WWWWWWWWWW..WW...",
+        "....WW.WWWWWWWWWW.WW....",
+        ".....WGGGGGGGGGGGGW.....",
+        "......W.WW.WW.WW.W......",
+        "......W.WW.WW.WW.W......",
+        "......GGGGGGGGGGGG......",
+        "....WWWWWWWWWWWWWWWW....",
+        "....RRRRRRRRRRRRRRRR....",
+        "...........WW...........",
+        "..........WWWW..........",
+        ".........WW..WW.........",
+        "........WW....WW........",
+        ".......WW......WW.......",
+        "......WW........WW......",
+        ".RRRRRR..........RRRRRR.",
+        ".RRRRRR..........RRRRRR.",
+        "........................",
+    )
+    rows = white_shafts if variant == "white_shafts" else red_sticks
+    return native_mark(rows, {".": 0, "R": LED_RED, "W": LED_WHITE,
+                              "G": rgb565(170, 170, 180),
+                              "B": rgb565(30, 120, 255)})
+
+
+# Hand-tuned marks that replace the ESPN download entirely.
+NATIVE_TEAM_MARKS = {
+    ("NHL", "FLA"): florida_panthers_mark,
+    ("NFL", "TEN"): titans_mark,
+    ("NFL", "TB"): buccaneers_mark,
+    ("NHL", "TB"): lightning_mark,
+    ("MLB", "TB"): rays_mark,
+    ("NHL", "WSH"): capitals_mark,
+}
+
+
+def piedmont_mark():
+    """Piedmont (PDT/PT): bold italic red P with three bright-blue speed stripes.
+
+    Google Flights serves only a generic gray tail for PT. Bright blue
+    replaces navy, which vanishes on the panel; no gold/yellow."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "BBBBBBBBBB....RRRRRRRRR.",
+        "BBBBBBBBBB...RRRRRRRRRRR",
+        ".............RRR.....RRR",
+        ".............RRR.....RRR",
+        ".BBBBBBBB...RRR.....RRRR",
+        ".BBBBBBBB...RRRRRRRRRRR.",
+        "............RRRRRRRRRR..",
+        "............RRR.........",
+        "..BBBBBB...RRR..........",
+        "..BBBBBB...RRR..........",
+        "...........RRR..........",
+        "...........RR...........",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "B": rgb565(30, 120, 255)})
+
+
+def psa_mark():
+    """PSA Airlines (JIA/OH): blue italic PSA over the red PSA smile."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+        "....BBBB...BBBB..BBB....",
+        "....BB.BB.BB....BB.BB...",
+        "....BB.BB.BB....BB.BB...",
+        "...BBBB...BBB..BBBBB....",
+        "...BB.......BB.BB.BB....",
+        "...BB.......BB.BB.BB....",
+        "...BB....BBBB..BB.BB....",
+        "........................",
+        "........................",
+        "........................",
+        "..R..................R..",
+        "..RRR..............RRR..",
+        "...RRRRR........RRRRR...",
+        ".....RRRRRRRRRRRRRR.....",
+        "........RRRRRRRR........",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "B": rgb565(30, 120, 255)})
+
+
+def envoy_mark():
+    """Envoy (ENY/MQ): lowercase env/oy in brightened Envoy violet with the
+    red accent on the y. Brand purple #250E72 is too dark for the panel."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        "....VVV..VVVV..VV.VV....",
+        "...VV.VV.VV.VV.VV.VV....",
+        "...VVVVV.VV.VV.VV.VV....",
+        "...VV....VV.VV..VVV.....",
+        "....VVVV.VV.VV...V......",
+        "........................",
+        "........................",
+        "........................",
+        ".......VVV..VV.VV.......",
+        "......VV.VV.VV.VV.......",
+        "......VV.VV.VV.VV.......",
+        "......VV.VV..VVVV.......",
+        ".......VVV.....VV.......",
+        "................R.......",
+        "...............RR.......",
+        "..............RR........",
+        "...........RRRR.........",
+        "..........RRR...........",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "V": rgb565(120, 70, 255)})
+
+
+def republic_mark():
+    """Republic Airways (RPA/YX): seven-star ring (white) around a bold
+    bright-blue R."""
+    rows = (
+        "........................",
+        "............W...........",
+        "...........WWW..........",
+        "............W...........",
+        "........................",
+        "....W..............W....",
+        "...WWW..BBBBBBB...WWW...",
+        "....W...BBBBBBBB...W....",
+        "........BBB..BBB........",
+        "........BBB..BBB........",
+        "........BBB..BBB........",
+        "........BBBBBBBB........",
+        "........BBBBBBB.........",
+        "..W.....BBB.BBB......W..",
+        ".WWW....BBB..BBB....WWW.",
+        "..W.....BBB..BBB.....W..",
+        "........BBB..BBB........",
+        "........................",
+        "........................",
+        ".......W........W.......",
+        "......WWW......WWW......",
+        ".......W........W.......",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "W": LED_WHITE, "B": rgb565(30, 120, 255)})
+
+
+def breeze_mark():
+    """Breeze Airways (MXY/MX): light-blue check swoosh with a white leading
+    edge (Breeze's navy tile background is dropped; navy vanishes)."""
+    rows = (
+        "........................",
+        "........................",
+        "......................W.",
+        ".....................WL.",
+        "....................WLL.",
+        "...................WLLL.",
+        "..................WLLL..",
+        ".................WLLL...",
+        "................WLLL....",
+        "...............WLLL.....",
+        ".L............WLLL......",
+        ".LL..........WLLL.......",
+        ".LLL........WLLL........",
+        "..LLL.......LLL.........",
+        "...LLL.....LLL..........",
+        "....LLL...LLL...........",
+        ".....LLL.LLL............",
+        "......LLLLL.............",
+        ".......LLL..............",
+        "........L...............",
+        "........................",
+        "........................",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "L": rgb565(110, 190, 255), "W": LED_WHITE})
+
+
+def skywest_mark():
+    """SkyWest (SKW/OO): italic SKY / WEST in bright SkyWest blue with the
+    three-color logo's red rule. Replaces Google's gray placeholder tail."""
+    rows = (
+        "........................",
+        "........................",
+        "........................",
+        ".....BBBB.BB..B.BB.BB...",
+        "....BB....BB.BB.BB.BB...",
+        "....BB....BBBB..BB.BB...",
+        "....BBB..BBB....BBB.....",
+        "......BB.BBBB....B......",
+        "......BB.BB.BB...B......",
+        "...BBBB..BB..B...B......",
+        "........................",
+        "........................",
+        "B...B.BBBBB..BBBB.BBBBB.",
+        "B...B.BB....BB....BBBBB.",
+        "B...B.BB....BB......B...",
+        "B.B.B.BBBB...BBB....B...",
+        "B.B.B.BB.......BB...B...",
+        "BBBBB.BB.......BB...B...",
+        ".B.B..BBBBB.BBBB....B...",
+        "........................",
+        "........................",
+        "RRRRRRRRRRRRRRRRRRRRRRRR",
+        "........................",
+        "........................",
+    )
+    return native_mark(rows, {".": 0, "R": LED_RED, "B": rgb565(30, 120, 255)})
+
+
+# Hand-tuned airline marks that replace the Google Flights download.
+NATIVE_AIRLINE_MARKS = {
+    "PDT": piedmont_mark,
+    "JIA": psa_mark,
+    "ENY": envoy_mark,
+    "RPA": republic_mark,
+    "MXY": breeze_mark,
+    "SKW": skywest_mark,
+}
 
 
 def clean_predators_logo(pixels):
@@ -361,13 +793,13 @@ def main():
         print(f"[{league}]")
         for abbr in abbrs:
             url = f"https://a.espncdn.com/i/teamlogos/{league.lower()}/500/{abbr.lower()}.png"
-            is_panthers = league == "NHL" and abbr == "FLA"
-            img = None if is_panthers else fetch(url)
-            if img is None and not is_panthers:
+            native = NATIVE_TEAM_MARKS.get((league, abbr))
+            img = None if native else fetch(url)
+            if img is None and not native:
                 skip += 1
                 continue
             name = f"L_{league}_{abbr}".replace("-", "_")
-            pixels = florida_panthers_mark() if is_panthers else to_rgb565_array(img)
+            pixels = native() if native else to_rgb565_array(img)
             if league == "NHL" and abbr == "CAR":
                 pixels = clean_hurricanes_logo(pixels)
             elif league == "NHL" and abbr == "NSH":
@@ -389,12 +821,13 @@ def main():
     print("[airlines]")
     for icao, iata in AIRLINES.items():
         url = f"https://www.gstatic.com/flights/airline_logos/70px/{iata}.png"
-        img = fetch(url)
-        if img is None:
+        native = NATIVE_AIRLINE_MARKS.get(icao)
+        img = None if native else fetch(url)
+        if img is None and not native:
             skip += 1
             continue
         name = f"A_{icao}"
-        pixels = to_rgb565_array(img)
+        pixels = native() if native else to_rgb565_array(img)
         if icao == "AAL":
             pixels = clean_american_logo(pixels)
         elif icao == "DAL":

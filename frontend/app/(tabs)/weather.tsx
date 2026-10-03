@@ -5,7 +5,7 @@ import { useAudioPlayer } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
-import { useMatrix, type Severity } from "@/src/store/matrix";
+import { useMatrix, fwAtLeast, ACK_FW, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
 import { geocodeZip } from "@/src/services/geocode";
@@ -69,7 +69,7 @@ const SEVERITIES: {
 ];
 
 export default function WeatherScreen() {
-  const { settings, updateWeather, updateQuietHours, updateRainQuiet, updateSecondLocation, updateFlights, bleStatus, weatherTest } = useMatrix();
+  const { settings, updateWeather, updateQuietHours, updateRainQuiet, updateSecondLocation, updateFlights, bleStatus, weatherTest, waitForAck, firmwareVersion } = useMatrix();
   const insets = useSafeAreaInsets();
   const w = settings.weather;
   const f = settings.flights;
@@ -188,10 +188,29 @@ export default function WeatherScreen() {
     updateSecondLocation({ zip: clean });
     if (clean.length === 5) {
       const res = await geocodeZip(clean);
-      if (res) updateSecondLocation({ lat: res.lat, lon: res.lon, city: res.city, state: res.state });
-      else toast.show("Couldn't find that ZIP code.", "error");
+      if (!res) {
+        toast.show("Couldn't find that ZIP code.", "error");
+        return;
+      }
+      const place = `${res.city}, ${res.state}`;
+      // Start listening before the (debounced) BLE push goes out.
+      const canAck = bleStatus === "connected" && fwAtLeast(firmwareVersion, ACK_FW);
+      const ack = canAck ? waitForAck("weather", 15000) : null;
+      updateSecondLocation({ lat: res.lat, lon: res.lon, city: res.city, state: res.state });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (bleStatus !== "connected") {
+        toast.show(`Watching ${place} here. Connect and Sync to put its alerts on the matrix.`, "info");
+      } else if (!canAck) {
+        toast.show(`Watching ${place}. Sent to the matrix — update its firmware to ${ACK_FW} to show these alerts on the wall.`, "info");
+      } else {
+        toast.show(`Watching ${place}. Sending to the matrix…`, "info");
+        const got = await ack;
+        if (got?.loc2) toast.show(`Matrix confirmed: ${place} alerts will show on the wall.`, "success");
+        else toast.show(`The matrix didn't confirm ${place}. Tap Sync to retry.`, "error");
+      }
     } else if (clean.length === 0) {
       updateSecondLocation({ lat: null, lon: null, city: "", state: "" });
+      toast.show("Second location removed.", "info");
     }
   };
 

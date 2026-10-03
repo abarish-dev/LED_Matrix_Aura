@@ -24,6 +24,23 @@ struct ScoreInfo  { bool ok=false; String home; int hs=0; String away; int as=0;
 struct WeatherInfo{ bool ok=false; String headline; String severity; };
 struct UfcInfo    { bool ok=false; String name; String date; String headline; };
 
+// One market index row: pre-formatted value/change from the backend, % change,
+// and an intraday sparkline on a fixed session timeline (spn slots, n filled).
+static const uint8_t MARKET_SPARK_MAX = 64;
+struct MarketIndex {
+  String  name, value, change;
+  float   pct = 0;
+  uint8_t spark[MARKET_SPARK_MAX];  // 0-100, day's own range
+  uint8_t n = 0, slots = MARKET_SPARK_MAX;
+  int8_t  base = -1;                // prior close 0-100, -1 = outside range
+};
+struct MarketsInfo {
+  bool ok = false;
+  String status;                    // OPEN | PRE | AFTER | CLOSED
+  MarketIndex idx[3];
+  uint8_t count = 0;
+};
+
 // The backend's out-of-season "nextEvent" fallback sends an explicit UTC
 // status such as "9/26 7:00 PM UTC". Convert only that known format, using the
 // board's configured timezone; ordinary ESPN status strings pass through.
@@ -524,7 +541,10 @@ struct FeedResult {
   FlightInfo flight;
   FlightInfo planes[5];   // up to 5 nearby aircraft, closest first (for cycling)
   uint8_t planeCount = 0;
+  int8_t  trackedIdx = -1; // index in planes[] of the pinned flight (server "trk":1), -1 = not found
+  String  trackCs;         // ADS-B callsign the server resolved the pinned ident to (AA786 -> AAL786)
   WeatherInfo alert;
+  WeatherInfo alert2;      // second location's alert (when requested)
   ScoreInfo score;
   ScoreInfo scores[8];    // one game per followed team that is in-season
   String    scoreKeys[8]; // "LEAGUE:ABBR" for each entry in scores[]
@@ -533,12 +553,15 @@ struct FeedResult {
   bool haveTemp = false;
   int tempF = -999, feelsF = -999, wxCode = -1, isDay = 1, hiF = -999, loF = -999;
   UfcInfo ufc;
+  MarketsInfo markets;
 };
 
 inline FeedResult matrixFeed(const String& base, double lat, double lon,
                              int radiusMi, const String& severity,
                              bool wantFlights, bool wantWeather,
-                             const String& team, bool wantSports, bool wantUfc = false) {
+                             const String& team, bool wantSports, bool wantUfc = false,
+                             bool wantMarkets = false, const String& track = "",
+                             bool wantLoc2 = false, double lat2 = 0, double lon2 = 0) {
   FeedResult r;
   if (base.isEmpty()) return r;
   String url = base;
@@ -549,6 +572,12 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
          "&sports=" + (wantSports ? "1" : "0") +
          "&weather=" + (wantWeather ? "1" : "0") +
          "&ufc=" + (wantUfc ? "1" : "0");
+  if (wantMarkets) url += "&markets=1";
+  // Pinned flight: the server resolves IATA/ICAO forms (AA786 / AAL786 /
+  // American Eagle AA5584 -> JIA5584) and returns it first in the list even
+  // when it isn't among the 5 closest or is outside the radius.
+  if (wantFlights && track.length()) url += "&track=" + track;
+  if (wantWeather && wantLoc2) url += "&lat2=" + String(lat2, 4) + "&lon2=" + String(lon2, 4);
   if (wantSports && team.length()) url += "&team=" + team;
   String body = httpGet(url, "AuraMatrix/1.0");
   if (body.isEmpty()) return r;
@@ -573,9 +602,12 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
       fi.headingDeg = p["hdg"] | -1;
       fi.origin = String((const char*)(p["from"] | ""));
       fi.dest = String((const char*)(p["to"] | ""));
+      if ((p["trk"] | 0) == 1 && r.trackedIdx < 0) r.trackedIdx = n;
       n++;
     }
     r.planeCount = n;
+    JsonObjectConst trk = f["trk"];
+    if ((trk["ok"] | 0) == 1) r.trackCs = String((const char*)(trk["cs"] | ""));
     // Backward-compatible single flight = closest (or the top-level fields).
     if (n > 0) {
       r.flight = r.planes[0];
@@ -628,6 +660,12 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.alert.headline = String((const char*)(a["head"] | ""));
     r.alert.severity = String((const char*)(a["sev"] | ""));
   }
+  JsonObjectConst a2 = doc["alert2"];
+  if (a2["ok"].as<int>() == 1) {
+    r.alert2.ok = true;
+    r.alert2.headline = String((const char*)(a2["head"] | ""));
+    r.alert2.severity = String((const char*)(a2["sev"] | ""));
+  }
   JsonObjectConst t = doc["temp"];
   if (t["ok"].as<int>() == 1) {
     r.haveTemp = true;
@@ -644,6 +682,31 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
     r.ufc.name = String((const char*)(u["name"] | ""));
     r.ufc.date = String((const char*)(u["date"] | ""));
     r.ufc.headline = String((const char*)(u["headline"] | ""));
+  }
+  JsonObjectConst mk = doc["markets"];
+  if (mk["ok"].as<int>() == 1) {
+    r.markets.ok = true;
+    r.markets.status = String((const char*)(mk["status"] | "CLOSED"));
+    uint8_t n = 0;
+    for (JsonObjectConst ix : mk["idx"].as<JsonArrayConst>()) {
+      if (n >= 3) break;
+      MarketIndex& m = r.markets.idx[n++];
+      m.name   = String((const char*)(ix["n"] | ""));
+      m.value  = String((const char*)(ix["v"] | ""));
+      m.change = String((const char*)(ix["c"] | ""));
+      m.pct    = ix["p"] | 0.0f;
+      m.base   = ix["b"] | -1;
+      int slots = ix["spn"] | (int)MARKET_SPARK_MAX;
+      m.slots  = (uint8_t)constrain(slots, 2, (int)MARKET_SPARK_MAX);
+      uint8_t k = 0;
+      for (JsonVariantConst v : ix["sp"].as<JsonArrayConst>()) {
+        if (k >= m.slots) break;
+        m.spark[k++] = (uint8_t)constrain(v.as<int>(), 0, 100);
+      }
+      m.n = k;
+    }
+    r.markets.count = n;
+    r.markets.ok = n > 0;
   }
   return r;
 }
