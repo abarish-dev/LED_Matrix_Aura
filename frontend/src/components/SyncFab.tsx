@@ -5,13 +5,13 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
-import { useMatrix } from "@/src/store/matrix";
+import { useMatrix, ACK_FW } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 
 const TAB_BAR_HEIGHT = 64;
 
 export default function SyncFab() {
-  const { bleStatus, syncAll, bleSupported } = useMatrix();
+  const { bleStatus, syncAll, bleSupported, firmwareVersion } = useMatrix();
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
@@ -40,14 +40,19 @@ export default function SyncFab() {
       } else if (r.ackSupported && !r.confirmed) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         toast.show("Sent, but the matrix didn't confirm. Tap Sync again.", "info");
+      } else if (!r.ackSupported) {
+        // Older (or unidentified) firmware can't confirm, and can't show the
+        // second location; say so instead of claiming success.
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        toast.show(
+          firmwareVersion
+            ? `Sent, but matrix firmware ${firmwareVersion} is too old to confirm it or show a 2nd ZIP. Install ${ACK_FW}+ on the Device tab.`
+            : `Sent, but the matrix didn't report its firmware version, so it can't confirm. It may need ${ACK_FW}+ (Device tab).`,
+          "info",
+        );
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        toast.show(
-          r.confirmed
-            ? "Synced ✓  The matrix confirmed your settings."
-            : "Sent ✓  Flights, sports & weather sent to the matrix.",
-          "success",
-        );
+        toast.show("Synced ✓  The matrix confirmed your settings.", "success");
       }
     } catch (e: any) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

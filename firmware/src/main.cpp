@@ -38,7 +38,7 @@ static const uint32_t FETCH_MS = 30000;   // refresh live data every 30s
 
 static uint32_t lastCard = 0, lastFetch = 0;
 static uint8_t  cardIndex = 0;
-static bool     gFirstCardShown = false; // true once any real card has rendered (gates the boot-time OTA check so it can't block the first render)
+static bool     gFirstCardShown = false; // true once any real card has rendered (there is no automatic OTA check; updates run only on the app's "Install update" command)
 
 // Cached fetch results.
 // The loop task runs every HTTPS fetch (mbedTLS handshake ~4-5KB of stack)
@@ -342,8 +342,10 @@ static bool loadSettings() {
 
 // ---- Over-the-air firmware update -----------------------------------------
 // Checks the backend for a newer firmware .bin and, if found, downloads + flashes
-// it over Wi-Fi (no USB cable). Called once after Wi-Fi connects and on demand
-// via the BLE "ota" command.
+// it over Wi-Fi (no USB cable). Runs ONLY on demand via the BLE "ota" command
+// (the app's "Install update over Wi-Fi" button). There is no automatic check at
+// boot or on a timer: that was removed (1.6.22) because a slow check could stall
+// the first card. The panel stays on its current version until the user asks.
 
 // Parses "X.Y.Z" into three ints for comparison (missing/short parts = 0).
 static void parseVersion(const String& v, int out[3]) {
@@ -779,8 +781,8 @@ void loop() {
     gSettingsDirty = !saveSettings();
   }
 
-  // Automatic OTA checks can stall the first card; the app's Install
-  // update command still performs an OTA check on demand.
+  // No automatic OTA check here (it could stall the first card); updates run
+  // only when the app sends the "ota" command (handled at the top of loop()).
   // Save pending settings before any potentially slow HTTPS fetch.
   if (!gSettingsDirty && WiFi.status() == WL_CONNECTED &&
       now - lastFetch >= FETCH_MS) {

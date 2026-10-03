@@ -34,9 +34,27 @@ export async function getCachedZip(zip: string): Promise<Coords | null> {
   return cache[zip] ?? null;
 }
 
-export async function geocodeZip(zip: string): Promise<GeoResult | null> {
+export const ZIP_LOOKUP_TIMEOUT_MS = 8000;
+
+export type ZipLookup =
+  | ({ ok: true } & GeoResult)
+  | { ok: false; reason: "notfound" | "timeout" | "network" };
+
+/**
+ * Look up a ZIP with a hard timeout (8 s by default) so the UI can never wait
+ * forever on a hung request. Falls back to the local cache when the service is
+ * slow or unreachable, and says why when there is no answer at all.
+ */
+export async function lookupZip(zip: string, timeoutMs = ZIP_LOOKUP_TIMEOUT_MS): Promise<ZipLookup> {
+  const ctrl = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, timeoutMs);
+  let failure: "notfound" | "timeout" | "network" = "notfound";
   try {
-    const res = await fetch(`https://api.zippopotam.us/us/${zip}`);
+    const res = await fetch(`https://api.zippopotam.us/us/${zip}`, { signal: ctrl.signal });
     if (res.ok) {
       const data = await res.json();
       const place = data?.places?.[0];
@@ -51,13 +69,26 @@ export async function geocodeZip(zip: string): Promise<GeoResult | null> {
             state: place["state abbreviation"] ?? place.state ?? "",
           };
           await writeCache(zip, coords);
-          return { ...coords, cached: false };
+          return { ok: true, ...coords, cached: false };
         }
       }
+    } else if (res.status >= 500) {
+      failure = "network";
     }
   } catch {
-    // network error -> fall through to cache below
+    // aborted (timeout) or network error -> try the cache below
+    failure = timedOut ? "timeout" : "network";
+  } finally {
+    clearTimeout(timer);
   }
   const cached = await getCachedZip(zip);
-  return cached ? { ...cached, cached: true } : null;
+  if (cached) return { ok: true, ...cached, cached: true };
+  return { ok: false, reason: failure };
+}
+
+export async function geocodeZip(zip: string): Promise<GeoResult | null> {
+  const r = await lookupZip(zip);
+  if (!r.ok) return null;
+  const { ok: _ok, ...geo } = r;
+  return geo;
 }

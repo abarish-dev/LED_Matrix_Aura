@@ -1,5 +1,8 @@
 // Custom toast (no default Alert). Mounted high in the tree so it floats above
 // all content. Success/error variants with a Phosphor-style icon.
+// The app draws edge-to-edge under react-native-keyboard-controller, so the
+// window does not shrink when the keyboard opens; KeyboardStickyView lifts the
+// toast above the keyboard so messages shown while typing stay visible.
 
 import React, {
   createContext,
@@ -11,6 +14,7 @@ import React, {
 import { Animated, StyleSheet, Text, View, Easing } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 
 type ToastVariant = "success" | "error" | "info";
@@ -82,7 +86,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           useNativeDriver: true,
         }),
       ]).start();
-      hideTimer.current = setTimeout(hide, 2600);
+      // Longer messages (firmware advice) get a little more reading time.
+      hideTimer.current = setTimeout(hide, msg.length > 70 ? 4500 : 2600);
     },
     [translateY, opacity, hide],
   );
@@ -93,25 +98,31 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ show }}>
       {children}
       {mounted && (
-        <Animated.View
-          testID="app-toast"
-          style={[
-            styles.wrap,
-            {
-              bottom: insets.bottom + spacing.xl,
-              transform: [{ translateY }],
-              opacity,
-              pointerEvents: "none",
-            },
-          ]}
+        <KeyboardStickyView
+          pointerEvents="none"
+          // Keyboard height already includes the bottom inset, so drop it
+          // while open to sit just above the keys.
+          offset={{ closed: 0, opened: insets.bottom }}
+          style={[styles.wrap, { bottom: insets.bottom + spacing.xl }]}
         >
-          <View style={[styles.card, { borderLeftColor: meta.color }]}>
-            <Ionicons name={meta.icon} size={22} color={meta.color} />
-            <Text style={styles.text} numberOfLines={2}>
-              {message}
-            </Text>
-          </View>
-        </Animated.View>
+          <Animated.View
+            testID="app-toast"
+            style={[
+              styles.inner,
+              {
+                transform: [{ translateY }],
+                opacity,
+              },
+            ]}
+          >
+            <View style={[styles.card, { borderLeftColor: meta.color }]}>
+              <Ionicons name={meta.icon} size={22} color={meta.color} />
+              <Text style={styles.text} numberOfLines={3}>
+                {message}
+              </Text>
+            </View>
+          </Animated.View>
+        </KeyboardStickyView>
       )}
     </ToastContext.Provider>
   );
@@ -124,6 +135,7 @@ const styles = StyleSheet.create({
     right: spacing.lg,
     alignItems: "center",
   },
+  inner: { width: "100%", alignItems: "center" },
   card: {
     flexDirection: "row",
     alignItems: "center",

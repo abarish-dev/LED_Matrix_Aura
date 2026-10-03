@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAudioPlayer } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,7 +9,7 @@ import { colors, spacing, radius, fonts, fontSize } from "@/src/theme";
 import { useMatrix, fwAtLeast, ACK_FW, type Severity } from "@/src/store/matrix";
 import { useToast } from "@/src/components/Toast";
 import { Hero, Card, SectionLabel, MasterToggle, PrimaryButton, ToggleRow } from "@/src/components/ui";
-import { geocodeZip } from "@/src/services/geocode";
+import { geocodeZip, lookupZip } from "@/src/services/geocode";
 import { LocateButton } from "@/src/components/LocateButton";
 import { RadarCard } from "@/src/components/RadarCard";
 import {
@@ -68,6 +69,51 @@ const SEVERITIES: {
   { id: "extreme", label: "Extreme", desc: "Life-threatening events only", icon: "flash", color: colors.error },
 ];
 
+// Persistent status for the 2nd ZIP field (toasts are easy to miss).
+type Zip2Status =
+  | { kind: "idle" }
+  | { kind: "looking" }
+  | { kind: "notfound" }
+  | { kind: "lookupfail"; reason: "timeout" | "network" }
+  | { kind: "local"; place: string }
+  | { kind: "oldfw"; place: string; fw: string | null }
+  | { kind: "waiting"; place: string }
+  | { kind: "confirmed"; place: string }
+  | { kind: "unconfirmed"; place: string };
+
+function zip2StatusView(st: Zip2Status): { text: string; color: string; icon: keyof typeof Ionicons.glyphMap } | null {
+  switch (st.kind) {
+    case "idle":
+      return null;
+    case "looking":
+      return { text: "Looking up ZIP…", color: colors.onSurfaceSecondary, icon: "search" };
+    case "notfound":
+      return { text: "ZIP not found. Check the number.", color: colors.error, icon: "alert-circle" };
+    case "lookupfail":
+      return {
+        text: st.reason === "timeout"
+          ? "ZIP lookup timed out. Check your connection and re-enter it."
+          : "Couldn't reach the ZIP lookup service. Check your connection and re-enter it.",
+        color: colors.error,
+        icon: "cloud-offline",
+      };
+    case "local":
+      return { text: `Saved on phone (${st.place}). Connect to the matrix and Sync to send it.`, color: colors.info, icon: "phone-portrait" };
+    case "oldfw":
+      return {
+        text: `Sent, but the matrix needs firmware ${ACK_FW}+ to show it${st.fw ? ` (it has ${st.fw})` : ""}.`,
+        color: colors.warning,
+        icon: "warning",
+      };
+    case "waiting":
+      return { text: `Waiting for the matrix to confirm ${st.place}…`, color: colors.onSurfaceSecondary, icon: "time" };
+    case "confirmed":
+      return { text: `Matrix confirmed: ${st.place} alerts will show on the wall.`, color: colors.success, icon: "checkmark-circle" };
+    case "unconfirmed":
+      return { text: "Not confirmed by the matrix. Tap Sync to retry.", color: colors.error, icon: "alert-circle" };
+  }
+}
+
 export default function WeatherScreen() {
   const { settings, updateWeather, updateQuietHours, updateRainQuiet, updateSecondLocation, updateFlights, bleStatus, weatherTest, waitForAck, firmwareVersion } = useMatrix();
   const insets = useSafeAreaInsets();
@@ -102,6 +148,8 @@ export default function WeatherScreen() {
   const [detail, setDetail] = useState<Alert | null>(null);
   const [secondAlerts, setSecondAlerts] = useState<Alert[]>([]);
   const [zip2, setZip2] = useState(w.secondLocation.zip);
+  const [zip2Status, setZip2Status] = useState<Zip2Status>({ kind: "idle" });
+  const zip2ReqRef = useRef(0);
   const fetchIdRef = useRef(0);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const firstLoadRef = useRef(true);
@@ -186,31 +234,63 @@ export default function WeatherScreen() {
     const clean = val.replace(/[^0-9]/g, "").slice(0, 5);
     setZip2(clean);
     updateSecondLocation({ zip: clean });
+    // Every edit supersedes any lookup/ack still in flight.
+    const req = ++zip2ReqRef.current;
+    const current = () => req === zip2ReqRef.current;
     if (clean.length === 5) {
-      const res = await geocodeZip(clean);
-      if (!res) {
-        toast.show("Couldn't find that ZIP code.", "error");
+      // Close the number pad so the result (and any toast) is visible.
+      Keyboard.dismiss();
+      setZip2Status({ kind: "looking" });
+      const res = await lookupZip(clean);
+      if (!current()) return;
+      if (!res.ok) {
+        if (res.reason === "notfound") {
+          setZip2Status({ kind: "notfound" });
+          toast.show("Couldn't find that ZIP code.", "error");
+        } else {
+          setZip2Status({ kind: "lookupfail", reason: res.reason });
+          toast.show(res.reason === "timeout" ? "ZIP lookup timed out. Try again." : "Couldn't reach the ZIP lookup service.", "error");
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return;
       }
       const place = `${res.city}, ${res.state}`;
       // Start listening before the (debounced) BLE push goes out.
-      const canAck = bleStatus === "connected" && fwAtLeast(firmwareVersion, ACK_FW);
+      const connected = bleStatus === "connected";
+      const canAck = connected && fwAtLeast(firmwareVersion, ACK_FW);
       const ack = canAck ? waitForAck("weather", 15000) : null;
       updateSecondLocation({ lat: res.lat, lon: res.lon, city: res.city, state: res.state });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (bleStatus !== "connected") {
+      if (!connected) {
+        setZip2Status({ kind: "local", place });
         toast.show(`Watching ${place} here. Connect and Sync to put its alerts on the matrix.`, "info");
       } else if (!canAck) {
-        toast.show(`Watching ${place}. Sent to the matrix — update its firmware to ${ACK_FW} to show these alerts on the wall.`, "info");
+        setZip2Status({ kind: "oldfw", place, fw: firmwareVersion });
+        toast.show(
+          firmwareVersion
+            ? `Watching ${place}. Matrix firmware ${firmwareVersion} is too old to show it. Install ${ACK_FW}+ on the Device tab.`
+            : `Watching ${place}. The matrix didn't report its firmware; it needs ${ACK_FW}+ to show this.`,
+          "info",
+        );
       } else {
+        setZip2Status({ kind: "waiting", place });
         toast.show(`Watching ${place}. Sending to the matrix…`, "info");
         const got = await ack;
-        if (got?.loc2) toast.show(`Matrix confirmed: ${place} alerts will show on the wall.`, "success");
-        else toast.show(`The matrix didn't confirm ${place}. Tap Sync to retry.`, "error");
+        if (!current()) return;
+        if (got?.loc2) {
+          setZip2Status({ kind: "confirmed", place });
+          toast.show(`Matrix confirmed: ${place} alerts will show on the wall.`, "success");
+        } else {
+          setZip2Status({ kind: "unconfirmed", place });
+          toast.show(`The matrix didn't confirm ${place}. Tap Sync to retry.`, "error");
+        }
       }
     } else if (clean.length === 0) {
+      setZip2Status({ kind: "idle" });
       updateSecondLocation({ lat: null, lon: null, city: "", state: "" });
       toast.show("Second location removed.", "info");
+    } else {
+      setZip2Status({ kind: "idle" });
     }
   };
 
@@ -227,11 +307,17 @@ export default function WeatherScreen() {
     }
   };
 
+  const z2view = zip2StatusView(zip2Status);
+  // Shown while connected to firmware that can't display the 2nd location.
+  const showFwBanner = bleStatus === "connected" && s2.lat != null && !fwAtLeast(firmwareVersion, ACK_FW);
+
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={styles.screen}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 190 }]}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      bottomOffset={20}
     >
       <Hero image={HERO} title="Weather Alerts" subtitle="Local NWS warnings" icon="thunderstorm" />
 
@@ -457,6 +543,16 @@ export default function WeatherScreen() {
         </Card>
 
         <SectionLabel>Second Location</SectionLabel>
+        {showFwBanner && (
+          <View style={styles.fwBanner} testID="zip2-fw-banner">
+            <Ionicons name="warning" size={18} color={colors.warning} />
+            <Text style={styles.fwBannerText}>
+              {firmwareVersion
+                ? `Your matrix runs firmware ${firmwareVersion}. Update to ${ACK_FW}+ on the Device tab to show ${s2.city || "this town"}'s alerts on the wall.`
+                : `The matrix hasn't reported its firmware version. It needs ${ACK_FW}+ to show the second location; check the Device tab.`}
+            </Text>
+          </View>
+        )}
         <Card>
           <Text style={styles.fieldLabel}>A family member&apos;s ZIP</Text>
           <TextInput
@@ -468,6 +564,16 @@ export default function WeatherScreen() {
             maxLength={5}
             style={styles.input}
           />
+          {z2view && (
+            <View style={styles.zip2Status} testID="zip2-status">
+              {zip2Status.kind === "looking" || zip2Status.kind === "waiting" ? (
+                <ActivityIndicator size="small" color={z2view.color} />
+              ) : (
+                <Ionicons name={z2view.icon} size={16} color={z2view.color} />
+              )}
+              <Text style={[styles.zip2StatusText, { color: z2view.color }]}>{z2view.text}</Text>
+            </View>
+          )}
           {s2.lat != null ? (
             <Text style={styles.locText}>
               Watching {s2.city}, {s2.state}
@@ -541,7 +647,7 @@ export default function WeatherScreen() {
         </Text>
       </View>
       <AlertDetailModal alert={detail} onClose={() => setDetail(null)} />
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 
@@ -714,6 +820,20 @@ const styles = StyleSheet.create({
   },
   stepBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   stepperValue: { fontFamily: fonts.display, fontSize: fontSize.lg, color: colors.onSurface },
+  zip2Status: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  zip2StatusText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm },
+  fwBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.warning + "66",
+    backgroundColor: colors.warning + "1A",
+  },
+  fwBannerText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurface },
   fieldLabel: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceSecondary, marginBottom: spacing.xs },
   input: {
     backgroundColor: colors.surfaceTertiary,
