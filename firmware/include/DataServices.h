@@ -541,6 +541,8 @@ struct FeedResult {
   FlightInfo flight;
   FlightInfo planes[5];   // up to 5 nearby aircraft, closest first (for cycling)
   uint8_t planeCount = 0;
+  int8_t  trackedIdx = -1; // index in planes[] of the pinned flight (server "trk":1), -1 = not found
+  String  trackCs;         // ADS-B callsign the server resolved the pinned ident to (AA786 -> AAL786)
   WeatherInfo alert;
   ScoreInfo score;
   ScoreInfo scores[8];    // one game per followed team that is in-season
@@ -557,7 +559,7 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
                              int radiusMi, const String& severity,
                              bool wantFlights, bool wantWeather,
                              const String& team, bool wantSports, bool wantUfc = false,
-                             bool wantMarkets = false) {
+                             bool wantMarkets = false, const String& track = "") {
   FeedResult r;
   if (base.isEmpty()) return r;
   String url = base;
@@ -569,6 +571,10 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
          "&weather=" + (wantWeather ? "1" : "0") +
          "&ufc=" + (wantUfc ? "1" : "0");
   if (wantMarkets) url += "&markets=1";
+  // Pinned flight: the server resolves IATA/ICAO forms (AA786 / AAL786 /
+  // American Eagle AA5584 -> JIA5584) and returns it first in the list even
+  // when it isn't among the 5 closest or is outside the radius.
+  if (wantFlights && track.length()) url += "&track=" + track;
   if (wantSports && team.length()) url += "&team=" + team;
   String body = httpGet(url, "AuraMatrix/1.0");
   if (body.isEmpty()) return r;
@@ -593,9 +599,12 @@ inline FeedResult matrixFeed(const String& base, double lat, double lon,
       fi.headingDeg = p["hdg"] | -1;
       fi.origin = String((const char*)(p["from"] | ""));
       fi.dest = String((const char*)(p["to"] | ""));
+      if ((p["trk"] | 0) == 1 && r.trackedIdx < 0) r.trackedIdx = n;
       n++;
     }
     r.planeCount = n;
+    JsonObjectConst trk = f["trk"];
+    if ((trk["ok"] | 0) == 1) r.trackCs = String((const char*)(trk["cs"] | ""));
     // Backward-compatible single flight = closest (or the top-level fields).
     if (n > 0) {
       r.flight = r.planes[0];

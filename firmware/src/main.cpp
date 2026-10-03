@@ -44,6 +44,8 @@ static Data::FlightInfo  gFlight;
 static Data::FlightInfo  gFlightList[5];   // nearby planes (closest first)
 static uint8_t           gFlightCount = 0;
 static uint8_t           gFlightShown = 0; // rotating index for on-wall cycling
+static int8_t             gFeedTrackedIdx = -1; // server-resolved index of the pinned flight in the feed list
+static String             gFeedTrackCs;         // server-resolved ADS-B callsign of the pinned flight
 static int                gTrackedIdx = -1; // index of the tracked flight within gFlightList, -1 = not currently overhead
 static String              gTrackedCallsign;  // callsign of the tracked flight when a landing alert fires
 static Data::ScoreInfo   gScore;
@@ -392,6 +394,10 @@ static void refreshData() {
 
   bool wantTrack = gSettings.flights.trackFlight && !gSettings.flights.flightIdent.isEmpty();
   bool proxyFlight = false, proxyWeather = false, proxyTemp = false, proxyScore = false;
+  String trackParam;   // URL-safe pinned ident (A-Z0-9 only)
+  if (wantTrack)
+    for (char c : gSettings.flights.flightIdent)
+      if (isalnum((unsigned char)c) && trackParam.length() < 10) trackParam += (char)toupper((unsigned char)c);
 
   // Send ALL followed teams (comma-joined) so the server returns a game for
   // each one and the matrix can cycle through every team that's playing.
@@ -417,12 +423,14 @@ static void refreshData() {
         gSettings.flights.enabled, gSettings.weather.enabled,
         entry, gSettings.sports.enabled && entry.length() > 0,
         gSettings.sports.enabled && gSettings.sports.ufc,
-        gSettings.markets.enabled);
+        gSettings.markets.enabled,
+        trackParam);
     if (fr.ok) {
       if (gSettings.flights.enabled) {
         gFlight = fr.flight; proxyFlight = true;
         gFlightCount = fr.planeCount;
         for (uint8_t i = 0; i < fr.planeCount; i++) gFlightList[i] = fr.planes[i];
+        gFeedTrackedIdx = fr.trackedIdx; gFeedTrackCs = fr.trackCs;
         if (gFlightShown >= gFlightCount) gFlightShown = 0;
       }
       if (gSettings.weather.enabled) { gWeather = fr.alert; proxyWeather = true; }
@@ -466,8 +474,14 @@ static void refreshData() {
   gTrackedIdx = -1;
   static int prevTrackedAlt = -1;
   if (wantTrack) {
-    String want = gSettings.flights.flightIdent; want.trim(); want.toUpperCase();
-    for (uint8_t i = 0; i < gFlightCount; i++) {
+    // Prefer the server's match (it maps IATA "AA786" to the ADS-B callsign
+    // "AAL786" and looks beyond the 5 closest / outside the radius); fall
+    // back to an exact callsign match for older servers.
+    if (proxyFlight && gFeedTrackedIdx >= 0 && gFeedTrackedIdx < gFlightCount)
+      gTrackedIdx = gFeedTrackedIdx;
+    String want = proxyFlight && gFeedTrackCs.length() ? gFeedTrackCs : gSettings.flights.flightIdent;
+    want.trim(); want.toUpperCase();
+    for (uint8_t i = 0; i < gFlightCount && gTrackedIdx < 0; i++) {
       String cs = gFlightList[i].callsign; cs.trim(); cs.toUpperCase();
       if (cs == want) { gTrackedIdx = i; break; }
     }
@@ -572,7 +586,21 @@ static void drawCard(uint8_t t) {
     // (green border + label) instead of hiding the rest of the traffic.
     Data::FlightInfo* fp = &gFlight;
     int shownIdx = -1;
-    if (gFlightCount > 1) {
+    // A pinned flight gets every other flight-card slot (pinned, nearby,
+    // pinned, nearby...) so it's never more than one card away, while the
+    // rest of the traffic still cycles.
+    static bool pinnedTurn = false;
+    if (gTrackedIdx >= 0 && gTrackedIdx < gFlightCount && gFlightCount > 1) {
+      pinnedTurn = !pinnedTurn;
+      if (pinnedTurn) {
+        shownIdx = gTrackedIdx;
+      } else {
+        gFlightShown = gFlightShown % gFlightCount;
+        if (gFlightShown == gTrackedIdx) gFlightShown = (gFlightShown + 1) % gFlightCount;
+        shownIdx = gFlightShown++;
+      }
+      fp = &gFlightList[shownIdx];
+    } else if (gFlightCount > 1) {
       gFlightShown = gFlightShown % gFlightCount;
       shownIdx = gFlightShown;
       fp = &gFlightList[gFlightShown];

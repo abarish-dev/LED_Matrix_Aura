@@ -156,41 +156,208 @@ async def _enrich_route(cx, cs):
     return info
 
 
-async def _fetch_flight(cx, lat, lon, radius_mi):
+# ---- Tracked ("pinned") flight resolution ---------------------------------
+# ADS-B callsigns are ICAO (AAL786, JIA5584), but people type the IATA flight
+# number off their boarding pass (AA786, AA5584). Map common IATA airline
+# designators to ICAO, and for regional (3000+) numbers also try the regional
+# operators that fly under that brand (American Eagle AA5584 = PSA "JIA5584").
+import re as _re
+_IATA_ICAO = {
+    "AA": "AAL", "DL": "DAL", "UA": "UAL", "WN": "SWA", "B6": "JBU", "AS": "ASA",
+    "NK": "NKS", "F9": "FFT", "G4": "AAY", "HA": "HAL", "SY": "SCX", "MX": "MXY",
+    "XP": "VXP", "OH": "JIA", "PT": "PDT", "MQ": "ENY", "YX": "RPA", "OO": "SKW",
+    "9E": "EDV", "YV": "ASH", "ZW": "AWI", "G7": "GJS", "QX": "QXE", "C5": "UCA",
+    "AC": "ACA", "WS": "WJA", "BA": "BAW", "VS": "VIR", "LH": "DLH", "AF": "AFR",
+    "KL": "KLM", "IB": "IBE", "EI": "EIN", "LX": "SWR", "TK": "THY", "EK": "UAE",
+    "QR": "QTR", "AM": "AMX", "CM": "CMP", "AV": "AVA", "LA": "LAN", "JL": "JAL",
+    "NH": "ANA", "QF": "QFA", "5X": "UPS", "FX": "FDX",
+}
+_REGIONALS = {
+    "AA": ("JIA", "PDT", "ENY", "RPA"),
+    "DL": ("EDV", "SKW", "RPA"),
+    "UA": ("SKW", "RPA", "ASH", "GJS"),
+    "AS": ("QXE", "SKW"),
+}
+_IDENT_RE = _re.compile(r"^([A-Z][A-Z0-9]|[0-9][A-Z]|[A-Z]{3})(\d{1,4})([A-Z]?)$")
+_TRACK_LOOKUP_TIMEOUT = 2.0
+_TRACK_RETRY_DELAY = 1.2
+_track_cache: dict = {}          # callsign key -> (expires_ts, row or None)
+_TRACK_HIT_TTL = 15              # a found flight is re-looked-up after 15s
+_TRACK_MISS_TTL = 60             # "not airborne / no ADS-B" re-checked each minute
+_TRACK_STALE_OK = 180            # reuse a found flight this long through upstream 429s
+_nearby_last: dict = {}          # "lat,lon,radius" -> (ts, rows) for 429 fallback
+_FLIGHT_BUDGET_TRACK = 7.0        # + worldwide pinned-flight lookup (still < ESP32 12s)
+
+
+def _cs_key(cs) -> str:
+    """Comparable callsign: upper-case, alphanumerics only, leading zeros of
+    the flight number dropped (AAL0786 == AAL786)."""
+    c = _re.sub(r"[^A-Z0-9]", "", str(cs or "").upper())
+    m = _IDENT_RE.match(c)
+    if m:
+        return f"{m.group(1)}{int(m.group(2))}{m.group(3)}"
+    return c
+
+
+def _track_candidates(ident) -> tuple:
+    """(keys, lookup_keys) for a pinned-flight entry (IATA or ICAO flight
+    number, or a raw callsign / registration). `keys` are every callsign
+    form it may appear as in ADS-B, most likely first; `lookup_keys` are the
+    ones worth a worldwide callsign query (a mapped IATA number like AA786
+    never appears verbatim in ADS-B, so it isn't queried)."""
+    raw = _re.sub(r"[^A-Z0-9]", "", str(ident or "").upper())
+    if not raw:
+        return [], []
+    m = _IDENT_RE.match(raw)
+    lit = _cs_key(raw)
+    if m and len(m.group(1)) == 2:
+        pre, num, suf = m.group(1), int(m.group(2)), m.group(3)
+        icao = _IATA_ICAO.get(pre)
+        regional = [f"{op}{num}{suf}" for op in _REGIONALS.get(pre, ())] if num >= 3000 else []
+        if icao:
+            look = [f"{icao}{num}{suf}"] + regional
+            keys = look + [lit]
+        else:
+            keys = look = [lit] + regional
+    else:
+        keys = look = [lit]
+    dedup = lambda xs: list(dict.fromkeys(xs))
+    return dedup(keys), dedup(look)
+
+
+def _ac_row(a, lat, lon):
+    cs = (a.get("flight") or "").strip()
+    if not cs or a.get("lat") is None or a.get("lon") is None:
+        return None
+    d = _haversine_mi(lat, lon, a["lat"], a["lon"])
+    alt = a.get("alt_baro")
+    return {
+        "cs": cs, "dist": int(round(d)),
+        "alt": int(alt) if isinstance(alt, (int, float)) else 0,
+        "hdg": int(round(a.get("track"))) if isinstance(a.get("track"), (int, float)) else -1,
+        "_d": d,
+    }
+
+
+async def _lookup_callsign(cx, cs, lat, lon):
+    """Worldwide adsb.lol lookup of one exact callsign -> (row|None, ok).
+    ok=False means the upstream call itself failed (429/timeout)."""
+    try:
+        for attempt in range(2):
+            r = await cx.get(f"https://api.adsb.lol/v2/callsign/{cs}",
+                             headers={"User-Agent": "AuraMatrix/1.0 (LED matrix flight display)"},
+                             timeout=_TRACK_LOOKUP_TIMEOUT)
+            # adsb.lol rate-limits bursts (the nearby call just went out):
+            # one short back-off retry, still inside the flight budget.
+            if r.status_code == 429 and attempt == 0:
+                await asyncio.sleep(_TRACK_RETRY_DELAY)
+                continue
+            break
+        if r.status_code != 200:
+            return None, False
+        for a in (r.json() or {}).get("ac") or []:
+            row = _ac_row(a, lat, lon)
+            if row and _cs_key(row["cs"]) == _cs_key(cs):
+                return row, True
+        return None, True
+    except Exception:
+        return None, False
+
+
+async def _find_tracked(cx, cands_rows, track, lat, lon):
+    """Locate the pinned flight: first in the nearby list (anywhere in the
+    radius, not just the closest 5), then worldwide by callsign so a family
+    member's flight still shows when it's outside the local radius. Lookups
+    are cached briefly (hits 15s, misses 60s) so the panel's 30s polling
+    doesn't trip adsb.lol's rate limit, and a recent hit rides through a
+    failed (429/timeout) lookup for up to 3 minutes."""
+    keys, look = _track_candidates(track)
+    if not keys:
+        return None
+    for k in keys:  # most-likely form first
+        for c in cands_rows:
+            if _cs_key(c["cs"]) == k:
+                return c
+    now = _time.time()
+    found, todo = None, []
+    for k in look:
+        hit = _track_cache.get((k, f"{lat:.2f},{lon:.2f}"))
+        if hit and hit[0] > now:
+            if hit[1] and found is None:
+                found = hit[1]
+        else:
+            todo.append(k)
+    if found is not None:
+        return found
+    if todo:
+        res = await asyncio.gather(*[_lookup_callsign(cx, k, lat, lon) for k in todo],
+                                   return_exceptions=True)
+        for k, r in zip(todo, res):
+            ck = (k, f"{lat:.2f},{lon:.2f}")
+            row, ok = r if isinstance(r, tuple) else (None, False)
+            if row:
+                _track_cache[ck] = (now + _TRACK_HIT_TTL, row, now)
+            elif ok:
+                _track_cache[ck] = (now + _TRACK_MISS_TTL, None, now)
+            if row and found is None:
+                found = row
+    if found is None:
+        # Nothing fresh (upstream 429/timeout): a stale-but-recent real hit
+        # beats a blank pinned flight.
+        for k in look:
+            old = _track_cache.get((k, f"{lat:.2f},{lon:.2f}"))
+            if old and old[1] and now - old[2] < _TRACK_STALE_OK:
+                return old[1]
+    return found
+
+
+async def _fetch_flight(cx, lat, lon, radius_mi, track: str = ""):
     out = {"ok": 0}
+    track = (track or "").strip()
+    if track:
+        out["trk"] = {"ok": 0, "ident": track}
     try:
         nm = max(1, int(radius_mi / 1.15078))
         url = f"https://api.adsb.lol/v2/lat/{lat:.4f}/lon/{lon:.4f}/dist/{nm}"
         t0 = _time.monotonic()
-        r = await cx.get(url, headers={"User-Agent": "AuraMatrix/1.0 (LED matrix flight display)"},
-                         timeout=_FLIGHT_FETCH_TIMEOUT)
-        if r.status_code != 200:
-            return out
-        ac = (r.json() or {}).get("ac") or []
+        nkey = f"{lat:.4f},{lon:.4f},{radius_mi}"
         cands = []
-        for a in ac:
-            if a.get("lat") is None or a.get("lon") is None:
-                continue
-            cs = (a.get("flight") or "").strip()
-            if not cs:
-                continue
-            d = _haversine_mi(lat, lon, a["lat"], a["lon"])
-            alt = a.get("alt_baro")
-            cands.append({
-                "cs": cs, "dist": int(round(d)),
-                "alt": int(alt) if isinstance(alt, (int, float)) else 0,
-                "hdg": int(round(a.get("track"))) if isinstance(a.get("track"), (int, float)) else -1,
-                "_d": d,
-            })
-        if not cands:
-            return out
+        try:
+            r = await cx.get(url, headers={"User-Agent": "AuraMatrix/1.0 (LED matrix flight display)"},
+                             timeout=_FLIGHT_FETCH_TIMEOUT)
+            if r.status_code == 200:
+                for a in (r.json() or {}).get("ac") or []:
+                    row = _ac_row(a, lat, lon)
+                    if row:
+                        cands.append(row)
+                _nearby_last[nkey] = (_time.time(), cands)
+            elif not track:
+                return out
+            else:
+                # Rate-limited/failed while tracking: reuse the last nearby
+                # list so the pinned flight doesn't arrive alone.
+                hit = _nearby_last.get(nkey)
+                if hit and _time.time() - hit[0] < _LAST_GOOD_TTL:
+                    cands = [dict(c) for c in hit[1]]
+        except Exception:
+            if not track:
+                raise
         cands.sort(key=lambda c: c["_d"])
+        tracked = await _find_tracked(cx, cands, track, lat, lon) if track else None
+        if not cands and not tracked:
+            return out
         top = cands[:5]
+        if tracked:
+            # Pinned flight always rides first in the list (the firmware's
+            # list holds 5), whether or not it's among the closest.
+            tk = _cs_key(tracked["cs"])
+            top = [tracked] + [c for c in top if _cs_key(c["cs"]) != tk][:4]
         # Enrich each with airline name + route (parallel, best-effort).
         # Bounded by whatever is left of the flight budget: any lookup still
         # pending is cancelled and that plane is returned without route info
         # (a later feed call will pick it up from _route_cache).
-        budget = max(0.5, _FLIGHT_BUDGET - 0.3 - (_time.monotonic() - t0))
+        total = _FLIGHT_BUDGET_TRACK if track else _FLIGHT_BUDGET
+        budget = max(0.5, total - 0.3 - (_time.monotonic() - t0))
         tasks = [asyncio.ensure_future(_enrich_route(cx, c["cs"])) for c in top]
         _done, pending = await asyncio.wait(tasks, timeout=budget)
         for t in pending:
@@ -198,13 +365,21 @@ async def _fetch_flight(cx, lat, lon, radius_mi):
         routes = [t.result() if (t.done() and not t.cancelled() and t.exception() is None) else {}
                   for t in tasks]
         planes = []
-        for c, rt in zip(top, routes):
+        for i, (c, rt) in enumerate(zip(top, routes)):
             rt = rt if isinstance(rt, dict) else {}
-            planes.append({"cs": c["cs"], "dist": c["dist"], "alt": c["alt"], "hdg": c["hdg"],
-                           "airline": rt.get("airline", ""), "from": rt.get("from", ""),
-                           "to": rt.get("to", "")})
+            p = {"cs": c["cs"], "dist": c["dist"], "alt": c["alt"], "hdg": c["hdg"],
+                 "airline": rt.get("airline", ""), "from": rt.get("from", ""),
+                 "to": rt.get("to", "")}
+            if tracked and i == 0:
+                p["trk"] = 1
+            planes.append(p)
         first = planes[0]
-        return {"ok": 1, **first, "list": planes}
+        res = {"ok": 1, **first, "list": planes}
+        if track:
+            res["trk"] = ({"ok": 1, "ident": track, "cs": tracked["cs"],
+                           "inRange": 1 if tracked["_d"] <= radius_mi else 0}
+                          if tracked else {"ok": 0, "ident": track})
+        return res
     except Exception as e:
         logger.info(f"[feed] flight error: {e}")
         return out
@@ -555,10 +730,11 @@ async def markets():
 async def matrix_feed(lat: float, lon: float, radius: int = 40,
                       team: str = "", severity: str = "severe",
                       flights: int = 1, sports: int = 1, weather: int = 1, ufc: int = 0,
-                      markets: int = 0):
+                      markets: int = 0, track: str = ""):
     """One-shot aggregated feed for the LED matrix so the ESP32 makes a single
     small HTTPS call instead of 4+ heavy ones. Cached ~20s per param set."""
-    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}{markets}"
+    track = _re.sub(r"[^A-Za-z0-9]", "", track or "").upper()[:10]
+    key = f"{lat:.4f},{lon:.4f},{radius},{team},{severity},{flights}{sports}{weather}{ufc}{markets},{track}"
     hit = _feed_cache.get(key)
     if hit and hit[0] > _time.time():
         return hit[1]
@@ -571,8 +747,8 @@ async def matrix_feed(lat: float, lon: float, radius: int = 40,
     loc = f"{lat:.4f},{lon:.4f}"
     tasks = {}
     if flights:
-        tasks["flight"] = _bounded(f"flight:{loc}:{radius}", _fetch_flight(cx, lat, lon, radius),
-                                   _FLIGHT_BUDGET, {"ok": 0})
+        tasks["flight"] = _bounded(f"flight:{loc}:{radius}:{track}", _fetch_flight(cx, lat, lon, radius, track),
+                                   _FLIGHT_BUDGET_TRACK if track else _FLIGHT_BUDGET, {"ok": 0})
     if weather:
         tasks["alert"] = _bounded(f"alert:{loc}:{severity}", _fetch_alert(cx, lat, lon, severity),
                                   _SOURCE_BUDGET, {"ok": 0})
