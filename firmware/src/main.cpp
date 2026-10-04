@@ -652,8 +652,12 @@ static void drawCard(uint8_t t) {
       if (gSettings.sports.rivals[i] == key) { border = Display::rgb(56, 189, 248); break; }
     int colon = key.indexOf(':');
     String league = colon > 0 ? key.substring(0, colon) : String("");
+    // Record-mode "away" is the next-game label ("TB", "G2 @ TB", "vs MTL",
+    // or "2027"/"ALCS" with no opponent): the opponent is its last word.
+    String opp = s.away;
+    if (s.isRecord) { int sp = opp.lastIndexOf(' '); if (sp >= 0) opp = opp.substring(sp + 1); }
     Display::score(s.home, s.hs, s.away, s.as, s.status, border, s.streak, s.isRecord, s.record,
-                   teamLogo(league, s.home), teamLogo(league, s.away));
+                   teamLogo(league, s.home), teamLogo(league, opp));
     if (gScoreCount > 1) gScoreShown++;
   }
 }

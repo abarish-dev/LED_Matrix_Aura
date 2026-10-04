@@ -226,7 +226,8 @@ inline void landing(const String& callsign, bool landed) {
 // A single game score "card". When `isRecord` is true (off-season / no game
 // within the normal window), `home`/`away` are just team/opponent abbreviations
 // (no meaningful score yet) and `record` + `status` carry the season record
-// and next-game date instead.
+// (or postseason series line) and next-game date instead. `awayLogo` is the
+// next opponent's logo, drawn top-right.
 inline void score(const String& home, int hs, const String& away, int as,
                    const String& status, uint16_t border = 0, const String& streak = "",
                    bool isRecord = false, const String& record = "",
@@ -236,6 +237,9 @@ inline void score(const String& home, int hs, const String& away, int as,
   char l[24];
   if (isRecord) {
     if (homeLogo) drawLogo(homeLogo->data, homeLogo->w, homeLogo->h, 2, 1);
+    // Next opponent's logo in the top-right corner (mirrors ours top-left);
+    // both 24x24 marks end at y=25, above the record line at y=27.
+    if (awayLogo) drawLogo(awayLogo->data, awayLogo->w, awayLogo->h, MATRIX_W - 2 - awayLogo->w, 1);
     centerText(home.c_str(), 8, brandAmber(), 1);
     // Center both lines across the panel; put the record below the logo so
     // its text never overlaps the graphic at the upper left.

@@ -18,7 +18,7 @@ from PIL import Image
 # The existing flight/score card layout reserves a 24x24 corner for logos.
 # Enlarging this also requires moving card text and the heading arrow.
 SIZE = 24
-OUT = os.path.join(os.path.dirname(__file__), "..", "include", "logos", "generated_logos.h")
+OUT = os.environ.get("LOGO_OUT") or os.path.join(os.path.dirname(__file__), "..", "include", "logos", "generated_logos.h")
 
 TEAMS = {
     "NFL": ["ARI","ATL","BAL","BUF","CAR","CHI","CIN","CLE","DAL","DEN","DET","GB",
@@ -32,8 +32,12 @@ TEAMS = {
             "SEA","STL","TB","TEX","TOR","WSH"],
     "NHL": ["ANA","BOS","BUF","CGY","CAR","CHI","COL","CBJ","DAL","DET","EDM","FLA",
             "LA","MIN","MTL","NSH","NJ","NYI","NYR","OTT","PHI","PIT","SJ","SEA",
-            "STL","TB","TOR","VAN","VGK","WSH","WPG"],
+            "STL","TB","TOR","VAN","VGK","WSH","WPG","UTAH"],
 }
+
+# ESPN abbreviations that reuse another team's logo array (the Athletics are
+# "ATH" on ESPN since the move from Oakland; same "A's" mark).
+TEAM_ALIASES = {("MLB", "ATH"): ("MLB", "OAK")}
 
 # ICAO callsign prefix -> IATA code for Google Flights logos.
 AIRLINES = {
@@ -817,6 +821,11 @@ def main():
             arrays.append(emit_array(name, pixels))
             teams_tbl.append(f'  {{ "{league}:{abbr}", {name}, {SIZE}, {SIZE} }},')
             ok += 1
+
+    have = {t.split('"')[1] for t in teams_tbl}
+    for (lg, ab), (tlg, tab) in TEAM_ALIASES.items():
+        if f"{tlg}:{tab}" in have:
+            teams_tbl.append(f'  {{ "{lg}:{ab}", L_{tlg}_{tab}, {SIZE}, {SIZE} }},')
 
     print("[airlines]")
     for icao, iata in AIRLINES.items():
