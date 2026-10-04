@@ -474,6 +474,7 @@ async def _postseason_cards(cx, league: str, path: str, abbr: str, sb_events: li
     me = abbr.upper()
     live_by_id = {str(e.get("id")): e for e in sb_events or []}
     games = []
+    _canon_events(league, sched.get("events"))
     for ev in sched.get("events") or []:
         if ((ev.get("seasonType") or {}).get("type")) not in (3, None):
             continue
@@ -644,6 +645,31 @@ async def _scoreboard_events_raw(cx, path: str, now: datetime) -> list:
     return events
 
 
+# ESPN is inconsistent about some team codes: the NHL Mammoth are "UTAH" in
+# the team list / team page but "UTA" on scoreboards, schedules and
+# nextEvent. Canonicalize per league so matching a followed team works and
+# the panel text matches its logo key ("Next: UTAH"). NBA Jazz untouched.
+_ABBR_CANON = {"NHL": {"UTA": "UTAH"}}
+
+
+def _canon_abbr(league: str, ab: str) -> str:
+    ab = (ab or "").upper()
+    return _ABBR_CANON.get((league or "").upper(), {}).get(ab, ab)
+
+
+def _canon_events(league: str, events) -> None:
+    """Rewrite competitor team abbreviations in-place (idempotent)."""
+    m = _ABBR_CANON.get((league or "").upper())
+    if not m:
+        return
+    for ev in events or []:
+        for comp in ev.get("competitions") or []:
+            for c in comp.get("competitors") or []:
+                t = c.get("team")
+                if isinstance(t, dict) and (t.get("abbreviation") or "").upper() in m:
+                    t["abbreviation"] = m[t["abbreviation"].upper()]
+
+
 async def _fetch_score(cx, team):
     """Returns a LIST of 0-2 game dicts for this team:
       - a LIVE game takes over completely (previous/finished game is hidden).
@@ -658,6 +684,7 @@ async def _fetch_score(cx, team):
     """
     try:
         league, _, abbr = team.partition(":")
+        abbr = _canon_abbr(league, abbr)
         path = _ESPN_PATHS.get(league.upper())
         if not path or not abbr:
             return []
@@ -666,6 +693,7 @@ async def _fetch_score(cx, team):
         # site.web.api.espn.com is NOT Akamai-blocked from datacenter IPs
         # (site.api.espn.com returns 403), and serves the same scoreboard.
         events = await _scoreboard_events(cx, path, now)
+        _canon_events(league, events)
 
         # Postseason: series round/status + next game instead of W-L.
         try:
@@ -748,6 +776,7 @@ async def _fetch_score(cx, team):
                 team_d = (r2.json() or {}).get("team") or {}
                 rec_items = (team_d.get("record") or {}).get("items") or []
                 record = rec_items[0].get("summary") if rec_items else None
+                _canon_events(league, team_d.get("nextEvent"))
                 ne = (team_d.get("nextEvent") or [None])[0]
                 opp_abbr, st_text = "", "Season"
                 if ne:

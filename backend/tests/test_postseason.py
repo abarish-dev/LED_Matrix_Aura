@@ -184,3 +184,13 @@ def test_range_400_falls_back_to_single_days():
     cards(cx)
     days = [u for u in cx.calls if "/scoreboard?dates=" in u and "-" not in u.split("dates=")[1].split("&")[0]]
     assert len(days) == 3
+
+
+def test_nhl_uta_canonicalized_to_utah_nba_untouched():
+    evs = [{"competitions": [{"competitors": [{"team": {"abbreviation": "UTA"}}, {"team": {"abbreviation": "NJ"}}]}]}]
+    server._canon_events("NHL", evs)
+    assert [c["team"]["abbreviation"] for c in evs[0]["competitions"][0]["competitors"]] == ["UTAH", "NJ"]
+    nba = [{"competitions": [{"competitors": [{"team": {"abbreviation": "UTA"}}]}]}]
+    server._canon_events("NBA", nba)
+    assert nba[0]["competitions"][0]["competitors"][0]["team"]["abbreviation"] == "UTA"
+    assert server._canon_abbr("NHL", "uta") == "UTAH" and server._canon_abbr("NBA", "UTA") == "UTA"
