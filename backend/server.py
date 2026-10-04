@@ -385,6 +385,265 @@ async def _fetch_flight(cx, lat, lon, radius_mi, track: str = ""):
         return out
 
 
+# ---- Postseason (MLB) ------------------------------------------------------
+# During the postseason the team card switches from regular-season W-L to the
+# series: round + status ("ALDS TB 1-0", "ALDS tied 1-1", "Won ALDS 3-1") and
+# the next game ("G2 @ TB" + time). Every line stays <= 21 chars, the width of
+# the panel's 6px font across 128px (the firmware's centerText lines).
+_POSTSEASON_LEAGUES = {"MLB"}
+_CARD_CHARS = 21
+_sched_cache: dict = {}          # "path:abbr" -> (expires_ts, schedule json)
+_SCHED_TTL = 120
+_BEST_OF = {"ALWC": 3, "NLWC": 3, "ALDS": 5, "NLDS": 5, "ALCS": 7, "NLCS": 7, "World Series": 7}
+_NEXT_ROUND = {"ALWC": "ALDS", "NLWC": "NLDS", "ALDS": "ALCS", "NLDS": "NLCS",
+               "ALCS": "World Series", "NLCS": "World Series"}
+
+
+def _fit(*options: str) -> str:
+    """First option that fits on one card line (else the last, clipped)."""
+    for o in options:
+        if o and len(o) <= _CARD_CHARS:
+            return o
+    return (options[-1] if options else "")[:_CARD_CHARS]
+
+
+def _short_round(r: str) -> str:
+    return "WS" if r == "World Series" else r
+
+
+def _parse_round(comp: dict):
+    """('ALDS', 2, if_necessary) from notes like 'ALDS - Game 2 If Necessary'."""
+    for n in comp.get("notes") or []:
+        h = (n.get("headline") or "").strip()
+        if not h:
+            continue
+        rnd, _, rest = h.partition(" - ")
+        m = _re.search(r"Game\s+(\d+)", rest)
+        return rnd.strip(), (int(m.group(1)) if m else 0), ("necessary" in rest.lower())
+    return "", 0, False
+
+
+def _score_val(v) -> int:
+    if isinstance(v, dict):
+        v = v.get("displayValue", v.get("value"))
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _series_line(rnd: str, me: str, opp: str, mw: int, ow: int, need: int) -> str:
+    """Card line for a series state, e.g. 'ALDS TB 1-0' / 'ALDS tied 1-1'."""
+    s = _short_round(rnd)
+    if mw >= need:
+        return _fit(f"Won {rnd} {mw}-{ow}", f"Won {s} {mw}-{ow}")
+    if ow >= need:
+        return _fit(f"Lost {rnd} {mw}-{ow}", f"Lost {s} {mw}-{ow}")
+    if mw == ow == 0:
+        return _fit(f"{rnd} Game 1", f"{s} Game 1")
+    if mw == ow:
+        return _fit(f"{rnd} tied {mw}-{ow}", f"{s} tied {mw}-{ow}", f"Series tied {mw}-{ow}")
+    lead, hi, lo = (me, mw, ow) if mw > ow else (opp, ow, mw)
+    return _fit(f"{rnd} {lead} {hi}-{lo}", f"{s} {lead} {hi}-{lo}")
+
+
+async def _team_schedule(cx, path: str, abbr: str):
+    key = f"{path}:{abbr}"
+    hit = _sched_cache.get(key)
+    if hit and hit[0] > _time.time():
+        return hit[1]
+    r = await cx.get(f"https://site.web.api.espn.com/apis/site/v2/sports/{path}/teams/{abbr.lower()}/schedule",
+                     headers={"User-Agent": _BROWSER_UA})
+    if r.status_code != 200:
+        return None
+    data = r.json() or {}
+    _sched_cache[key] = (_time.time() + _SCHED_TTL, data)
+    return data
+
+
+async def _postseason_cards(cx, league: str, path: str, abbr: str, sb_events: list, now: datetime):
+    """Postseason cards for a team, or None when it isn't the postseason for
+    this team (then the regular logic runs). Series wins come from the
+    scoreboard's competitions[].series when present, else are tallied from the
+    team's postseason schedule (seasontype 3)."""
+    if league.upper() not in _POSTSEASON_LEAGUES:
+        return None
+    sched = await _team_schedule(cx, path, abbr)
+    if not sched or ((sched.get("season") or {}).get("type")) != 3:
+        return None
+    me = abbr.upper()
+    live_by_id = {str(e.get("id")): e for e in sb_events or []}
+    games = []
+    for ev in sched.get("events") or []:
+        if ((ev.get("seasonType") or {}).get("type")) not in (3, None):
+            continue
+        sbe = live_by_id.get(str(ev.get("id")))
+        comp = ((sbe or ev).get("competitions") or [{}])[0]
+        rnd, gno, if_nec = _parse_round(comp if comp.get("notes") else (ev.get("competitions") or [{}])[0])
+        if not rnd:
+            continue
+        mine = opp = None
+        for c in comp.get("competitors") or []:
+            if (c.get("team") or {}).get("abbreviation", "").upper() == me:
+                mine = c
+            else:
+                opp = c
+        if not mine or not opp:
+            continue
+        try:
+            ts = datetime.fromisoformat((sbe or ev).get("date", "").replace("Z", "+00:00"))
+        except Exception:
+            continue
+        st = (comp.get("status") or {}).get("type") or {}
+        games.append({
+            "rnd": rnd, "g": gno, "if_nec": if_nec, "ts": ts, "state": st.get("state"),
+            "detail": st.get("shortDetail") or "", "comp": comp, "mine": mine, "opp": opp,
+            "opp_abbr": (opp.get("team") or {}).get("abbreviation", "").upper(),
+            "home": mine.get("homeAway") == "home", "series": comp.get("series") if sbe else None,
+        })
+    if not games:
+        return None
+    games.sort(key=lambda g: g["ts"])
+
+    # Per-round series state: best-of from the highest game number (or
+    # series.totalCompetitions), wins from finals (or series.competitors).
+    rounds: dict = {}
+    for g in games:
+        r = rounds.setdefault(g["rnd"], {"best": _BEST_OF.get(g["rnd"], 0), "mw": 0, "ow": 0, "opp": g["opp_abbr"], "sw": None})
+        r["best"] = max(r["best"], g["g"])
+        if g["state"] == "post":
+            if g["mine"].get("winner") is True:
+                r["mw"] += 1
+            elif g["opp"].get("winner") is True:
+                r["ow"] += 1
+        ser = g["series"]
+        if ser and ser.get("competitors"):
+            ids = {str((c.get("team") or {}).get("id")): (c.get("team") or {}).get("abbreviation", "").upper()
+                   for c in g["comp"].get("competitors") or []}
+            w = {ids.get(str(c.get("id")), ""): int(c.get("wins") or 0) for c in ser["competitors"]}
+            if me in w:
+                r["sw"] = (w.get(me, 0), w.get(g["opp_abbr"], 0))
+            if ser.get("totalCompetitions"):
+                r["best"] = max(r["best"], int(ser["totalCompetitions"]))
+    for r in rounds.values():
+        if r["sw"] is not None:   # ESPN's own series tally wins over ours
+            r["mw"], r["ow"] = r["sw"]
+        r["need"] = r["best"] // 2 + 1 if r["best"] else 99
+
+    def tally_before(g):
+        """Series score going into game g (wins from earlier finals only)."""
+        mw = sum(1 for x in games if x["rnd"] == g["rnd"] and x["ts"] < g["ts"] and x["state"] == "post"
+                 and x["mine"].get("winner") is True)
+        ow = sum(1 for x in games if x["rnd"] == g["rnd"] and x["ts"] < g["ts"] and x["state"] == "post"
+                 and x["opp"].get("winner") is True)
+        return mw, ow
+
+    def score_card(g, st):
+        h, a = (g["mine"], g["opp"]) if g["home"] else (g["opp"], g["mine"])
+        return {"ok": 1, "home": (h.get("team") or {}).get("abbreviation", "").upper(),
+                "hs": _score_val(h.get("score")),
+                "away": (a.get("team") or {}).get("abbreviation", "").upper(),
+                "as": _score_val(a.get("score")), "st": st, "post": 1}
+
+    now_ts = now.timestamp()
+    live = next((g for g in games if g["state"] == "in"), None)
+    if live:
+        rs = _short_round(live["rnd"])
+        return [score_card(live, _fit(f"{rs} G{live['g']} {live['detail']}", live["detail"]))]
+
+    out = []
+    finals = [g for g in games if g["state"] == "post"]
+    last = finals[-1] if finals else None
+    if last and 0 <= now_ts - last["ts"].timestamp() <= 12 * 3600:
+        r = rounds[last["rnd"]]
+        out.append(score_card(last, _fit("Final " + _series_line(last["rnd"], me, last["opp_abbr"],
+                                                                 r["mw"], r["ow"], r["need"]),
+                                         _series_line(last["rnd"], me, last["opp_abbr"], r["mw"], r["ow"], r["need"]),
+                                         "Final")))
+
+    def clinched(rnd):
+        r = rounds[rnd]
+        return r["mw"] >= r["need"] or r["ow"] >= r["need"]
+
+    nxt = next((g for g in games if g["state"] == "pre" and not clinched(g["rnd"])), None)
+    if nxt:
+        r = rounds[nxt["rnd"]]
+        mw, ow = (r["mw"], r["ow"]) if r["sw"] is not None else tally_before(nxt)
+        vs = "vs" if nxt["home"] else "@"
+        out.append({"ok": 1, "mode": "record", "post": 1, "home": me, "away": f"G{nxt['g']} {vs} {nxt['opp_abbr']}",
+                    "hs": 0, "as": 0, "record": _series_line(nxt["rnd"], me, nxt["opp_abbr"], mw, ow, r["need"]),
+                    "st": _fmt_eastern(nxt["ts"])})
+        return out
+
+    # No game left to play: either waiting for the next round, or out/champion.
+    lr = (last or games[-1])["rnd"]
+    r = rounds[lr]
+    line = _series_line(lr, me, r["opp"], r["mw"], r["ow"], r["need"])
+    if r["mw"] >= r["need"] and lr in _NEXT_ROUND:
+        out.append({"ok": 1, "mode": "record", "post": 1, "home": me, "away": _NEXT_ROUND[lr],
+                    "hs": 0, "as": 0, "record": line, "st": "TBD"})
+    else:
+        if r["mw"] >= r["need"] and lr == "World Series":
+            line = _fit("Won World Series", "WS champs")
+        out.append({"ok": 1, "mode": "record", "post": 1, "home": me, "away": _next_season_label(now),
+                    "hs": 0, "as": 0, "record": line, "st": "Season over"})
+    return out
+
+
+def _next_season_label(now: datetime) -> str:
+    return str(now.year + 1 if now.month >= 9 else now.year)
+
+
+_sb_cache: dict = {}             # path -> (expires_ts, events)
+_sb_inflight: dict = {}          # (loop id, path) -> Task, so N teams of one league share 1 fetch
+_SB_TTL = 20
+
+
+async def _scoreboard_events(cx, path: str, now: datetime) -> list:
+    hit = _sb_cache.get(path)
+    if hit and hit[0] > _time.time():
+        return hit[1]
+    key = (id(asyncio.get_running_loop()), path)
+    task = _sb_inflight.get(key)
+    if task is None:
+        task = asyncio.ensure_future(_scoreboard_events_raw(cx, path, now))
+        _sb_inflight[key] = task
+        task.add_done_callback(lambda _t, k=key: _sb_inflight.pop(k, None))
+    events = await asyncio.shield(task)
+    if events:
+        _sb_cache[path] = (_time.time() + _SB_TTL, events)
+    return events
+
+
+async def _scoreboard_events_raw(cx, path: str, now: datetime) -> list:
+    """Scoreboard events around now. ESPN now rejects dates=A-B ranges with
+    400 (all leagues, Oct 2026), so fall back to yesterday/today/tomorrow
+    (Eastern) single-day boards, which still work, merged by event id."""
+    base = f"https://site.web.api.espn.com/apis/site/v2/sports/{path}/scoreboard"
+    start = (now - timedelta(days=2)).strftime("%Y%m%d")
+    end = (now + timedelta(days=8)).strftime("%Y%m%d")
+    r = await cx.get(f"{base}?dates={start}-{end}&limit=100", headers={"User-Agent": _BROWSER_UA})
+    if r.status_code == 200:
+        return (r.json() or {}).get("events") or []
+    et = now.astimezone(_ET)
+    days = [(et + timedelta(days=d)).strftime("%Y%m%d") for d in (-1, 0, 1)]
+    res = await asyncio.gather(*(cx.get(f"{base}?dates={d}&limit=100", headers={"User-Agent": _BROWSER_UA})
+                                 for d in days), return_exceptions=True)
+    seen, events = set(), []
+    for x in res:
+        if isinstance(x, Exception) or x.status_code != 200:
+            continue
+        for ev in (x.json() or {}).get("events") or []:
+            if ev.get("id") not in seen:
+                seen.add(ev.get("id"))
+                events.append(ev)
+    if not events and all(isinstance(x, Exception) or x.status_code != 200 for x in res):
+        r = await cx.get(base, headers={"User-Agent": _BROWSER_UA})
+        if r.status_code == 200:
+            events = (r.json() or {}).get("events") or []
+    return events
+
+
 async def _fetch_score(cx, team):
     """Returns a LIST of 0-2 game dicts for this team:
       - a LIVE game takes over completely (previous/finished game is hidden).
@@ -404,19 +663,18 @@ async def _fetch_score(cx, team):
             return []
         now = datetime.now(timezone.utc)
         now_ts = now.timestamp()
-        start = (now - timedelta(days=2)).strftime("%Y%m%d")
-        end = (now + timedelta(days=8)).strftime("%Y%m%d")
         # site.web.api.espn.com is NOT Akamai-blocked from datacenter IPs
         # (site.api.espn.com returns 403), and serves the same scoreboard.
-        url = (f"https://site.web.api.espn.com/apis/site/v2/sports/{path}/scoreboard"
-               f"?dates={start}-{end}&limit=100")
-        r = await cx.get(url, headers={"User-Agent": _BROWSER_UA})
-        if r.status_code != 200:
-            # fall back to today-only scoreboard
-            r = await cx.get(url.split("?")[0], headers={"User-Agent": _BROWSER_UA})
-            if r.status_code != 200:
-                return []
-        events = (r.json() or {}).get("events") or []
+        events = await _scoreboard_events(cx, path, now)
+
+        # Postseason: series round/status + next game instead of W-L.
+        try:
+            ps = await _postseason_cards(cx, league, path, abbr, events, now)
+        except Exception as e:
+            logger.info(f"[feed] postseason error {team}: {e}")
+            ps = None
+        if ps:
+            return ps
 
         def to_dict(comp, comps):
             home = away = ""
@@ -505,6 +763,12 @@ async def _fetch_score(cx, team):
                     try:
                         ev_dt = datetime.fromisoformat(ne.get("date", "").replace("Z", "+00:00"))
                         st_text = _fmt_eastern(ev_dt)
+                        ne_state = ((comp2.get("status") or {}).get("type") or {}).get("state")
+                        # nextEvent stuck on the last regular-season game long
+                        # after it ended = the team's season is over (e.g. an
+                        # MLB team that missed the postseason).
+                        if ne_state == "post" and (now - ev_dt) > timedelta(days=4):
+                            opp_abbr, st_text = _next_season_label(now), "Season over"
                     except Exception:
                         st_text = "Upcoming"
                 if record or opp_abbr:
