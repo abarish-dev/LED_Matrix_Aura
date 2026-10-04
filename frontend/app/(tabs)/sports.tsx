@@ -29,7 +29,7 @@ function WallPreview({ league, abbr, showStreak }: { league: League; abbr: strin
     getTeamScore(league, abbr).then((s) => {
       if (!live) return;
       setScore(s);
-      if (s?.teamId && showStreak) getTeamStreak(league, s.teamId).then((k) => live && setStreak(k));
+      if (s?.teamId && showStreak && !s.series) getTeamStreak(league, s.teamId).then((k) => live && setStreak(k));
       else setStreak(null);
     });
     return () => {
@@ -42,7 +42,7 @@ function WallPreview({ league, abbr, showStreak }: { league: League; abbr: strin
   const awayScore = real ? (score!.atHome ? score!.oppScore ?? 0 : score!.teamScore ?? 0) : 0;
   const homeAbbr = real ? (score!.atHome ? abbr : score!.oppAbbr) : "OPP";
   const homeScore = real ? (score!.atHome ? score!.teamScore ?? 0 : score!.oppScore ?? 0) : 0;
-  const status = real ? score!.detail : "No live game";
+  const status = real ? (score!.series ? `${score!.series}${score!.seriesGame ? " " + score!.seriesGame : ""}` : score!.detail) : "No live game";
   const streakVal = showStreak ? streak : null;
 
   return (
@@ -95,13 +95,18 @@ function TeamBadge({
 function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
   if (!line) return "";
   if (line.state === "pre") {
+    if (line.series) {
+      if (line.seriesStatus === "Season over" || !line.oppAbbr) return line.series;
+      return `${line.series} · ${line.seriesGame ? line.seriesGame + " " : ""}${line.atHome ? "vs" : "@"} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}`;
+    }
     const rec = line.record ? ` · ${line.record}` : "";
     if (!line.oppAbbr) return line.record ? `Record ${line.record}` : "";
     return `${line.atHome ? "vs" : "@"} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}${rec}`;
   }
   const ts = line.teamScore ?? 0;
   const os = line.oppScore ?? 0;
-  return `${abbr} ${ts}–${os} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}`;
+  const ser = line.series ? ` · ${line.series}` : "";
+  return `${abbr} ${ts}–${os} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}${ser}`;
 }
 
 export default function SportsScreen() {

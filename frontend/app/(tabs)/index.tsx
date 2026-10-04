@@ -49,7 +49,7 @@ export default function SummaryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
-  const { settings, bleStatus, deviceName, connect, flashTest, updateFlights } = useMatrix();
+  const { settings, bleStatus, deviceName, connect, flashTest, updateFlights, commitFlights, pendingSections } = useMatrix();
   const f = settings.flights;
   const located = f.lat != null && f.lon != null;
 
@@ -204,7 +204,7 @@ export default function SummaryScreen() {
           setScore(line);
           setScoreLoading(false);
         }
-        if (line?.teamId) {
+        if (line?.teamId && !line.series) {
           getTeamStreak(favTeam.league, line.teamId).then((s) => {
             if (id === reqRef.current) setStreak(s);
           });
@@ -217,7 +217,7 @@ export default function SummaryScreen() {
     if (secondTeam) {
       getTeamScore(secondTeam.league, secondTeam.abbr).then((line) => {
         if (id === reqRef.current) setScore2(line);
-        if (line?.teamId) {
+        if (line?.teamId && !line.series) {
           getTeamStreak(secondTeam.league, line.teamId).then((s) => {
             if (id === reqRef.current) setStreak2(s);
           });
@@ -233,7 +233,7 @@ export default function SummaryScreen() {
     if (thirdTeam) {
       getTeamScore(thirdTeam.league, thirdTeam.abbr).then((line) => {
         if (id === reqRef.current) setScore3(line);
-        if (line?.teamId) {
+        if (line?.teamId && !line.series) {
           getTeamStreak(thirdTeam.league, line.teamId).then((s) => {
             if (id === reqRef.current) setStreak3(s);
           });
@@ -346,20 +346,36 @@ export default function SummaryScreen() {
     return () => clearInterval(iv);
   }, [trackedActive, planes.length]);
 
-  const onPlaneTap = () => {
+  const onPlaneTap = async () => {
     if (!located || !plane) {
       router.push("/flights");
       return;
     }
-    if (isTracked) {
-      updateFlights({ trackFlight: false, flightIdent: "", autoTracked: false });
+    const cs = plane.callsign;
+    const pin = !isTracked;
+    if (pin) missRef.current = 0;
+    Haptics.selectionAsync();
+    const patch = pin
+      ? { trackFlight: true, flightIdent: norm(cs), autoTracked: true }
+      : { trackFlight: false, flightIdent: "", autoTracked: false };
+    const label = pin ? `pinned ${cs} to the wall` : `stopped tracking ${cs}`;
+    if (bleStatus === "connected") toast.show(pin ? `Pinning ${cs}…` : `Unpinning ${cs}…`, "info");
+    const res = await commitFlights(patch, label);
+    // Only claim the wall has it once the panel acknowledged (or, on
+    // firmware without acks, once the Bluetooth write succeeded).
+    if (res === "confirmed" || res === "sent") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.show(`Stopped tracking ${plane.callsign}.`, "info");
+      toast.show(pin ? `Pinned ${cs} to the wall.` : `Stopped tracking ${cs}.`, pin ? "success" : "info");
+    } else if (res === "queued") {
+      toast.show(
+        pin
+          ? `Pinned ${cs}, will send when the matrix connects.`
+          : `Unpinned ${cs}, will update the matrix when it connects.`,
+        "info",
+      );
     } else {
-      missRef.current = 0;
-      updateFlights({ trackFlight: true, flightIdent: norm(plane.callsign), autoTracked: true });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toast.show(`Pinned ${plane.callsign} to the wall.`, "success");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      toast.show(`Sent ${cs}, but the matrix didn't confirm. Tap Sync to retry.`, "info");
     }
   };
 
@@ -427,7 +443,9 @@ export default function SummaryScreen() {
               </Text>
               <Text style={[styles.tapHint, isTracked && { color: colors.brand }]}>
                 {isTracked
-                  ? "Pinned to the wall · tap to stop"
+                  ? pendingSections.flights !== undefined
+                    ? "Pinned · will send when the matrix connects · tap to stop"
+                    : "Pinned to the wall · tap to stop"
                   : planes.length > 1
                     ? "Cycling nearby flights · tap to pin this one"
                     : "Tap to pin this flight to the wall"}
@@ -488,9 +506,9 @@ export default function SummaryScreen() {
                 ? `${score.atHome ? "vs" : "@"} ${score.oppAbbr}`
                 : `${favTeam.abbr} ${score.teamScore ?? 0}–${score.oppScore ?? 0} ${score.oppAbbr}`}
             </Text>
-            {score.record && (
+            {(score.series ?? score.record) && (
               <View style={styles.recordChip}>
-                <Text style={styles.recordChipText}>{score.record}</Text>
+                <Text style={styles.recordChipText}>{score.series ?? score.record}</Text>
               </View>
             )}
             {streak && (
@@ -518,13 +536,16 @@ export default function SummaryScreen() {
                 score.state === "in" && { color: colors.brand, fontFamily: fonts.textMedium },
               ]}
             >
-              {score.state === "in"
-                ? `🔴 LIVE · ${score.detail}`
-                : score.state === "post"
-                  ? score.detail
-                  : gameCountdown
-                    ? `Starts in ${gameCountdown} · ${score.detail}`
-                    : score.detail}
+              {(score.seriesGame ? `${score.seriesGame} · ` : "") +
+                (score.state === "in"
+                  ? `🔴 LIVE · ${score.detail}`
+                  : score.state === "post"
+                    ? score.detail
+                    : gameCountdown
+                      ? `Starts in ${gameCountdown} · ${score.detail}`
+                      : score.seriesStatus === "Season over"
+                        ? "Season over"
+                        : score.detail)}
             </Text>
           )}
         </>
@@ -581,7 +602,9 @@ export default function SummaryScreen() {
           </View>
         )}
         <Text style={styles.miniStatus} numberOfLines={1}>
-          {score2 ? (s2live ? "🔴 LIVE" : score2.detail) : "No game"}
+          {score2
+            ? [score2.series, s2live ? "🔴 LIVE" : score2.detail].filter(Boolean).join(" · ")
+            : "No game"}
         </Text>
       </Pressable>
     )}
@@ -632,7 +655,9 @@ export default function SummaryScreen() {
           </View>
         )}
         <Text style={styles.miniStatus} numberOfLines={1}>
-          {score3 ? (s3live ? "🔴 LIVE" : score3.detail) : "No game"}
+          {score3
+            ? [score3.series, s3live ? "🔴 LIVE" : score3.detail].filter(Boolean).join(" · ")
+            : "No game"}
         </Text>
       </Pressable>
     )}

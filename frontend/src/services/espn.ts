@@ -20,6 +20,12 @@ export type ScoreLine = {
   startTime: string | null; // ISO kickoff/first-pitch time
   record: string | null; // overall W-L record, e.g. "5-2"
   teamId: string | null; // ESPN team id (for streak lookup)
+  // Postseason (from the Aura backend, MLB for now): series line such as
+  // "ALDS TB 1-0" / "ALDS tied 1-1" / "Lost ALWC 0-2" replaces the
+  // regular-season record, and the streak is not shown.
+  series?: string | null;
+  seriesGame?: string | null; // "G2" (next/live game number) when known
+  seriesStatus?: string | null; // backend status line, e.g. "Season over", "ALDS G2 Top 5th"
 };
 
 type CacheEntry = { at: number; data: any };
@@ -64,8 +70,49 @@ function ymd(d: Date): string {
   return `${y}${m}${day}`;
 }
 
-/** Latest / upcoming game score for a specific team. */
-export async function getTeamScore(
+const BACKEND = (process.env.EXPO_PUBLIC_BACKEND_URL ?? "").replace(/\/$/, "");
+const POSTSEASON_LEAGUES = new Set<League>(["MLB"]);
+
+type FeedCard = {
+  ok: number; mode?: string; post?: number; home: string; away: string;
+  hs: number; as: number; record?: string; st?: string;
+};
+
+/** Postseason series info for a team from the backend feed (same strings the
+ * wall shows), or null outside the postseason / if the backend is unreachable. */
+export async function getPostseason(
+  league: League,
+  abbr: string,
+): Promise<{ series: string | null; game: string | null; status: string | null; live: boolean } | null> {
+  if (!BACKEND || !POSTSEASON_LEAGUES.has(league)) return null;
+  const team = `${league}:${abbr.toUpperCase()}`;
+  const data = await fetchJson(
+    `${BACKEND}/api/matrix/feed?lat=0&lon=0&flights=0&weather=0&sports=1&team=${encodeURIComponent(team)}`,
+  );
+  const cards: FeedCard[] = (data?.scores ?? []).filter((c: any) => c?.ok === 1 && c?.post === 1);
+  if (!cards.length) return null;
+  const live = cards.find((c) => c.mode !== "record" && / G\d+ /.test(` ${c.st ?? ""} `) && !/^Final/.test(c.st ?? ""));
+  const rec = cards.find((c) => c.mode === "record");
+  const game = (rec?.away ?? "").match(/^G\d+/)?.[0] ?? (live?.st ?? "").match(/G\d+/)?.[0] ?? null;
+  // Score cards carry the series inside "Final ALDS tied 1-1".
+  const fromFinal = cards.find((c) => /^Final /.test(c.st ?? ""))?.st?.replace(/^Final /, "") ?? null;
+  return {
+    series: rec?.record || fromFinal || null,
+    game,
+    status: live?.st ?? rec?.st ?? null,
+    live: !!live,
+  };
+}
+
+/** Latest / upcoming game score for a specific team; during the postseason
+ * the record is replaced by the series line from the backend. */
+export async function getTeamScore(league: League, abbr: string): Promise<ScoreLine | null> {
+  const [line, ps] = await Promise.all([getTeamScoreRaw(league, abbr), getPostseason(league, abbr)]);
+  if (!line || !ps || !ps.series) return line;
+  return { ...line, record: null, series: ps.series, seriesGame: ps.game, seriesStatus: ps.status };
+}
+
+async function getTeamScoreRaw(
   league: League,
   abbr: string,
 ): Promise<ScoreLine | null> {

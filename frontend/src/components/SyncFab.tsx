@@ -11,7 +11,8 @@ import { useToast } from "@/src/components/Toast";
 const TAB_BAR_HEIGHT = 64;
 
 export default function SyncFab() {
-  const { bleStatus, syncAll, bleSupported, firmwareVersion } = useMatrix();
+  const { bleStatus, syncAll, bleSupported, firmwareVersion, pendingSections } = useMatrix();
+  const pendingCount = Object.keys(pendingSections).length;
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
@@ -23,9 +24,11 @@ export default function SyncFab() {
     if (!connected) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       toast.show(
-        bleSupported
-          ? "Connect to your matrix first (Device tab)."
-          : "BLE needs a real device build to sync.",
+        !bleSupported
+          ? "BLE needs a real device build to sync."
+          : pendingCount
+            ? "Matrix offline. Your changes are saved and will send when it connects (Device tab)."
+            : "Connect to your matrix first (Device tab).",
         "info",
       );
       return;
@@ -85,6 +88,7 @@ export default function SyncFab() {
               color={connected ? colors.onBrandPrimary : colors.onSurfaceSecondary}
             />
             <Text style={[styles.label, !connected && styles.labelIdle]}>SYNC</Text>
+            {pendingCount > 0 && <View style={styles.pendingDot} testID="sync-pending-dot" />}
           </>
         )}
       </Pressable>
@@ -126,4 +130,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   labelIdle: { color: colors.onSurfaceSecondary },
+  // Unsent changes (made while the matrix was offline).
+  pendingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.warning, marginLeft: 2 },
 });

@@ -10,6 +10,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useToast } from "@/src/components/Toast";
 import { storage } from "@/src/utils/storage";
 import {
   connectToKnownDevice,
@@ -165,6 +166,11 @@ type MatrixContextValue = {
   dismissPicker: () => void;
   disconnect: () => Promise<void>;
   syncAll: () => Promise<{ confirmed: boolean; dropped?: boolean; ackSupported?: boolean }>;
+  // Settings changed while the matrix was offline (or a send that failed);
+  // they go out automatically on the next connect. Keyed by BLE command.
+  pendingSections: Record<string, string>;
+  /** Apply a flights change (pin / unpin) and report what the panel got. */
+  commitFlights: (patch: Partial<Settings["flights"]>, label: string) => Promise<SendResult>;
   waitForAck: (cmd: string, timeoutMs?: number) => Promise<any | null>;
   panelResetReason: string | null;
   sendWifi: (ssid: string, pass: string) => Promise<void>;
@@ -172,6 +178,12 @@ type MatrixContextValue = {
   weatherTest: () => Promise<void>;
   installOta: () => Promise<void>;
 };
+
+/** queued = offline, will send on connect; sent = written (firmware can't
+ * confirm); confirmed = panel acked; unconfirmed = written but no ack. */
+export type SendResult = "queued" | "sent" | "confirmed" | "unconfirmed";
+
+const PENDING_KEY = "aura_pending_sections";
 
 const MatrixContext = createContext<MatrixContextValue | null>(null);
 
@@ -319,6 +331,44 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const pushTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const toast = useToast();
+  const [pendingSections, setPendingSections] = useState<Record<string, string>>({});
+  const pendingRef = useRef<Record<string, string>>({});
+  const setPending = useCallback((next: Record<string, string>) => {
+    pendingRef.current = next;
+    setPendingSections(next);
+    storage.setItem(PENDING_KEY, next as any);
+  }, []);
+  const markPending = useCallback((cmd: string, label?: string) => {
+    const cur = pendingRef.current;
+    // Keep the most specific label for a section ("pin AAL123" beats "").
+    setPending({ ...cur, [cmd]: label ?? cur[cmd] ?? "" });
+  }, [setPending]);
+  const clearPending = useCallback((cmds?: string[]) => {
+    if (!cmds) return setPending({});
+    const next = { ...pendingRef.current };
+    for (const c of cmds) delete next[c];
+    setPending(next);
+  }, [setPending]);
+  useEffect(() => {
+    storage.getItem<any>(PENDING_KEY, null).then((v) => {
+      if (v && typeof v === "object") {
+        pendingRef.current = { ...v, ...pendingRef.current };
+        setPendingSections(pendingRef.current);
+      }
+    });
+  }, []);
+  /** Wait for {"ack":cmd}; resolves null on timeout or disconnect. */
+  const ackWait = useCallback((cmd: string, timeoutMs: number): Promise<any | null> => {
+    return new Promise((resolve) => {
+      const entry = { cmd, resolve: (o: any | null) => { clearTimeout(t); resolve(o); } };
+      const t = setTimeout(() => {
+        ackWaiters.current = ackWaiters.current.filter((w) => w !== entry);
+        resolve(null);
+      }, timeoutMs);
+      ackWaiters.current.push(entry);
+    });
+  }, []);
 
   // ---- Hydration ------------------------------------------------------------
   useEffect(() => {
@@ -359,13 +409,18 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
 
   // ---- Live push (debounced per command) ------------------------------------
   const livePush = useCallback((command: string, obj: Record<string, unknown>) => {
-    if (bleStatus !== "connected") return;
+    if (bleStatus !== "connected") {
+      // Nothing can reach the panel now; remember it so the connect-time
+      // full push is announced and the UI can show "will send".
+      markPending(command);
+      return;
+    }
     const key = command;
     if (pushTimers.current[key]) clearTimeout(pushTimers.current[key]);
     pushTimers.current[key] = setTimeout(() => {
-      writeLive({ command, ...obj }).catch(() => {});
+      writeLive({ command, ...obj }).catch(() => markPending(command));
     }, 350);
-  }, [bleStatus]);
+  }, [bleStatus, markPending]);
 
   const updateFlights = useCallback(
     (patch: Partial<Settings["flights"]>) => {
@@ -636,7 +691,7 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     storage.setItem(LAST_DEVICE_KEY, info.id);
     // Listen for async status pushes (Wi-Fi join result + firmware version).
     monitorMatrix((obj) => {
-      if (typeof obj?.fw === "string") setFirmwareVersion(obj.fw);
+      if (typeof obj?.fw === "string") { firmwareRef.current = obj.fw; setFirmwareVersion(obj.fw); }
       if (typeof obj?.rst === "string") setPanelResetReason(obj.rst);
       if (typeof obj?.ack === "string") {
         const left: typeof ackWaiters.current = [];
@@ -656,9 +711,31 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     // Ask the matrix which firmware it's running (it notifies {"fw":...} back).
     writeLive({ command: "version" }).catch(() => {});
     // Auto-push the full config (as per-section commands) so a freshly
-    // connected matrix is in sync.
-    pushAllSections(buildFullPayload(settingsRef.current)).catch(() => {});
-  }, []);
+    // connected matrix is in sync. This is also what delivers anything
+    // changed while offline (e.g. a pinned flight); announce those once the
+    // panel confirms (fw 1.6.35+ acks the final "server" command).
+    const queued = { ...pendingRef.current };
+    const queuedCmds = Object.keys(queued);
+    const done = ackWait("server", 10000);
+    pushAllSections(buildFullPayload(settingsRef.current))
+      .then(async () => {
+        const got = await done;
+        if (!queuedCmds.length) return;
+        // Leave anything changed again mid-flush pending.
+        clearPending(queuedCmds.filter((c) => pendingRef.current[c] === queued[c]));
+        const labels = queuedCmds.map((c) => queued[c]).filter(Boolean);
+        const what = labels.length ? labels.join(", ") : "your offline changes";
+        if (got) toast.show(`Matrix confirmed: ${what}.`, "success");
+        else if (bleStatusRef.current !== "connected") markPending(queuedCmds[0]);
+        else if (fwAtLeast(firmwareRef.current, ACK_FW))
+          toast.show(`Sent ${what}, but the matrix didn't confirm. Tap Sync.`, "info");
+        else toast.show(`Sent ${what} to the matrix.`, "success");
+      })
+      .catch(() => {
+        done.then(() => {});
+        if (queuedCmds.length) toast.show("Couldn't send your offline changes. Tap Sync to retry.", "error");
+      });
+  }, [ackWait, clearPending, markPending, toast]);
 
   const connect = useCallback(async () => {
     setPickerDevices(null);
@@ -750,11 +827,50 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     const canAck = fwAtLeast(firmwareRef.current, ACK_FW);
     const ack = canAck ? waitForAck("server") : null;
     await pushAllSections(buildFullPayload(settingsRef.current));
-    if (!canAck) return { confirmed: false, dropped: false, ackSupported: false };
+    if (!canAck) {
+      clearPending();
+      return { confirmed: false, dropped: false, ackSupported: false };
+    }
     const got = await ack;
     const dropped = bleStatusRef.current !== "connected";
+    if (got) clearPending();
     return { confirmed: !!got, dropped, ackSupported: true };
-  }, [waitForAck]);
+  }, [waitForAck, clearPending]);
+
+  const commitFlights = useCallback(
+    async (patch: Partial<Settings["flights"]>, label: string): Promise<SendResult> => {
+      const next = { ...settingsRef.current, flights: { ...settingsRef.current.flights, ...patch } };
+      settingsRef.current = next;
+      setSettings(next);
+      persist(next);
+      if (pushTimers.current.flights) clearTimeout(pushTimers.current.flights);
+      if (bleStatusRef.current !== "connected") {
+        markPending("flights", label);
+        return "queued";
+      }
+      const canAck = fwAtLeast(firmwareRef.current, ACK_FW);
+      const ack = canAck ? ackWait("flights", 8000) : null;
+      try {
+        await writeLive({ command: "flights", ...buildFullPayload(next).flights });
+      } catch {
+        markPending("flights", label);
+        return "queued";
+      }
+      if (!ack) {
+        clearPending(["flights"]);
+        return "sent";
+      }
+      const got = await ack;
+      if (got) {
+        clearPending(["flights"]);
+        return "confirmed";
+      }
+      // No ack: resend on the next connect / Sync.
+      markPending("flights", label);
+      return bleStatusRef.current === "connected" ? "unconfirmed" : "queued";
+    },
+    [persist, ackWait, markPending, clearPending],
+  );
 
   const sendWifi = useCallback(async (ssid: string, pass: string) => {
     setLastSsid(ssid);
@@ -821,6 +937,8 @@ export function MatrixProvider({ children }: { children: React.ReactNode }) {
     dismissPicker,
     disconnect,
     syncAll,
+    pendingSections,
+    commitFlights,
     sendWifi,
     flashTest,
     weatherTest,
