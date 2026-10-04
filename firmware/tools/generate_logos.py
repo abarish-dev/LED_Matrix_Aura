@@ -37,7 +37,24 @@ TEAMS = {
 
 # ESPN abbreviations that reuse another team's logo array (the Athletics are
 # "ATH" on ESPN since the move from Oakland; same "A's" mark).
-TEAM_ALIASES = {("MLB", "ATH"): ("MLB", "OAK")}
+# Aliases are keyed by league: "UTA" is the Mammoth in the NHL but the Jazz
+# in the NBA. ESPN's team list says "UTAH" while the team-page nextEvent /
+# schedule competitors say "UTA" (seen Oct 2026). The rest are common
+# alternate codes (NHL.com / other feeds) kept as cheap insurance.
+TEAM_ALIASES = {
+    ("MLB", "ATH"): ("MLB", "OAK"),
+    ("NHL", "UTA"): ("NHL", "UTAH"),
+    ("NBA", "UTA"): ("NBA", "UTAH"),
+    ("NHL", "LAK"): ("NHL", "LA"), ("NHL", "TBL"): ("NHL", "TB"),
+    ("NHL", "NJD"): ("NHL", "NJ"), ("NHL", "SJS"): ("NHL", "SJ"),
+    ("NHL", "WAS"): ("NHL", "WSH"), ("NBA", "WAS"): ("NBA", "WSH"),
+    ("NFL", "WAS"): ("NFL", "WSH"), ("MLB", "WAS"): ("MLB", "WSH"),
+    ("NBA", "GSW"): ("NBA", "GS"), ("NBA", "NYK"): ("NBA", "NY"),
+    ("NBA", "SAS"): ("NBA", "SA"), ("NBA", "NOP"): ("NBA", "NO"),
+    ("NBA", "PHO"): ("NBA", "PHX"), ("NBA", "BRK"): ("NBA", "BKN"),
+    ("MLB", "AZ"): ("MLB", "ARI"), ("MLB", "CWS"): ("MLB", "CHW"),
+    ("NFL", "JAC"): ("NFL", "JAX"),
+}
 
 # ICAO callsign prefix -> IATA code for Google Flights logos.
 AIRLINES = {
@@ -419,6 +436,43 @@ def capitals_mark(variant="red_sticks"):
                               "B": rgb565(30, 120, 255)})
 
 
+def canadiens_mark():
+    """Canadiens (Habs): bold red C with a bright-blue band, white H inside.
+
+    The ESPN download (thin white + navy rings, small H) blurs into a
+    pinkish smear at 24px: ~200 in-between colors. Hand-drawn with four flat
+    colors and hard edges; the H is the white lens with two blue notches,
+    pointing into the C's opening like the real mark."""
+    rows = (
+"........................",
+"........................",
+"........................",
+"......BBBBBBBBBBBB......",
+"....BBRRRRRRRRRRRRBBB...",
+"...BRRRRRRRRRRRRRRRRRB..",
+"..BRRRRRRRRRRRRRRRRRRRB.",
+".BRRRRRRRRRRRRRRRRRRRB..",
+".BRRRRRBBBBBBBBBBBBBB...",
+"BRRRRRBWWWBBWWWWWWBB....",
+"BRRRRRBWWWBBWWWWWWWWBB..",
+"BRRRRRBWWWWWWWWWWWWWWWB.",
+"BRRRRRBWWWWWWWWWWWWWWWB.",
+"BRRRRRBWWWBBWWWWWWWWBB..",
+"BRRRRRBWWWBBWWWWWWBB....",
+".BRRRRRBBBBBBBBBBBBBB...",
+".BRRRRRRRRRRRRRRRRRRRB..",
+"..BRRRRRRRRRRRRRRRRRRRB.",
+"...BRRRRRRRRRRRRRRRRRB..",
+"....BBRRRRRRRRRRRRBBB...",
+"......BBBBBBBBBBBB......",
+"........................",
+"........................",
+"........................",
+    )
+    return native_mark(rows, {".": 0x0000, "R": LED_RED, "W": LED_WHITE,
+                              "B": rgb565(30, 120, 255)})
+
+
 # Hand-tuned marks that replace the ESPN download entirely.
 NATIVE_TEAM_MARKS = {
     ("NHL", "FLA"): florida_panthers_mark,
@@ -427,6 +481,7 @@ NATIVE_TEAM_MARKS = {
     ("NHL", "TB"): lightning_mark,
     ("MLB", "TB"): rays_mark,
     ("NHL", "WSH"): capitals_mark,
+    ("NHL", "MTL"): canadiens_mark,
 }
 
 
