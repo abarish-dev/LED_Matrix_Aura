@@ -19,51 +19,6 @@ import { getTeamScore, getTeamStreak, getNextUfc, type ScoreLine, type UfcEvent 
 const HERO =
   "https://images.pexels.com/photos/15779126/pexels-photo-15779126.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
 
-// A small mock of the physical LED-matrix score card (128x64, 2:1) so you can
-// preview how a team's score — and its W/L streak — looks before it hits the wall.
-function WallPreview({ league, abbr, showStreak }: { league: League; abbr: string; showStreak: boolean }) {
-  const [score, setScore] = useState<ScoreLine | null>(null);
-  const [streak, setStreak] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    getTeamScore(league, abbr).then((s) => {
-      if (!live) return;
-      setScore(s);
-      if (s?.teamId && showStreak && !s.series) getTeamStreak(league, s.teamId).then((k) => live && setStreak(k));
-      else setStreak(null);
-    });
-    return () => {
-      live = false;
-    };
-  }, [league, abbr, showStreak]);
-
-  const real = !!score;
-  const awayAbbr = real ? (score!.atHome ? score!.oppAbbr : abbr) : abbr;
-  const awayScore = real ? (score!.atHome ? score!.oppScore ?? 0 : score!.teamScore ?? 0) : 0;
-  const homeAbbr = real ? (score!.atHome ? abbr : score!.oppAbbr) : "OPP";
-  const homeScore = real ? (score!.atHome ? score!.teamScore ?? 0 : score!.oppScore ?? 0) : 0;
-  const status = real ? (score!.series ? `${score!.series}${score!.seriesGame ? " " + score!.seriesGame : ""}` : score!.detail) : "No live game";
-  const streakVal = showStreak ? streak : null;
-
-  return (
-    <View style={styles.wallCard}>
-      {streakVal && (
-        <Text
-          style={[
-            styles.wallStreak,
-            { color: streakVal.startsWith("W") ? colors.success : colors.error },
-          ]}
-        >
-          {streakVal}
-        </Text>
-      )}
-      <Text style={styles.wallLine}>{`${awayAbbr} ${awayScore}`}</Text>
-      <Text style={styles.wallLine}>{`${homeAbbr} ${homeScore}`}</Text>
-      <Text style={styles.wallStatus}>{status}</Text>
-    </View>
-  );
-}
-
 type Segment = League | "UFC";
 const SEGMENTS: Segment[] = ["NFL", "NBA", "MLB", "NHL", "UFC"];
 
@@ -109,16 +64,43 @@ function scoreText(line: ScoreLine | null | undefined, abbr: string): string {
   return `${abbr} ${ts}–${os} ${line.oppAbbr}${line.detail ? " · " + line.detail : ""}${ser}`;
 }
 
+type GameStatus = {
+  kind: "live" | "next" | "final" | "over" | "none";
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  color: string;
+  text: string;
+};
+
+// One status line per followed team (Info-Wall "Track your teams" style):
+// live score, the next game, the last final, or the postseason series state.
+function gameStatus(line: ScoreLine | null | undefined, abbr: string): GameStatus {
+  if (!line) return { kind: "none", icon: "remove-circle-outline", color: colors.onSurfaceTertiary, text: "No game scheduled" };
+  if (line.series && (line.seriesStatus === "Season over" || !line.oppAbbr) && line.state === "pre") {
+    return { kind: "over", icon: "flag-outline", color: colors.onSurfaceTertiary, text: line.series };
+  }
+  const text = scoreText(line, abbr);
+  if (line.state === "in") return { kind: "live", icon: "radio-button-on", color: LIVE_RED, text };
+  if (line.state === "post") {
+    const ts = line.teamScore ?? 0;
+    const os = line.oppScore ?? 0;
+    const res = ts > os ? "W" : ts < os ? "L" : "T";
+    const color = res === "W" ? colors.success : res === "L" ? colors.error : colors.onSurfaceTertiary;
+    return { kind: "final", icon: "checkmark-done", color, text: `${res} · ${text}` };
+  }
+  if (!text) return { kind: "none", icon: "remove-circle-outline", color: colors.onSurfaceTertiary, text: "No game scheduled" };
+  return { kind: "next", icon: "time-outline", color: colors.brand, text: `Next: ${text}` };
+}
+
+const LIVE_RED = "#ef4444";
+
 export default function SportsScreen() {
   const { settings, updateSports, toggleTeam, reorderTeams, toggleRival, toggleFavorite } = useMatrix();
   const insets = useSafeAreaInsets();
   const s = settings.sports;
-  const primaryKey = s.favorites[0] ?? (s.teams[0] ? `${s.teams[0].league}:${s.teams[0].abbr}` : null);
-  const primaryTeam = primaryKey
-    ? s.teams.find((t) => `${t.league}:${t.abbr}` === primaryKey) ?? null
-    : null;
   const [seg, setSeg] = useState<Segment>("NFL");
   const [scores, setScores] = useState<Record<string, ScoreLine | null>>({});
+  const [streaks, setStreaks] = useState<Record<string, string | null>>({});
+  const [tick, setTick] = useState(0);
   const [ufc, setUfc] = useState<UfcEvent | null>(null);
   const [ufcLoading, setUfcLoading] = useState(true);
 
@@ -138,7 +120,37 @@ export default function SportsScreen() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamKey]);
+  }, [teamKey, tick]);
+
+  // Keep the games list fresh while the screen is open (ESPN calls are cached 60s).
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // W/L streak chips (regular season only; postseason shows the series instead).
+  const streakKey = s.showStreak
+    ? s.teams.map((t) => `${t.league}:${t.abbr}:${scores[`${t.league}:${t.abbr}`]?.teamId ?? ""}`).join(",")
+    : "";
+  useEffect(() => {
+    if (!s.showStreak) return; // chips are hidden when off; stale map is ignored
+    let active = true;
+    (async () => {
+      const entries = await Promise.all(
+        s.teams.map(async (t) => {
+          const key = `${t.league}:${t.abbr}`;
+          const line = scores[key];
+          if (!line?.teamId || line.series) return [key, null] as const;
+          return [key, await getTeamStreak(t.league, line.teamId)] as const;
+        }),
+      );
+      if (active) setStreaks(Object.fromEntries(entries));
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streakKey]);
 
   useEffect(() => {
     let active = true;
@@ -262,6 +274,47 @@ export default function SportsScreen() {
     );
   };
 
+  // Live games first, then everything else in rotation order.
+  const gameRows = s.teams
+    .map((item, i) => ({ item, i, st: gameStatus(scores[`${item.league}:${item.abbr}`], item.abbr) }))
+    .sort((x, y) => (x.st.kind === "live" ? 0 : 1) - (y.st.kind === "live" ? 0 : 1) || x.i - y.i);
+
+  const renderGameRow = ({ item, st }: { item: SavedTeam; st: GameStatus }) => {
+    const key = `${item.league}:${item.abbr}`;
+    const t = findTeam(item.league, item.abbr);
+    const streak = s.showStreak ? streaks[key] : null;
+    const live = st.kind === "live";
+    return (
+      <View key={key} style={[styles.gameRow, live && styles.gameRowLive]}>
+        <TeamBadge league={item.league} abbr={item.abbr} color={t?.color ?? "#555"} size={40} />
+        <View style={{ flex: 1 }}>
+          <View style={styles.rotNameRow}>
+            <Text style={styles.gameName} numberOfLines={1}>
+              {t ? `${t.city} ${t.name}` : item.abbr}
+            </Text>
+            {live && (
+              <View style={styles.liveTag}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveTagText}>LIVE</Text>
+              </View>
+            )}
+            {!!streak && (
+              <Text style={[styles.streakChip, { color: streak.startsWith("W") ? colors.success : colors.error }]}>
+                {streak}
+              </Text>
+            )}
+          </View>
+          <View style={styles.gameStatusRow}>
+            <Ionicons name={st.icon} size={12} color={st.color} />
+            <Text style={[styles.gameStatus, { color: st.color }]} numberOfLines={1}>
+              {st.text}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       style={styles.screen}
@@ -284,22 +337,14 @@ export default function SportsScreen() {
             value={s.showStreak}
             onValueChange={(v) => updateSports({ showStreak: v })}
           />
-          {primaryTeam && (
-            <>
-              <View style={styles.wallDivider} />
-              <Text style={styles.wallLabel}>Wall Preview</Text>
-              <WallPreview
-                league={primaryTeam.league}
-                abbr={primaryTeam.abbr}
-                showStreak={s.showStreak}
-              />
-              <Text style={styles.wallHint}>
-                How your top team&apos;s card looks on the matrix
-                {s.showStreak ? " — streak shows top-right." : "."}
-              </Text>
-            </>
-          )}
         </Card>
+
+        {s.teams.length > 0 && (
+          <>
+            <SectionLabel>Your Games</SectionLabel>
+            {gameRows.map(renderGameRow)}
+          </>
+        )}
 
         <SectionLabel>League</SectionLabel>
         <View style={styles.segRow}>
@@ -481,7 +526,6 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   favTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: colors.brand, letterSpacing: 0.5 },
-  wallDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
   legend: {
     gap: spacing.xs,
     backgroundColor: colors.surfaceSecondary,
@@ -493,34 +537,25 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   legendText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm, color: colors.onSurfaceSecondary },
-  wallLabel: {
-    fontFamily: fonts.displayMedium,
-    fontSize: fontSize.xs,
-    color: colors.onSurfaceSecondary,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginBottom: spacing.sm,
-  },
-  wallCard: {
-    aspectRatio: 2,
-    backgroundColor: "#000000",
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
+  gameRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 1,
-    position: "relative",
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  wallLine: { fontFamily: fonts.mono, fontSize: 20, color: "#ffffff", letterSpacing: 1 },
-  wallStatus: { fontFamily: fonts.mono, fontSize: 12, color: "#10b981", marginTop: 3 },
-  wallStreak: { position: "absolute", top: 6, right: 8, fontFamily: fonts.mono, fontSize: 13 },
-  wallHint: {
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    color: colors.onSurfaceSecondary,
-    marginTop: spacing.sm,
-  },
+  gameRowLive: { borderColor: LIVE_RED, borderLeftWidth: 4 },
+  gameName: { fontFamily: fonts.text, fontSize: fontSize.lg, color: colors.onSurface, flexShrink: 1 },
+  gameStatusRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  gameStatus: { flex: 1, fontFamily: fonts.textMedium, fontSize: fontSize.sm },
+  liveTag: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: LIVE_RED, borderRadius: radius.sm, paddingHorizontal: 5, paddingVertical: 1 },
+  liveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#ffffff" },
+  liveTagText: { fontFamily: fonts.textMedium, fontSize: 9, color: "#ffffff", letterSpacing: 0.5 },
+  streakChip: { fontFamily: fonts.mono, fontSize: fontSize.xs },
   rotLeague: { fontFamily: fonts.text, fontSize: fontSize.xs, color: colors.onSurfaceSecondary },
   rotScore: { fontFamily: fonts.textMedium, fontSize: fontSize.sm, color: colors.onSurfaceTertiary },
   rowBtn: { padding: 4 },
