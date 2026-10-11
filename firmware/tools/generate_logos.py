@@ -682,9 +682,9 @@ def southwest_mark():
 
 
 def etihad_mark():
-    """Etihad (ETD/EY): flat bold 'EY' over a thin rule, in a low-green
-    amber (255,113,0) instead of Etihad's sand gold, since R+G-heavy golds
-    split on this panel (see the gold note above)."""
+    """Etihad (ETD/EY): flat bold 'EY' over a thin rule in true gold
+    (255,186,0). Adam chose true gold over the low-green amber despite the
+    R+G split risk on this panel noted above."""
     rows = (
         "........................",
         "........................",
@@ -711,7 +711,7 @@ def etihad_mark():
         "........................",
         "........................",
     )
-    return native_mark(rows, {".": 0, "#": rgb565(255, 113, 0)})
+    return native_mark(rows, {".": 0, "#": rgb565(255, 186, 0)})
 
 
 # Hand-tuned airline marks that replace the Google Flights download.
