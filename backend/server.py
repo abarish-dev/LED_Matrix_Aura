@@ -131,7 +131,10 @@ async def _bounded(key: str, coro, timeout: float, default):
 
 
 # Display names that are shorter than adsbdb's (e.g. "Etihad Airways").
-_AIRLINE_SHORT = {"ETD": "Etihad"}
+_AIRLINE_SHORT = {
+    "ETD": "Etihad",
+    "POD": "Craft Charter",  # US charter, callsign AIRPOD
+}
 
 
 async def _enrich_route(cx, cs):
@@ -374,7 +377,8 @@ async def _fetch_flight(cx, lat, lon, radius_mi, track: str = ""):
         for i, (c, rt) in enumerate(zip(top, routes)):
             rt = rt if isinstance(rt, dict) else {}
             p = {"cs": c["cs"], "dist": c["dist"], "alt": c["alt"], "hdg": c["hdg"],
-                 "airline": rt.get("airline", ""), "from": rt.get("from", ""),
+                 "airline": rt.get("airline") or _AIRLINE_SHORT.get(c["cs"][:3].upper(), ""),
+                 "from": rt.get("from", ""),
                  "to": rt.get("to", "")}
             if tracked and i == 0:
                 p["trk"] = 1
