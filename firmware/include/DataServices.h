@@ -101,6 +101,7 @@ static String airlineFromCallsign(const String& cs) {
   if (p == "JZA") return "Air Canada Jazz";
   if (p == "ROU") return "Air Canada Rouge";
   if (p == "VXP") return "Avelo";
+  if (p == "ETD") return "Etihad";
   if (p == "DAL") return "Delta";
   if (p == "UAL") return "United";
   if (p == "SWA") return "Southwest";

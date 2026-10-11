@@ -130,6 +130,10 @@ async def _bounded(key: str, coro, timeout: float, default):
     return v
 
 
+# Display names that are shorter than adsbdb's (e.g. "Etihad Airways").
+_AIRLINE_SHORT = {"ETD": "Etihad"}
+
+
 async def _enrich_route(cx, cs):
     """Airline name + origin/destination IATA for a callsign (adsbdb.com,
     keyless). Cached 6h. Best-effort — returns {} on any failure."""
@@ -145,8 +149,10 @@ async def _enrich_route(cx, cs):
                          headers={"User-Agent": "AuraMatrix/1.0"}, timeout=3.0)
         if r.status_code == 200:
             fr = ((r.json() or {}).get("response") or {}).get("flightroute") or {}
+            al = fr.get("airline") or {}
             info = {
-                "airline": ((fr.get("airline") or {}).get("name") or "")[:18],
+                "airline": (_AIRLINE_SHORT.get((al.get("icao") or cs[:3]).upper())
+                            or al.get("name") or "")[:18],
                 "from": (fr.get("origin") or {}).get("iata_code") or "",
                 "to": (fr.get("destination") or {}).get("iata_code") or "",
             }
@@ -170,7 +176,7 @@ _IATA_ICAO = {
     "AC": "ACA", "WS": "WJA", "BA": "BAW", "VS": "VIR", "LH": "DLH", "AF": "AFR",
     "KL": "KLM", "IB": "IBE", "EI": "EIN", "LX": "SWR", "TK": "THY", "EK": "UAE",
     "QR": "QTR", "AM": "AMX", "CM": "CMP", "AV": "AVA", "LA": "LAN", "JL": "JAL",
-    "NH": "ANA", "QF": "QFA", "5X": "UPS", "FX": "FDX",
+    "NH": "ANA", "QF": "QFA", "5X": "UPS", "FX": "FDX", "EY": "ETD",
 }
 _REGIONALS = {
     "AA": ("JIA", "PDT", "ENY", "RPA"),
