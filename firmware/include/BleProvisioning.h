@@ -279,14 +279,18 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 // 2+ boards in range there was no way to tell them apart in a BLE scan. This
 // appends a short, stable-per-chip suffix from the factory-burned MAC (via
 // efuse — doesn't need Wi-Fi/BT to already be up) so each board shows up as
-// e.g. "AuraMatrix-3F2A" and the app can offer a proper picker.
+// e.g. "AuraMatrix-3412" and the app can offer a proper picker.
 static String gBleDeviceName;
 
 inline const char* deviceName() {
   if (gBleDeviceName.isEmpty()) {
     uint64_t mac = ESP.getEfuseMac();
     char suffix[6];
-    snprintf(suffix, sizeof(suffix), "%04X", (unsigned)(mac & 0xFFFF));
+    // LAST two MAC bytes as printed at the end of the address (AA:BB:CC:DD:EE:FF
+    // -> "EEFF"). getEfuseMac() is little-endian (byte 0 = low byte), so the old
+    // `mac & 0xFFFF` was bytes 0-1: the manufacturer prefix, identical across a batch.
+    snprintf(suffix, sizeof(suffix), "%02X%02X",
+             (unsigned)((mac >> 32) & 0xFF), (unsigned)((mac >> 40) & 0xFF));
     gBleDeviceName = String(AURA_DEVICE_NAME) + "-" + suffix;
   }
   return gBleDeviceName.c_str();

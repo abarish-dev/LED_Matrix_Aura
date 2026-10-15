@@ -127,6 +127,10 @@ int main() {
   CHECK(ch->notified.back().find("\"rst\"") != std::string::npos);
   std::printf("version reply: %s\n", ch->notified.back().c_str());
 #endif
+  // BLE name suffix = last two MAC bytes. The stub's getEfuseMac() is
+  // 0x123456783F2A (little-endian) -> MAC 2A:3F:78:56:34:12 -> "AuraMatrix-3412".
+  // (The old `mac & 0xFFFF` gave "3F2A": MAC bytes 0-1, the manufacturer prefix.)
+  CHECK(std::string(AuraBLE::deviceName()) == "AuraMatrix-3412");
   std::puts("PASS");
   return 0;
 }
